@@ -40,6 +40,7 @@ struct TimeConstants {
   static constexpr int MINUTES_PER_HOUR = 60;
   static constexpr int HOURS_PER_DAY = 24;
   static constexpr int DAYS_PER_WEEK = 7;
+  static constexpr int MAXIMUM_WEEKS_PER_MONTH = 5;
   static constexpr int MONTHS_PER_YEAR = 12;
   static constexpr int DAYS_PER_NON_LEAP_YEAR = 365;
   static constexpr int DAYS_PER_LEAP_YEAR = 366;
