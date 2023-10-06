@@ -26,11 +26,23 @@ add_object_library(
     libc.src.__support.CPP.string_view
     libc.src.__support.CPP.optional
     libc.src.errno.errno
-    .time_constants
-    libc.hdr.types.time_t
-    libc.hdr.types.size_t
-    libc.hdr.types.struct_tm
-    libc.hdr.stdint_proxy
+    .time_zone_posix
+)
+
+add_object_library(
+  time_zone_posix
+  CXX_STANDARD 20
+  SRCS
+    time_zone_posix.cpp
+  HDRS
+    time_zone_posix.h
+  DEPENDS
+    libc.src.ctype.isdigit
+    libc.src.stdlib.strtol
+    libc.src.string.memory_utils.memset_implementation
+    libc.src.string.strchr
+    libc.src.__support.CPP.optional
+    libc.src.__support.str_to_integer
 )
 
 add_entrypoint_object(

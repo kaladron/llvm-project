@@ -257,3 +257,15 @@ add_libc_test(
     libc.src.errno.errno
     libc.hdr.types.clock_t
 )
+
+add_libc_unittest(
+  time_zone_posix
+  SUITE
+    libc_time_unittests
+  SRCS
+    time_zone_posix_test.cpp
+  HDRS
+    TZMatcher.h
+  DEPENDS
+    libc.src.time.time_zone_posix
+)
