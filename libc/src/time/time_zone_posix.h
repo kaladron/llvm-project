@@ -14,7 +14,7 @@
 #include "src/__support/CPP/optional.h"
 #include "src/__support/CPP/string_view.h"
 
-namespace __llvm_libc {
+namespace LIBC_NAMESPACE {
 namespace time_zone_posix {
 
 // This enum is used to handle + or - symbol in the offset specification of
@@ -194,6 +194,6 @@ private:
 };
 
 } // namespace time_zone_posix
-} // namespace __llvm_libc
+} // namespace LIBC_NAMESPACE
 
 #endif // LLVM_LIBC_SRC_TIME_TIME_ZONE_POSIX_H

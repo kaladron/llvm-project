@@ -14,10 +14,10 @@
 #include "src/time/time_utils.h"
 #include "src/time/time_zone_posix.h"
 
-namespace __llvm_libc {
+namespace LIBC_NAMESPACE {
 namespace time_zone_posix {
 
-using __llvm_libc::time_utils::TimeConstants;
+using LIBC_NAMESPACE::time_utils::TimeConstants;
 
 // https://datatracker.ietf.org/doc/html/rfc8536
 // The hours part of the transition times may be signed and range
@@ -406,4 +406,4 @@ PosixTimeZone::ParsePosixSpec(const cpp::string_view spec) {
 }
 
 } // namespace time_zone_posix
-} // namespace __llvm_libc
+} // namespace LLVM_NAMESPACE

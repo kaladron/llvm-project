@@ -31,7 +31,6 @@ add_object_library(
 
 add_object_library(
   time_zone_posix
-  CXX_STANDARD 20
   SRCS
     time_zone_posix.cpp
   HDRS
@@ -39,7 +38,6 @@ add_object_library(
   DEPENDS
     libc.src.ctype.isdigit
     libc.src.stdlib.strtol
-    libc.src.string.memory_utils.memset_implementation
     libc.src.string.strchr
     libc.src.__support.CPP.optional
     libc.src.__support.str_to_integer
