@@ -1163,10 +1163,10 @@ amdhsa::kernel_descriptor_t getDefaultAmdhsaKernelDescriptor(
                     amdhsa::KERNEL_CODE_PROPERTY_ENABLE_WAVEFRONT_SIZE32,
                     STI->getFeatureBits().test(FeatureWavefrontSize32) ? 1 : 0);
     AMDHSA_BITS_SET(KD.compute_pgm_rsrc1,
-                    amdhsa::COMPUTE_PGM_RSRC1_WGP_MODE,
+                    amdhsa::COMPUTE_PGM_RSRC1_GFX10_PLUS_WGP_MODE,
                     STI->getFeatureBits().test(FeatureCuMode) ? 0 : 1);
     AMDHSA_BITS_SET(KD.compute_pgm_rsrc1,
-                    amdhsa::COMPUTE_PGM_RSRC1_MEM_ORDERED, 1);
+                    amdhsa::COMPUTE_PGM_RSRC1_GFX10_PLUS_MEM_ORDERED, 1);
   }
   if (AMDGPU::isGFX90A(*STI)) {
     AMDHSA_BITS_SET(KD.compute_pgm_rsrc3,
@@ -2085,6 +2085,10 @@ bool hasVOPD(const MCSubtargetInfo &STI) {
   return STI.hasFeature(AMDGPU::FeatureVOPD);
 }
 
+bool hasDPPSrc1SGPR(const MCSubtargetInfo &STI) {
+  return STI.hasFeature(AMDGPU::FeatureDPPSrc1SGPR);
+}
+
 unsigned hasKernargPreload(const MCSubtargetInfo &STI) {
   return STI.hasFeature(AMDGPU::FeatureKernargPreload);
 }
@@ -2101,6 +2105,10 @@ bool isSGPR(unsigned Reg, const MCRegisterInfo* TRI) {
   const unsigned FirstSubReg = TRI->getSubReg(Reg, AMDGPU::sub0);
   return SGPRClass.contains(FirstSubReg != 0 ? FirstSubReg : Reg) ||
     Reg == AMDGPU::SCC;
+}
+
+bool isHi(unsigned Reg, const MCRegisterInfo &MRI) {
+  return MRI.getEncodingValue(Reg) & AMDGPU::EncValues::IS_HI;
 }
 
 #define MAP_REG2REG \
@@ -2233,16 +2241,13 @@ bool isSISrcFPOperand(const MCInstrDesc &Desc, unsigned OpNo) {
   case AMDGPU::OPERAND_REG_IMM_FP16:
   case AMDGPU::OPERAND_REG_IMM_FP16_DEFERRED:
   case AMDGPU::OPERAND_REG_IMM_V2FP16:
-  case AMDGPU::OPERAND_REG_IMM_V2INT16:
   case AMDGPU::OPERAND_REG_INLINE_C_FP32:
   case AMDGPU::OPERAND_REG_INLINE_C_FP64:
   case AMDGPU::OPERAND_REG_INLINE_C_FP16:
   case AMDGPU::OPERAND_REG_INLINE_C_V2FP16:
-  case AMDGPU::OPERAND_REG_INLINE_C_V2INT16:
   case AMDGPU::OPERAND_REG_INLINE_AC_FP32:
   case AMDGPU::OPERAND_REG_INLINE_AC_FP16:
   case AMDGPU::OPERAND_REG_INLINE_AC_V2FP16:
-  case AMDGPU::OPERAND_REG_INLINE_AC_V2INT16:
   case AMDGPU::OPERAND_REG_IMM_V2FP32:
   case AMDGPU::OPERAND_REG_INLINE_C_V2FP32:
   case AMDGPU::OPERAND_REG_INLINE_AC_FP64:
@@ -2512,6 +2517,13 @@ bool isFoldableLiteralV216(int32_t Literal, bool HasInv2Pi) {
   if (!(Literal & 0xffff))
     return true;
   return Lo16 == Hi16;
+}
+
+bool isValid32BitLiteral(uint64_t Val, bool IsFP64) {
+  if (IsFP64)
+    return !(Val & 0xffffffffu);
+
+  return isUInt<32>(Val) || isInt<32>(Val);
 }
 
 bool isArgPassedInSGPR(const Argument *A) {

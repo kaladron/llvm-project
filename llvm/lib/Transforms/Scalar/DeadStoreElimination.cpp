@@ -865,7 +865,7 @@ struct DSEState {
   DSEState(Function &F, AliasAnalysis &AA, MemorySSA &MSSA, DominatorTree &DT,
            PostDominatorTree &PDT, AssumptionCache &AC,
            const TargetLibraryInfo &TLI, const LoopInfo &LI)
-      : F(F), AA(AA), EI(DT, LI, EphValues), BatchAA(AA, &EI), MSSA(MSSA),
+      : F(F), AA(AA), EI(DT, &LI, &EphValues), BatchAA(AA, &EI), MSSA(MSSA),
         DT(DT), PDT(PDT), TLI(TLI), DL(F.getParent()->getDataLayout()), LI(LI) {
     // Collect blocks with throwing instructions not modeled in MemorySSA and
     // alloc-like objects.
@@ -949,7 +949,8 @@ struct DSEState {
 
     // Check whether the killing store overwrites the whole object, in which
     // case the size/offset of the dead store does not matter.
-    if (DeadUndObj == KillingUndObj && KillingLocSize.isPrecise()) {
+    if (DeadUndObj == KillingUndObj && KillingLocSize.isPrecise() &&
+        isIdentifiedObject(KillingUndObj)) {
       uint64_t KillingUndObjSize = getPointerSize(KillingUndObj, DL, TLI, &F);
       if (KillingUndObjSize != MemoryLocation::UnknownSize &&
           KillingUndObjSize == KillingLocSize.getValue())

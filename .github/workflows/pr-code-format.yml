@@ -17,7 +17,7 @@ jobs:
         uses: tj-actions/changed-files@v39
         with:
           separator: ","
-          fetch_depth: 10 # Fetches only the last 10 commits
+          fetch_depth: 100 # Fetches only the last 10 commits
 
       - name: "Listed files"
         run: |
@@ -27,7 +27,7 @@ jobs:
       - name: Install clang-format
         uses: aminya/setup-cpp@v1
         with:
-          clangformat: 16.0.6
+          clangformat: 17.0.1
 
       - name: Setup Python env
         uses: actions/setup-python@v4

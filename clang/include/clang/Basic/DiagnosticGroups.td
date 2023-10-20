@@ -53,6 +53,7 @@ def SingleBitBitFieldConstantConversion :
 def BitFieldConstantConversion : DiagGroup<"bitfield-constant-conversion",
                                            [SingleBitBitFieldConstantConversion]>;
 def BitFieldEnumConversion : DiagGroup<"bitfield-enum-conversion">;
+def BitFieldConversion : DiagGroup<"bitfield-conversion">;
 def BitFieldWidth : DiagGroup<"bitfield-width">;
 def CompoundTokenSplitByMacro : DiagGroup<"compound-token-split-by-macro">;
 def CompoundTokenSplitBySpace : DiagGroup<"compound-token-split-by-space">;
@@ -209,6 +210,7 @@ def DeprecatedWritableStr : DiagGroup<"deprecated-writable-strings",
                                       [CXX11CompatDeprecatedWritableStr]>;
 def DeprecatedPragma : DiagGroup<"deprecated-pragma">;
 def DeprecatedType : DiagGroup<"deprecated-type">;
+def DeprecatedIncludeGch : DiagGroup<"deprecated-include-gch">;
 // FIXME: Why is DeprecatedImplementations not in this group?
 def Deprecated : DiagGroup<"deprecated", [DeprecatedAnonEnumEnumConversion,
                                           DeprecatedArrayCompare,
@@ -232,6 +234,7 @@ def Deprecated : DiagGroup<"deprecated", [DeprecatedAnonEnumEnumConversion,
                                           DeprecatedVolatile,
                                           DeprecatedWritableStr,
                                           DeprecatedRedundantConstexprStaticDef,
+                                          DeprecatedIncludeGch
                                           ]>,
                  DiagCategory<"Deprecations">;
 
@@ -845,7 +848,8 @@ def OverridingMethodMismatch : DiagGroup<"overriding-method-mismatch">;
 def VariadicMacros : DiagGroup<"variadic-macros">;
 def VectorConversion : DiagGroup<"vector-conversion">;      // clang specific
 def VexingParse : DiagGroup<"vexing-parse">;
-def VLAExtension : DiagGroup<"vla-extension">;
+def VLAUseStaticAssert : DiagGroup<"vla-extension-static-assert">;
+def VLAExtension : DiagGroup<"vla-extension", [VLAUseStaticAssert]>;
 def VLA : DiagGroup<"vla", [VLAExtension]>;
 def VolatileRegisterVar : DiagGroup<"volatile-register-var">;
 def Visibility : DiagGroup<"visibility">;
@@ -931,6 +935,7 @@ def Conversion : DiagGroup<"conversion",
                             ConstantConversion,
                             EnumConversion,
                             BitFieldEnumConversion,
+                            BitFieldConversion,
                             FloatConversion,
                             Shorten64To32,
                             IntConversion,
@@ -961,10 +966,16 @@ def FormatNonStandard : DiagGroup<"format-non-iso">;
 def FormatY2K : DiagGroup<"format-y2k">;
 def FormatPedantic : DiagGroup<"format-pedantic">;
 def FormatTypeConfusion : DiagGroup<"format-type-confusion">;
+
+def FormatOverflowNonKprintf: DiagGroup<"format-overflow-non-kprintf">;
+def FormatOverflow: DiagGroup<"format-overflow", [FormatOverflowNonKprintf]>;
+def FormatTruncationNonKprintf: DiagGroup<"format-truncation-non-kprintf">;
+def FormatTruncation: DiagGroup<"format-truncation", [FormatTruncationNonKprintf]>;
+
 def Format : DiagGroup<"format",
                        [FormatExtraArgs, FormatZeroLength, NonNull,
                         FormatSecurity, FormatY2K, FormatInvalidSpecifier,
-                        FormatInsufficientArgs]>,
+                        FormatInsufficientArgs, FormatOverflow, FormatTruncation]>,
              DiagCategory<"Format String Issue">;
 def FormatNonLiteral : DiagGroup<"format-nonliteral">;
 def Format2 : DiagGroup<"format=2",
@@ -1056,7 +1067,9 @@ def Most : DiagGroup<"most", [
 def ThreadSafetyAttributes : DiagGroup<"thread-safety-attributes">;
 def ThreadSafetyAnalysis   : DiagGroup<"thread-safety-analysis">;
 def ThreadSafetyPrecise    : DiagGroup<"thread-safety-precise">;
-def ThreadSafetyReference  : DiagGroup<"thread-safety-reference">;
+def ThreadSafetyReferenceReturn  : DiagGroup<"thread-safety-reference-return">;
+def ThreadSafetyReference  : DiagGroup<"thread-safety-reference",
+                                             [ThreadSafetyReferenceReturn]>;
 def ThreadSafetyNegative   : DiagGroup<"thread-safety-negative">;
 def ThreadSafety : DiagGroup<"thread-safety",
                              [ThreadSafetyAttributes,
@@ -1073,7 +1086,7 @@ def Consumed       : DiagGroup<"consumed">;
 // warning should be active _only_ when -Wall is passed in, mark it as
 // DefaultIgnore in addition to putting it here.
 def All : DiagGroup<"all", [Most, Parentheses, Switch, SwitchBool,
-                            MisleadingIndentation, PackedNonPod]>;
+                            MisleadingIndentation, PackedNonPod, VLAExtension]>;
 
 // Warnings that should be in clang-cl /w4.
 def : DiagGroup<"CL4", [All, Extra]>;
@@ -1400,7 +1413,7 @@ def CrossTU : DiagGroup<"ctu">;
 
 def CTADMaybeUnsupported : DiagGroup<"ctad-maybe-unsupported">;
 
-def FortifySource : DiagGroup<"fortify-source">;
+def FortifySource : DiagGroup<"fortify-source", [FormatOverflow, FormatTruncation]>;
 
 def MaxTokens : DiagGroup<"max-tokens"> {
   code Documentation = [{

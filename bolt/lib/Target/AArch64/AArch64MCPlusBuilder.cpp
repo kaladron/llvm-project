@@ -128,9 +128,7 @@ static InstructionListType createIncMemory(MCPhysReg RegTo, MCPhysReg RegTmp) {
 }
 class AArch64MCPlusBuilder : public MCPlusBuilder {
 public:
-  AArch64MCPlusBuilder(const MCInstrAnalysis *Analysis, const MCInstrInfo *Info,
-                       const MCRegisterInfo *RegInfo)
-      : MCPlusBuilder(Analysis, Info, RegInfo) {}
+  using MCPlusBuilder::MCPlusBuilder;
 
   bool equals(const MCTargetExpr &A, const MCTargetExpr &B,
               CompFuncTy Comp) const override {
@@ -469,6 +467,22 @@ public:
     MCInst::iterator OI = getMemOperandDisp(Inst);
     *OI = Operand;
     return true;
+  }
+
+  void getCalleeSavedRegs(BitVector &Regs) const override {
+    Regs |= getAliases(AArch64::X18);
+    Regs |= getAliases(AArch64::X19);
+    Regs |= getAliases(AArch64::X20);
+    Regs |= getAliases(AArch64::X21);
+    Regs |= getAliases(AArch64::X22);
+    Regs |= getAliases(AArch64::X23);
+    Regs |= getAliases(AArch64::X24);
+    Regs |= getAliases(AArch64::X25);
+    Regs |= getAliases(AArch64::X26);
+    Regs |= getAliases(AArch64::X27);
+    Regs |= getAliases(AArch64::X28);
+    Regs |= getAliases(AArch64::LR);
+    Regs |= getAliases(AArch64::FP);
   }
 
   const MCExpr *getTargetExprFor(MCInst &Inst, const MCExpr *Expr,
@@ -1638,8 +1652,9 @@ namespace bolt {
 
 MCPlusBuilder *createAArch64MCPlusBuilder(const MCInstrAnalysis *Analysis,
                                           const MCInstrInfo *Info,
-                                          const MCRegisterInfo *RegInfo) {
-  return new AArch64MCPlusBuilder(Analysis, Info, RegInfo);
+                                          const MCRegisterInfo *RegInfo,
+                                          const MCSubtargetInfo *STI) {
+  return new AArch64MCPlusBuilder(Analysis, Info, RegInfo, STI);
 }
 
 } // namespace bolt

@@ -1169,11 +1169,16 @@ bool isGFX940(const MCSubtargetInfo &STI);
 bool hasArchitectedFlatScratch(const MCSubtargetInfo &STI);
 bool hasMAIInsts(const MCSubtargetInfo &STI);
 bool hasVOPD(const MCSubtargetInfo &STI);
+bool hasDPPSrc1SGPR(const MCSubtargetInfo &STI);
 int getTotalNumVGPRs(bool has90AInsts, int32_t ArgNumAGPR, int32_t ArgNumVGPR);
 unsigned hasKernargPreload(const MCSubtargetInfo &STI);
 
 /// Is Reg - scalar register
 bool isSGPR(unsigned Reg, const MCRegisterInfo* TRI);
+
+/// \returns if \p Reg occupies the high 16-bits of a 32-bit register.
+/// The bit indicating isHi is the LSB of the encoding.
+bool isHi(unsigned Reg, const MCRegisterInfo &MRI);
 
 /// If \p Reg is a pseudo reg, return the correct hardware register given
 /// \p STI otherwise return \p Reg.
@@ -1284,6 +1289,9 @@ bool isInlinableIntLiteralV216(int32_t Literal);
 
 LLVM_READNONE
 bool isFoldableLiteralV216(int32_t Literal, bool HasInv2Pi);
+
+LLVM_READNONE
+bool isValid32BitLiteral(uint64_t Val, bool IsFP64);
 
 bool isArgPassedInSGPR(const Argument *Arg);
 
