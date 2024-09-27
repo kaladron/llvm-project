@@ -523,6 +523,7 @@ typedef long __sanitizer_clock_t;
 
 #if SANITIZER_LINUX
 typedef int __sanitizer_clockid_t;
+typedef unsigned long long __sanitizer_eventfd_t;
 #endif
 
 #if SANITIZER_LINUX
@@ -1049,7 +1050,8 @@ extern unsigned struct_serial_struct_sz;
 extern unsigned struct_sockaddr_ax25_sz;
 extern unsigned struct_unimapdesc_sz;
 extern unsigned struct_unimapinit_sz;
-#endif  // SANITIZER_LINUX && !SANITIZER_ANDROID
+extern unsigned struct_sock_fprog_sz;
+#  endif  // SANITIZER_LINUX && !SANITIZER_ANDROID
 
 extern const unsigned long __sanitizer_bufsiz;
 

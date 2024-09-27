@@ -94,9 +94,50 @@ struct DimOfReifyRankedShapedTypeOpInterface : public OpRewritePattern<OpTy> {
                                  reifiedResultShapes)))
       return failure();
     unsigned resultNumber = dimValue.getResultNumber();
+    // Do not apply pattern if the IR is invalid (dim out of bounds).
+    if ((size_t)(*dimIndex) >= reifiedResultShapes[resultNumber].size())
+      return rewriter.notifyMatchFailure(dimOp, "dimension is out of bounds");
     Value replacement = getValueOrCreateConstantIndexOp(
         rewriter, dimOp.getLoc(), reifiedResultShapes[resultNumber][*dimIndex]);
     rewriter.replaceOp(dimOp, replacement);
+    return success();
+  }
+};
+
+/// Fold dim ops of iter_args to dim ops of their respective init args. E.g.:
+///
+/// ```
+/// %0 = ... : tensor<?x?xf32>
+/// scf.forall ... shared_outs(%arg0 = %0) -> (tensor<?x?xf32>) {
+///   %1 = tensor.dim %arg0, %c0 : tensor<?x?xf32>
+///   ...
+/// }
+/// ```
+///
+/// is folded to:
+///
+/// ```
+/// %0 = ... : tensor<?x?xf32>
+/// scf.forall ... shared_outs(%arg0 = %0) -> (tensor<?x?xf32>) {
+///   %1 = tensor.dim %0, %c0 : tensor<?x?xf32>
+///   ...
+/// }
+/// ```
+struct IterArgsToInitArgs : public OpRewritePattern<tensor::DimOp> {
+  using OpRewritePattern<tensor::DimOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(tensor::DimOp dimOp,
+                                PatternRewriter &rewriter) const final {
+    auto blockArg = dyn_cast<BlockArgument>(dimOp.getSource());
+    if (!blockArg)
+      return failure();
+    auto loopLikeOp =
+        dyn_cast<LoopLikeOpInterface>(blockArg.getParentBlock()->getParentOp());
+    if (!loopLikeOp)
+      return failure();
+    Value initArg = loopLikeOp.getTiedLoopInit(blockArg)->get();
+    rewriter.modifyOpInPlace(
+        dimOp, [&]() { dimOp.getSourceMutable().assign(initArg); });
     return success();
   }
 };
@@ -124,8 +165,8 @@ struct ResolveShapedTypeResultDimsPass final
 void memref::populateResolveRankedShapedTypeResultDimsPatterns(
     RewritePatternSet &patterns) {
   patterns.add<DimOfReifyRankedShapedTypeOpInterface<memref::DimOp>,
-               DimOfReifyRankedShapedTypeOpInterface<tensor::DimOp>>(
-      patterns.getContext());
+               DimOfReifyRankedShapedTypeOpInterface<tensor::DimOp>,
+               IterArgsToInitArgs>(patterns.getContext());
 }
 
 void memref::populateResolveShapedTypeResultDimsPatterns(

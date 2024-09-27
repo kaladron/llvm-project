@@ -29,8 +29,6 @@ using namespace llvm::ELF;
 using namespace lld;
 using namespace lld::elf;
 
-SymbolTable elf::symtab;
-
 void SymbolTable::wrap(Symbol *sym, Symbol *real, Symbol *wrap) {
   // Redirect __real_foo to the original foo and foo to the original __wrap_foo.
   int &idx1 = symMap[CachedHashStringRef(sym->getName())];
@@ -92,7 +90,6 @@ Symbol *SymbolTable::insert(StringRef name) {
   memset(sym, 0, sizeof(Symbol));
   sym->setName(name);
   sym->partition = 1;
-  sym->verdefIndex = -1;
   sym->versionId = VER_NDX_GLOBAL;
   if (pos != StringRef::npos)
     sym->hasVersionSuffix = true;
@@ -199,7 +196,7 @@ SmallVector<Symbol *, 0> SymbolTable::findAllByVersion(SymbolVersion ver,
 
 void SymbolTable::handleDynamicList() {
   SmallVector<Symbol *, 0> syms;
-  for (SymbolVersion &ver : config->dynamicList) {
+  for (SymbolVersion &ver : ctx.arg.dynamicList) {
     if (ver.hasWildcard)
       syms = findAllByVersion(ver, /*includeNonDefault=*/true);
     else
@@ -223,7 +220,7 @@ bool SymbolTable::assignExactVersion(SymbolVersion ver, uint16_t versionId,
       return "VER_NDX_LOCAL";
     if (ver == VER_NDX_GLOBAL)
       return "VER_NDX_GLOBAL";
-    return ("version '" + config->versionDefinitions[ver].name + "'").str();
+    return ("version '" + ctx.arg.versionDefinitions[ver].name + "'").str();
   };
 
   // Assign the version.
@@ -235,10 +232,9 @@ bool SymbolTable::assignExactVersion(SymbolVersion ver, uint16_t versionId,
         sym->getName().contains('@'))
       continue;
 
-    // If the version has not been assigned, verdefIndex is -1. Use an arbitrary
-    // number (0) to indicate the version has been assigned.
-    if (sym->verdefIndex == uint16_t(-1)) {
-      sym->verdefIndex = 0;
+    // If the version has not been assigned, assign versionId to the symbol.
+    if (!sym->versionScriptAssigned) {
+      sym->versionScriptAssigned = true;
       sym->versionId = versionId;
     }
     if (sym->versionId == versionId)
@@ -256,8 +252,8 @@ void SymbolTable::assignWildcardVersion(SymbolVersion ver, uint16_t versionId,
   // so we set a version to a symbol only if no version has been assigned
   // to the symbol. This behavior is compatible with GNU.
   for (Symbol *sym : findAllByVersion(ver, includeNonDefault))
-    if (sym->verdefIndex == uint16_t(-1)) {
-      sym->verdefIndex = 0;
+    if (!sym->versionScriptAssigned) {
+      sym->versionScriptAssigned = true;
       sym->versionId = versionId;
     }
 }
@@ -271,7 +267,7 @@ void SymbolTable::scanVersionScript() {
   SmallString<128> buf;
   // First, we assign versions to exact matching symbols,
   // i.e. version definitions not containing any glob meta-characters.
-  for (VersionDefinition &v : config->versionDefinitions) {
+  for (VersionDefinition &v : ctx.arg.versionDefinitions) {
     auto assignExact = [&](SymbolVersion pat, uint16_t id, StringRef ver) {
       bool found =
           assignExactVersion(pat, id, ver, /*includeNonDefault=*/false);
@@ -279,7 +275,7 @@ void SymbolTable::scanVersionScript() {
       found |= assignExactVersion({(pat.name + "@" + v.name).toStringRef(buf),
                                    pat.isExternCpp, /*hasWildCard=*/false},
                                   id, ver, /*includeNonDefault=*/true);
-      if (!found && !config->undefinedVersion)
+      if (!found && !ctx.arg.undefinedVersion)
         errorOrWarn("version script assignment of '" + ver + "' to symbol '" +
                     pat.name + "' failed: symbol not defined");
     };
@@ -302,7 +298,7 @@ void SymbolTable::scanVersionScript() {
                           id,
                           /*includeNonDefault=*/true);
   };
-  for (VersionDefinition &v : llvm::reverse(config->versionDefinitions)) {
+  for (VersionDefinition &v : llvm::reverse(ctx.arg.versionDefinitions)) {
     for (SymbolVersion &pat : v.nonLocalPatterns)
       if (pat.hasWildcard && pat.name != "*")
         assignWildcard(pat, v.id, v.name);
@@ -313,7 +309,7 @@ void SymbolTable::scanVersionScript() {
 
   // Then, assign versions to "*". In GNU linkers they have lower priority than
   // other wildcards.
-  for (VersionDefinition &v : llvm::reverse(config->versionDefinitions)) {
+  for (VersionDefinition &v : llvm::reverse(ctx.arg.versionDefinitions)) {
     for (SymbolVersion &pat : v.nonLocalPatterns)
       if (pat.hasWildcard && pat.name == "*")
         assignWildcard(pat, v.id, v.name);
@@ -334,4 +330,8 @@ void SymbolTable::scanVersionScript() {
   // VER_NDX_LOCAL or not. Compute symbol versions before handling
   // --dynamic-list.
   handleDynamicList();
+}
+
+Symbol *SymbolTable::addUnusedUndefined(StringRef name, uint8_t binding) {
+  return addSymbol(Undefined{ctx.internalFile, name, binding, STV_DEFAULT, 0});
 }

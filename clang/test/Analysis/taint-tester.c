@@ -1,4 +1,4 @@
-// RUN: %clang_analyze_cc1 -Wno-int-to-pointer-cast -analyzer-checker=alpha.security.taint,debug.TaintTest %s -verify
+// RUN: %clang_analyze_cc1 -Wno-int-to-pointer-cast -analyzer-checker=optin.taint,debug.TaintTest %s -verify
 
 #include "Inputs/system-header-simulator.h"
 
@@ -154,7 +154,6 @@ void getwTest(void) {
   int i = getw(stdin); // expected-warning + {{tainted}}
 }
 
-typedef long ssize_t;
 ssize_t getline(char ** __restrict, size_t * __restrict, FILE * __restrict);
 int  printf(const char * __restrict, ...);
 void free(void *ptr);

@@ -63,7 +63,7 @@ struct ExtraRematTest : public testing::Test {
 
     // A failure here means that the test itself is buggy.
     if (!M)
-      report_fatal_error(os.str().c_str());
+      report_fatal_error(errMsg.c_str());
   }
 };
 
@@ -126,7 +126,7 @@ bool ExtraMaterializable(Instruction &I) {
 
   if (auto *CI = dyn_cast<CallInst>(&I)) {
     auto *CalledFunc = CI->getCalledFunction();
-    if (CalledFunc && CalledFunc->getName().startswith("should.remat"))
+    if (CalledFunc && CalledFunc->getName().starts_with("should.remat"))
       return true;
   }
 

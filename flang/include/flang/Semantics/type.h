@@ -259,8 +259,11 @@ public:
   DerivedTypeSpec(DerivedTypeSpec &&);
 
   const SourceName &name() const { return name_; }
+  const Symbol &originalTypeSymbol() const { return originalTypeSymbol_; }
   const Symbol &typeSymbol() const { return typeSymbol_; }
   const Scope *scope() const { return scope_; }
+  // Return scope_ if it is set, or the typeSymbol_ scope otherwise.
+  const Scope *GetScope() const;
   void set_scope(const Scope &);
   void ReplaceScope(const Scope &);
   const RawParameters &rawParameters() const { return rawParameters_; }
@@ -304,7 +307,7 @@ public:
   }
   // For TYPE IS & CLASS IS: kind type parameters must be
   // explicit and equal, len type parameters are ignored.
-  bool Match(const DerivedTypeSpec &) const;
+  bool MatchesOrExtends(const DerivedTypeSpec &) const;
   std::string AsFortran() const;
   std::string VectorTypeAsFortran() const;
 
@@ -317,7 +320,8 @@ public:
 
 private:
   SourceName name_;
-  const Symbol &typeSymbol_;
+  const Symbol &originalTypeSymbol_;
+  const Symbol &typeSymbol_; // == originalTypeSymbol_.GetUltimate()
   const Scope *scope_{nullptr}; // same as typeSymbol_.scope() unless PDT
   bool cooked_{false};
   bool evaluated_{false};
@@ -326,8 +330,9 @@ private:
   ParameterMapType parameters_;
   Category category_{Category::DerivedType};
   bool RawEquals(const DerivedTypeSpec &that) const {
-    return &typeSymbol_ == &that.typeSymbol_ && cooked_ == that.cooked_ &&
-        rawParameters_ == that.rawParameters_;
+    return &typeSymbol_ == &that.typeSymbol_ &&
+        &originalTypeSymbol_ == &that.originalTypeSymbol_ &&
+        cooked_ == that.cooked_ && rawParameters_ == that.rawParameters_;
   }
   friend llvm::raw_ostream &operator<<(
       llvm::raw_ostream &, const DerivedTypeSpec &);
@@ -456,9 +461,6 @@ inline DerivedTypeSpec *DeclTypeSpec::AsDerived() {
 inline const DerivedTypeSpec *DeclTypeSpec::AsDerived() const {
   return const_cast<DeclTypeSpec *>(this)->AsDerived();
 }
-
-bool IsInteroperableIntrinsicType(
-    const DeclTypeSpec &, const common::LanguageFeatureControl &);
 
 } // namespace Fortran::semantics
 #endif // FORTRAN_SEMANTICS_TYPE_H_

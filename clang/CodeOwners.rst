@@ -60,7 +60,7 @@ Analysis & CFG
 Experimental new constant interpreter
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 | Timm Bäder
-| tbaeder@redhat.com (email), tbaeder (Phabricator), tbaederr (GitHub)
+| tbaeder\@redhat.com (email), tbaeder (Phabricator), tbaederr (GitHub), tbaeder (Discourse), tbaeder (Discord)
 
 
 Modules & serialization
@@ -75,7 +75,7 @@ Modules & serialization
 Templates
 ~~~~~~~~~
 | Erich Keane
-| erich.keane\@intel.com (email), ErichKeane (Phabricator), erichkeane (GitHub)
+| ekeane\@nvidia.com (email), ErichKeane (Phabricator), erichkeane (GitHub)
 
 
 Debug information
@@ -120,7 +120,7 @@ OpenBSD driver
 Driver parts not covered by someone else
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 | Fangrui Song
-| maskray\@google.com (email), MaskRay (Phabricator), MaskRay (GitHub)
+| i\@maskray.me (email), MaskRay (Phabricator), MaskRay (GitHub)
 
 
 Tools
@@ -174,7 +174,7 @@ compiler.
 Attributes
 ~~~~~~~~~~
 | Erich Keane
-| erich.keane\@intel.com (email), ErichKeane (Phabricator), erichkeane (GitHub)
+| ekeane\@nvidia.com (email), ErichKeane (Phabricator), erichkeane (GitHub)
 
 
 Inline assembly

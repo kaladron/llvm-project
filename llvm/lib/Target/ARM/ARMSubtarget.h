@@ -32,6 +32,7 @@
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Target/TargetOptions.h"
 #include "llvm/TargetParser/Triple.h"
+#include <bitset>
 #include <memory>
 #include <string>
 
@@ -48,43 +49,9 @@ class ARMSubtarget : public ARMGenSubtargetInfo {
 protected:
   enum ARMProcFamilyEnum {
     Others,
-
-    CortexA12,
-    CortexA15,
-    CortexA17,
-    CortexA32,
-    CortexA35,
-    CortexA5,
-    CortexA53,
-    CortexA55,
-    CortexA57,
-    CortexA7,
-    CortexA72,
-    CortexA73,
-    CortexA75,
-    CortexA76,
-    CortexA77,
-    CortexA78,
-    CortexA78C,
-    CortexA710,
-    CortexA8,
-    CortexA9,
-    CortexM3,
-    CortexM7,
-    CortexR4,
-    CortexR4F,
-    CortexR5,
-    CortexR52,
-    CortexR7,
-    CortexX1,
-    CortexX1C,
-    Exynos,
-    Krait,
-    Kryo,
-    NeoverseN1,
-    NeoverseN2,
-    NeoverseV1,
-    Swift
+#define ARM_PROCESSOR_FAMILY(ENUM) ENUM,
+#include "llvm/TargetParser/ARMTargetParserDef.inc"
+#undef ARM_PROCESSOR_FAMILY
   };
   enum ARMProcClassEnum {
     None,
@@ -94,42 +61,9 @@ protected:
     RClass
   };
   enum ARMArchEnum {
-    ARMv4,
-    ARMv4t,
-    ARMv5,
-    ARMv5t,
-    ARMv5te,
-    ARMv5tej,
-    ARMv6,
-    ARMv6k,
-    ARMv6kz,
-    ARMv6m,
-    ARMv6sm,
-    ARMv6t2,
-    ARMv7a,
-    ARMv7em,
-    ARMv7m,
-    ARMv7r,
-    ARMv7ve,
-    ARMv81a,
-    ARMv82a,
-    ARMv83a,
-    ARMv84a,
-    ARMv85a,
-    ARMv86a,
-    ARMv87a,
-    ARMv88a,
-    ARMv89a,
-    ARMv8a,
-    ARMv8mBaseline,
-    ARMv8mMainline,
-    ARMv8r,
-    ARMv81mMainline,
-    ARMv9a,
-    ARMv91a,
-    ARMv92a,
-    ARMv93a,
-    ARMv94a,
+#define ARM_ARCHITECTURE(ENUM) ENUM,
+#include "llvm/TargetParser/ARMTargetParserDef.inc"
+#undef ARM_ARCHITECTURE
   };
 
 public:
@@ -199,7 +133,7 @@ protected:
   int PreISelOperandLatencyAdjustment = 2;
 
   /// What alignment is preferred for loop bodies and functions, in log2(bytes).
-  unsigned PrefLoopLogAlignment = 0;
+  unsigned PreferBranchLogAlignment = 0;
 
   /// The cost factor for MVE instructions, representing the multiple beats an
   // instruction can take. The default is 2, (set in initSubtargetFeatures so
@@ -542,7 +476,9 @@ public:
     return isROPI() || !isTargetELF();
   }
 
-  unsigned getPrefLoopLogAlignment() const { return PrefLoopLogAlignment; }
+  unsigned getPreferBranchLogAlignment() const {
+    return PreferBranchLogAlignment;
+  }
 
   unsigned
   getMVEVectorCostFactor(TargetTransformInfo::TargetCostKind CostKind) const {

@@ -1,11 +1,13 @@
 // REQUIRES: x86-registered-target
 // REQUIRES: amdgpu-registered-target
 // REQUIRES: system-linux
+// UNSUPPORTED: target={{.*}}-zos{{.*}}
 // XFAIL: target={{.*}}hexagon{{.*}}
 // XFAIL: target={{.*}}-scei{{.*}}
 // XFAIL: target={{.*}}-sie{{.*}}
 
-// RUN: not %clang -### --hipstdpar -nogpulib -nogpuinc --compile %s 2>&1 | \
+// RUN: not %clang -### --hipstdpar --hipstdpar-path=/does/not/exist -nogpulib \
+// RUN:   -nogpuinc --compile %s 2>&1 | \
 // RUN:   FileCheck --check-prefix=HIPSTDPAR-MISSING-LIB %s
 // RUN: %clang -### --hipstdpar --hipstdpar-path=%S/Inputs/hipstdpar \
 // RUN:   --hipstdpar-thrust-path=%S/Inputs/hipstdpar/thrust \

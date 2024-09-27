@@ -86,7 +86,6 @@ static std::string PrintValue(const Value *value, bool truncate = false) {
   if (value) {
     raw_string_ostream rso(s);
     value->print(rso);
-    rso.flush();
     if (truncate)
       s.resize(s.length() - 1);
   }
@@ -97,7 +96,6 @@ static std::string PrintType(const llvm::Type *type, bool truncate = false) {
   std::string s;
   raw_string_ostream rso(s);
   type->print(rso);
-  rso.flush();
   if (truncate)
     s.resize(s.length() - 1);
   return s;
@@ -154,9 +152,10 @@ clang::NamedDecl *IRForTarget::DeclForGlobal(GlobalValue *global_val) {
 /// Returns true iff the mangled symbol is for a static guard variable.
 static bool isGuardVariableSymbol(llvm::StringRef mangled_symbol,
                                   bool check_ms_abi = true) {
-  bool result = mangled_symbol.startswith("_ZGV"); // Itanium ABI guard variable
+  bool result =
+      mangled_symbol.starts_with("_ZGV"); // Itanium ABI guard variable
   if (check_ms_abi)
-    result |= mangled_symbol.endswith("@4IA"); // Microsoft ABI
+    result |= mangled_symbol.ends_with("@4IA"); // Microsoft ABI
   return result;
 }
 
@@ -243,7 +242,6 @@ bool IRForTarget::CreateResultVariable(llvm::Function &llvm_function) {
     std::string decl_desc_str;
     raw_string_ostream decl_desc_stream(decl_desc_str);
     result_decl->print(decl_desc_stream);
-    decl_desc_stream.flush();
 
     LLDB_LOG(log, "Found result decl: \"{0}\"", decl_desc_str);
   }
@@ -404,7 +402,7 @@ bool IRForTarget::RewriteObjCConstString(llvm::GlobalVariable *ns_str,
 
   Type *ns_str_ty = ns_str->getType();
 
-  Type *i8_ptr_ty = Type::getInt8PtrTy(m_module->getContext());
+  Type *i8_ptr_ty = PointerType::getUnqual(m_module->getContext());
   Type *i32_ty = Type::getInt32Ty(m_module->getContext());
   Type *i8_ty = Type::getInt8Ty(m_module->getContext());
 
@@ -720,8 +718,9 @@ bool IRForTarget::RewriteObjCConstStrings() {
 static bool IsObjCSelectorRef(Value *value) {
   GlobalVariable *global_variable = dyn_cast<GlobalVariable>(value);
 
-  return !(!global_variable || !global_variable->hasName() ||
-           !global_variable->getName().startswith("OBJC_SELECTOR_REFERENCES_"));
+  return !(
+      !global_variable || !global_variable->hasName() ||
+      !global_variable->getName().starts_with("OBJC_SELECTOR_REFERENCES_"));
 }
 
 // This function does not report errors; its callers are responsible.
@@ -801,11 +800,11 @@ bool IRForTarget::RewriteObjCSelector(Instruction *selector_load) {
     // is uint8_t*
     // Type *sel_type = StructType::get(m_module->getContext());
     // Type *sel_ptr_type = PointerType::getUnqual(sel_type);
-    Type *sel_ptr_type = Type::getInt8PtrTy(m_module->getContext());
+    Type *sel_ptr_type = PointerType::getUnqual(m_module->getContext());
 
     Type *type_array[1];
 
-    type_array[0] = llvm::Type::getInt8PtrTy(m_module->getContext());
+    type_array[0] = llvm::PointerType::getUnqual(m_module->getContext());
 
     ArrayRef<Type *> srN_arg_types(type_array, 1);
 
@@ -940,7 +939,7 @@ bool IRForTarget::RewritePersistentAllocs(llvm::BasicBlock &basic_block) {
     if (AllocaInst *alloc = dyn_cast<AllocaInst>(&inst)) {
       llvm::StringRef alloc_name = alloc->getName();
 
-      if (alloc_name.startswith("$") && !alloc_name.startswith("$__lldb")) {
+      if (alloc_name.starts_with("$") && !alloc_name.starts_with("$__lldb")) {
         if (alloc_name.find_first_of("0123456789") == 1) {
           LLDB_LOG(log, "Rejecting a numeric persistent variable.");
 
@@ -1017,7 +1016,7 @@ bool IRForTarget::MaybeHandleVariable(Value *llvm_value_ptr) {
 
     const Type *value_type = nullptr;
 
-    if (name.startswith("$")) {
+    if (name.starts_with("$")) {
       // The $__lldb_expr_result name indicates the return value has allocated
       // as a static variable.  Per the comment at
       // ASTResultSynthesizer::SynthesizeBodyResult, accesses to this static
@@ -1223,7 +1222,7 @@ bool IRForTarget::ResolveExternals(Function &llvm_function) {
     LLDB_LOG(log, "Examining {0}, DeclForGlobalValue returns {1}", global_name,
              static_cast<void *>(DeclForGlobal(&global_var)));
 
-    if (global_name.startswith("OBJC_IVAR")) {
+    if (global_name.starts_with("OBJC_IVAR")) {
       if (!HandleSymbol(&global_var)) {
         m_error_stream.Format("Error [IRForTarget]: Couldn't find Objective-C "
                               "indirect ivar symbol {0}\n",
@@ -1447,7 +1446,7 @@ bool IRForTarget::ReplaceVariables(Function &llvm_function) {
 
   Argument *argument = &*iter;
 
-  if (argument->getName().equals("this")) {
+  if (argument->getName() == "this") {
     ++iter;
 
     if (iter == llvm_function.arg_end()) {
@@ -1459,7 +1458,7 @@ bool IRForTarget::ReplaceVariables(Function &llvm_function) {
     }
 
     argument = &*iter;
-  } else if (argument->getName().equals("self")) {
+  } else if (argument->getName() == "self") {
     ++iter;
 
     if (iter == llvm_function.arg_end()) {
@@ -1470,7 +1469,7 @@ bool IRForTarget::ReplaceVariables(Function &llvm_function) {
       return false;
     }
 
-    if (!iter->getName().equals("_cmd")) {
+    if (iter->getName() != "_cmd") {
       m_error_stream.Format("Internal error [IRForTarget]: Wrapper takes '{0}' "
                             "after 'self' argument (should take '_cmd')",
                             iter->getName());
@@ -1491,7 +1490,7 @@ bool IRForTarget::ReplaceVariables(Function &llvm_function) {
     argument = &*iter;
   }
 
-  if (!argument->getName().equals("$__lldb_arg")) {
+  if (argument->getName() != "$__lldb_arg") {
     m_error_stream.Format("Internal error [IRForTarget]: Wrapper takes an "
                           "argument named '{0}' instead of the struct pointer",
                           argument->getName());
@@ -1604,7 +1603,7 @@ bool IRForTarget::runOnModule(Module &llvm_module) {
   lldb_private::Log *log(GetLog(LLDBLog::Expressions));
 
   m_module = &llvm_module;
-  m_target_data = std::make_unique<DataLayout>(m_module);
+  m_target_data = &m_module->getDataLayout();
   m_intptr_ty = llvm::Type::getIntNTy(m_module->getContext(),
                                       m_target_data->getPointerSizeInBits());
 
@@ -1613,8 +1612,6 @@ bool IRForTarget::runOnModule(Module &llvm_module) {
     raw_string_ostream oss(s);
 
     m_module->print(oss, nullptr);
-
-    oss.flush();
 
     LLDB_LOG(log, "Module as passed in to IRForTarget: \n\"{0}\"", s);
   }
@@ -1641,14 +1638,6 @@ bool IRForTarget::runOnModule(Module &llvm_module) {
     }
   }
 
-  llvm::Type *int8_ty = Type::getInt8Ty(m_module->getContext());
-
-  m_reloc_placeholder = new llvm::GlobalVariable(
-      (*m_module), int8_ty, false /* IsConstant */,
-      GlobalVariable::InternalLinkage, Constant::getNullValue(int8_ty),
-      "reloc_placeholder", nullptr /* InsertBefore */,
-      GlobalVariable::NotThreadLocal /* ThreadLocal */, 0 /* AddressSpace */);
-
   ////////////////////////////////////////////////////////////
   // Replace $__lldb_expr_result with a persistent variable
   //
@@ -1668,8 +1657,6 @@ bool IRForTarget::runOnModule(Module &llvm_module) {
     raw_string_ostream oss(s);
 
     m_module->print(oss, nullptr);
-
-    oss.flush();
 
     LLDB_LOG(log, "Module after creating the result variable: \n\"{0}\"", s);
   }
@@ -1767,8 +1754,6 @@ bool IRForTarget::runOnModule(Module &llvm_module) {
     raw_string_ostream oss(s);
 
     m_module->print(oss, nullptr);
-
-    oss.flush();
 
     LLDB_LOG(log, "Module after preparing for execution: \n\"{0}\"", s);
   }

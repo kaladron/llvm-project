@@ -433,9 +433,9 @@ template <> struct ScalarTraits<FrameIndex> {
   static StringRef input(StringRef Scalar, void *Ctx, FrameIndex &FI) {
     FI.IsFixed = false;
     StringRef Num;
-    if (Scalar.startswith("%stack.")) {
+    if (Scalar.starts_with("%stack.")) {
       Num = Scalar.substr(7);
-    } else if (Scalar.startswith("%fixed-stack.")) {
+    } else if (Scalar.starts_with("%fixed-stack.")) {
       Num = Scalar.substr(13);
       FI.IsFixed = true;
     } else {
@@ -640,6 +640,7 @@ struct MachineFrameInfo {
   bool HasVAStart = false;
   bool HasMustTailInVarArgFunc = false;
   bool HasTailCall = false;
+  bool IsCalleeSavedInfoValid = false;
   unsigned LocalFrameSize = 0;
   StringValue SavePoint;
   StringValue RestorePoint;
@@ -663,7 +664,8 @@ struct MachineFrameInfo {
            HasMustTailInVarArgFunc == Other.HasMustTailInVarArgFunc &&
            HasTailCall == Other.HasTailCall &&
            LocalFrameSize == Other.LocalFrameSize &&
-           SavePoint == Other.SavePoint && RestorePoint == Other.RestorePoint;
+           SavePoint == Other.SavePoint && RestorePoint == Other.RestorePoint &&
+           IsCalleeSavedInfoValid == Other.IsCalleeSavedInfoValid;
   }
 };
 
@@ -691,6 +693,8 @@ template <> struct MappingTraits<MachineFrameInfo> {
     YamlIO.mapOptional("hasMustTailInVarArgFunc", MFI.HasMustTailInVarArgFunc,
                        false);
     YamlIO.mapOptional("hasTailCall", MFI.HasTailCall, false);
+    YamlIO.mapOptional("isCalleeSavedInfoValid", MFI.IsCalleeSavedInfoValid,
+                       false);
     YamlIO.mapOptional("localFrameSize", MFI.LocalFrameSize, (unsigned)0);
     YamlIO.mapOptional("savePoint", MFI.SavePoint,
                        StringValue()); // Don't print it out when it's empty.
@@ -725,6 +729,11 @@ struct MachineFunction {
   // Register information
   bool TracksRegLiveness = false;
   bool HasWinCFI = false;
+
+  // Computed properties that should be overridable
+  std::optional<bool> NoPHIs;
+  std::optional<bool> IsSSA;
+  std::optional<bool> NoVRegs;
 
   bool CallsEHReturn = false;
   bool CallsUnwindInit = false;
@@ -765,6 +774,12 @@ template <> struct MappingTraits<MachineFunction> {
     YamlIO.mapOptional("failedISel", MF.FailedISel, false);
     YamlIO.mapOptional("tracksRegLiveness", MF.TracksRegLiveness, false);
     YamlIO.mapOptional("hasWinCFI", MF.HasWinCFI, false);
+
+    // PHIs must be not be capitalized, since it will clash with the MIR opcode
+    // leading to false-positive FileCheck hits with CHECK-NOT
+    YamlIO.mapOptional("noPhis", MF.NoPHIs, std::optional<bool>());
+    YamlIO.mapOptional("isSSA", MF.IsSSA, std::optional<bool>());
+    YamlIO.mapOptional("noVRegs", MF.NoVRegs, std::optional<bool>());
 
     YamlIO.mapOptional("callsEHReturn", MF.CallsEHReturn, false);
     YamlIO.mapOptional("callsUnwindInit", MF.CallsUnwindInit, false);

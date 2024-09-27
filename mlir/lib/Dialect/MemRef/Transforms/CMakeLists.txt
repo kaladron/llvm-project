@@ -1,6 +1,6 @@
 add_mlir_dialect_library(MLIRMemRefTransforms
   AllocationOpInterfaceImpl.cpp
-  BufferizableOpInterfaceImpl.cpp
+  BufferViewFlowOpInterfaceImpl.cpp
   ComposeSubView.cpp
   ExpandOps.cpp
   ExpandRealloc.cpp
@@ -28,12 +28,14 @@ add_mlir_dialect_library(MLIRMemRefTransforms
   MLIRArithDialect
   MLIRArithTransforms
   MLIRBufferizationDialect
+  MLIRBufferizationTransforms
   MLIRDialectUtils
   MLIRFuncDialect
   MLIRGPUDialect
   MLIRInferTypeOpInterface
   MLIRLoopLikeInterface
   MLIRMemRefDialect
+  MLIRMemRefUtils
   MLIRNVGPUDialect
   MLIRPass
   MLIRTensorDialect
