@@ -1,0 +1,44 @@
+add_object_library(
+  ftw_impl
+  SRCS
+    ftw_impl.cpp
+  HDRS
+    ftw_impl.h
+  DEPENDS
+    libc.include.ftw
+    libc.include.sys_stat
+    libc.src.__support.CPP.string
+    libc.src.__support.CPP.string_view
+    libc.src.__support.File.dir
+    libc.src.__support.libc_errno
+    libc.src.fcntl.open
+    libc.src.sys.stat.lstat
+    libc.src.sys.stat.stat
+    libc.src.unistd.close
+)
+
+add_entrypoint_object(
+  ftw
+  SRCS
+    ftw.cpp
+  HDRS
+    ftw.h
+  DEPENDS
+    libc.include.ftw
+    libc.src.__support.CPP.string
+    libc.src.errno.errno
+    .ftw_impl
+)
+
+add_entrypoint_object(
+  nftw
+  SRCS
+    nftw.cpp
+  HDRS
+    nftw.h
+  DEPENDS
+    libc.include.ftw
+    libc.src.__support.CPP.string
+    libc.src.errno.errno
+    .ftw_impl
+)

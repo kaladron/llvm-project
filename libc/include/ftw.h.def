@@ -1,0 +1,47 @@
+//===-- C standard library header ftw.h -----------------------------------===//
+//
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+//
+//===----------------------------------------------------------------------===//
+
+#ifndef LLVM_LIBC_FTW_H
+#define LLVM_LIBC_FTW_H
+
+#include "__llvm-libc-common.h"
+
+// Values for the typeflag argument to the callback function.
+// These values match POSIX definitions.
+enum {
+  FTW_F = 0,   // Non-directory file.
+  FTW_D = 1,   // Directory.
+  FTW_DNR = 2, // Directory without read permission.
+  FTW_NS = 3,  // Unknown type; stat() failed.
+  FTW_SL = 4,  // Symbolic link.
+  FTW_DP = 5,  // Directory with subdirectories visited.
+  FTW_SLN = 6  // Symbolic link naming non-existing file.
+};
+
+// Flags for the flags argument to nftw().
+// These are bit flags that can be OR'd together.
+enum {
+  FTW_PHYS = 1,         // Physical walk, does not follow symbolic links.
+  FTW_MOUNT = 2,        // The walk does not cross a mount point.
+  FTW_CHDIR = 4,        // Change to each directory before processing.
+  FTW_DEPTH = 8,        // All subdirectories visited before the directory.
+  FTW_ACTIONRETVAL = 16 // Use FTW_* action return values (GNU extension).
+};
+
+// Return values from callback functions (when FTW_ACTIONRETVAL is set).
+// These are GNU extensions.
+enum {
+  FTW_CONTINUE = 0,     // Continue with next sibling.
+  FTW_STOP = 1,         // Return from ftw/nftw with FTW_STOP.
+  FTW_SKIP_SUBTREE = 2, // Don't walk through subtree (FTW_D only).
+  FTW_SKIP_SIBLINGS = 3 // Skip siblings, continue with parent.
+};
+
+%%public_api()
+
+#endif // LLVM_LIBC_FTW_H
