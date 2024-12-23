@@ -9,6 +9,9 @@ add_header(
     libc.include.llvm-libc-macros.annex_k_macros
 )
 add_header(ssize_t HDR ssize_t.h)
+add_header(struct_FTW HDR struct_FTW.h)
+add_header(__ftw_func_t HDR __ftw_func_t.h)
+add_header(__nftw_func_t HDR __nftw_func_t.h)
 add_header(__atfork_callback_t HDR __atfork_callback_t.h)
 add_header(__search_compare_t HDR __search_compare_t.h)
 add_header(__call_once_func_t HDR __call_once_func_t.h)

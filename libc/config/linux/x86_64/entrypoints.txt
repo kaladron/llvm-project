@@ -36,6 +36,10 @@ set(TARGET_LIBC_ENTRYPOINTS
     # poll.h entrypoints
     libc.src.poll.poll
 
+    # ftw.h entrypoints
+    libc.src.ftw.ftw
+    libc.src.ftw.nftw
+
     # sched.h entrypoints
     libc.src.sched.getcpu
     libc.src.sched.sched_get_priority_max
