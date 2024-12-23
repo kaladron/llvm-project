@@ -1,0 +1,43 @@
+//===-- C standard library header ftw.h -----------------------------------===//
+//
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+//
+//===----------------------------------------------------------------------===//
+
+#ifndef LLVM_LIBC_FTW_H
+#define LLVM_LIBC_FTW_H
+
+#include "__llvm-libc-common.h"
+
+/* macros needed */
+
+enum {
+  FTW_D,
+  FTW_DNR,
+  FTW_F,
+  FTW_DP,
+  FTW_SL,
+  FTW_NS,
+  FTW_SLN
+}; // typeflag
+
+enum {
+  FTW_ACTIONRETVAL,
+  FTW_CHDIR,
+  FTW_DEPTH,
+  FTW_MOUNT,
+  FTW_PHYS
+}; // flags
+
+enum {
+  FTW_CONTINUE,
+  FTW_SKIP_SIBLINGS,
+  FTW_SKIP_SUBTREE,
+  FTW_STOP
+}; /* fn return */
+
+%%public_api()
+
+#endif // LLVM_LIBC_FTW_H
