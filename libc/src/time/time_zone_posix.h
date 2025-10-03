@@ -206,6 +206,11 @@ public:
     
     // Get the original full spec string
     cpp::string_view get_original() const { return original; }
+
+    // Static parsing methods that operate on string_view references
+    // Parse integer value from string, returning nullopt if out of range
+    static cpp::optional<int> parse_int(cpp::string_view &str, int min,
+                                        int max);
   };
 
   bool UpdateStdAbbr();
@@ -216,7 +221,6 @@ public:
   bool UpdateDstEnd();
   bool SpecHasData();
 
-  cpp::optional<int> ParseInt(int min, int max);
   cpp::optional<cpp::string_view> ParseAbbr();
   cpp::optional<int32_t> ParseOffset(int min_hour, int max_hour,
                                      TZOffset multiplier);

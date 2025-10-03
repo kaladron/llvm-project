@@ -28,18 +28,20 @@ static constexpr int MAX_HOURS_IN_TRANSITION_TIMES = 167;
 // TOOD(rtenneti): Make ParseInt be a template and return int8_t,
 // unit16_t, etc? That way the static_casts below wouldn't be needed.
 //
-// Parses int value from the spec. It returns nullopt if the value
+// Parses int value from the string. It returns nullopt if the value
 // is less than min or greater than max.
-cpp::optional<int> PosixTimeZone::ParseInt(int min, int max) {
-  if (spec.empty())
+// Note: This is a static method that modifies the input string_view.
+cpp::optional<int> PosixTimeZone::Parser::parse_int(cpp::string_view &str,
+                                                    int min, int max) {
+  if (str.empty())
     return cpp::nullopt;
 
   char *pEnd;
   long long_value =
-      strtol(spec.data(), &pEnd, 10); // NOLINT(runtime/deprecated_fn)
+      strtol(str.data(), &pEnd, 10); // NOLINT(runtime/deprecated_fn)
 
   // Check for parsing errors
-  if (pEnd == spec.data())
+  if (pEnd == str.data())
     return cpp::nullopt;
 
   // Explicit cast to int with range check to avoid truncation warning
@@ -50,8 +52,8 @@ cpp::optional<int> PosixTimeZone::ParseInt(int min, int max) {
   int value = static_cast<int>(long_value);
 
   // Delete the number from the input string.
-  size_t len = static_cast<size_t>(pEnd - spec.data());
-  spec.remove_prefix(len);
+  size_t len = static_cast<size_t>(pEnd - str.data());
+  str.remove_prefix(len);
   return value;
 }
 
@@ -114,7 +116,7 @@ PosixTimeZone::ParseOffset(int min_hour, int max_hour,
   int seconds = 0;
 
   // Parse hours - hh
-  cpp::optional<int> result = ParseInt(min_hour, max_hour);
+  cpp::optional<int> result = Parser::parse_int(spec, min_hour, max_hour);
   if (!result)
     return cpp::nullopt;
   hours = result.value();
@@ -125,7 +127,7 @@ PosixTimeZone::ParseOffset(int min_hour, int max_hour,
     spec.remove_prefix(1);
 
     // Parse minutes (minimum is 0 and maximum is 59).
-    result = ParseInt(0, TimeConstants::MINUTES_PER_HOUR - 1);
+    result = Parser::parse_int(spec, 0, TimeConstants::MINUTES_PER_HOUR - 1);
     if (!result)
       return cpp::nullopt;
     minutes = result.value();
@@ -136,7 +138,7 @@ PosixTimeZone::ParseOffset(int min_hour, int max_hour,
       spec.remove_prefix(1);
 
       // Parse seconds (minimum is 0 and maximum is 59).
-      result = ParseInt(0, TimeConstants::SECONDS_PER_MIN - 1);
+      result = Parser::parse_int(spec, 0, TimeConstants::SECONDS_PER_MIN - 1);
       if (!result)
         return cpp::nullopt;
       seconds = result.value();
@@ -153,7 +155,8 @@ PosixTimeZone::ParseOffset(int min_hour, int max_hour,
 // Mm.w.d
 cpp::optional<PosixTransition> PosixTimeZone::ParseMonthWeekWeekday() {
   // Parse month (minimum is 1 and maximum is 12).
-  cpp::optional<int> result = ParseInt(1, TimeConstants::MONTHS_PER_YEAR);
+  cpp::optional<int> result =
+      Parser::parse_int(spec, 1, TimeConstants::MONTHS_PER_YEAR);
   if (!result)
     return cpp::nullopt;
   int month = result.value();
@@ -168,7 +171,7 @@ cpp::optional<PosixTransition> PosixTimeZone::ParseMonthWeekWeekday() {
     return cpp::nullopt;
 
   // Parse week (minimum is 1 and maximum is 5).
-  result = ParseInt(1, TimeConstants::MAXIMUM_WEEKS_PER_MONTH);
+  result = Parser::parse_int(spec, 1, TimeConstants::MAXIMUM_WEEKS_PER_MONTH);
   if (!result)
     return cpp::nullopt;
   int week = result.value();
@@ -183,7 +186,7 @@ cpp::optional<PosixTransition> PosixTimeZone::ParseMonthWeekWeekday() {
     return cpp::nullopt;
 
   // Parse Weekday (minimum is 0 and maximum is 6).
-  result = ParseInt(0, TimeConstants::DAYS_PER_WEEK - 1);
+  result = Parser::parse_int(spec, 0, TimeConstants::DAYS_PER_WEEK - 1);
   if (!result)
     return cpp::nullopt;
   int weekday = result.value();
@@ -200,7 +203,7 @@ cpp::optional<PosixTransition> PosixTimeZone::ParseMonthWeekWeekday() {
 // (J) the Nth day of the year (1 <= N <= 365), excluding leap days.
 cpp::optional<PosixTransition> PosixTimeZone::ParseNonLeapDay() {
   const cpp::optional<int> result =
-      ParseInt(1, TimeConstants::DAYS_PER_NON_LEAP_YEAR);
+      Parser::parse_int(spec, 1, TimeConstants::DAYS_PER_NON_LEAP_YEAR);
   if (!result)
     return cpp::nullopt;
   PosixTransition posixTransition;
@@ -213,7 +216,7 @@ cpp::optional<PosixTransition> PosixTimeZone::ParseNonLeapDay() {
 // (N) the Nth day of the year (0 <= N <= 365), including leap days
 cpp::optional<PosixTransition> PosixTimeZone::ParseLeapDay() {
   const cpp::optional<int> result =
-      ParseInt(0, TimeConstants::DAYS_PER_LEAP_YEAR - 1);
+      Parser::parse_int(spec, 0, TimeConstants::DAYS_PER_LEAP_YEAR - 1);
   if (!result)
     return cpp::nullopt;
   PosixTransition posixTransition;
