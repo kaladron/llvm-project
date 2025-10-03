@@ -17,6 +17,39 @@
 
 using LIBC_NAMESPACE::cpp::string_view;
 
+TEST(LlvmLibcParsePosixSpec, ParserBasicTest) {
+  // Test that Parser can be created and basic operations work
+  using Parser = LIBC_NAMESPACE::time_zone_posix::PosixTimeZone::Parser;
+  
+  const char* test_spec = "EST5EDT,M3.2.0,M11.1.0";
+  Parser parser{string_view(test_spec)};
+  
+  // Verify initial state
+  ASSERT_TRUE(parser.has_more());
+  EXPECT_EQ(parser.current_position(), static_cast<size_t>(0));
+  EXPECT_STREQ(parser.get_remaining().data(), test_spec);
+  EXPECT_STREQ(parser.get_original().data(), test_spec);
+  
+  // Advance by 3 characters (skip "EST")
+  parser.advance(3);
+  EXPECT_EQ(parser.current_position(), static_cast<size_t>(3));
+  EXPECT_TRUE(parser.has_more());
+  EXPECT_EQ(parser.get_remaining().size(), strlen(test_spec) - 3);
+  
+  // Original should remain unchanged
+  EXPECT_STREQ(parser.get_original().data(), test_spec);
+  EXPECT_EQ(parser.get_original().size(), strlen(test_spec));
+  
+  // Advance to the end
+  parser.advance(parser.get_remaining().size());
+  EXPECT_FALSE(parser.has_more());
+  EXPECT_EQ(parser.current_position(), strlen(test_spec));
+  EXPECT_EQ(parser.get_remaining().size(), static_cast<size_t>(0));
+  
+  // Original should still be unchanged
+  EXPECT_STREQ(parser.get_original().data(), test_spec);
+}
+
 TEST(LlvmLibcParsePosixSpec, InvalidTest) {
   const char *bad_timezones[] = {
       "",

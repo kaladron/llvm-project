@@ -174,7 +174,37 @@ public:
   PosixTransition dst_start;
   PosixTransition dst_end;
 
-private:
+  // Helper class for non-destructive parsing
+  // Maintains parse position without modifying the original spec string
+  class Parser {
+  private:
+    cpp::string_view remaining; // Current position in parse (mutable)
+    const cpp::string_view original; // Full original spec (immutable)
+    size_t position; // Current offset into original string
+    
+  public:
+    explicit Parser(cpp::string_view spec)
+        : remaining(spec), original(spec), position(0) {}
+    
+    // Advance the parse position by n characters
+    void advance(size_t n) {
+      remaining.remove_prefix(n);
+      position += n;
+    }
+    
+    // Check if there's more data to parse
+    bool has_more() const { return !remaining.empty(); }
+    
+    // Get the current parse position (offset into original string)
+    size_t current_position() const { return position; }
+    
+    // Get the remaining unparsed string
+    cpp::string_view get_remaining() const { return remaining; }
+    
+    // Get the original full spec string
+    cpp::string_view get_original() const { return original; }
+  };
+
   bool UpdateStdAbbr();
   bool UpdateDstAbbr();
   bool UpdateStdOffset();
