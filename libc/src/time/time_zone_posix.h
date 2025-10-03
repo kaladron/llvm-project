@@ -141,20 +141,21 @@ class PosixTimeZone {
 public:
   // Default constructor for testing.
   PosixTimeZone()
-      : spec(""), std_abbr("UTC"), std_offset(0), dst_abbr(""), dst_offset(0) {}
+      : spec(""), original_spec(""), std_abbr("UTC"), std_offset(0),
+        dst_abbr(""), dst_offset(0) {}
 
   explicit PosixTimeZone(const cpp::string_view &spec)
-      : spec(spec), std_abbr("UTC"), std_offset(0), dst_abbr(""),
-        dst_offset(0) {}
+      : spec(spec), original_spec(spec), std_abbr("UTC"), std_offset(0),
+        dst_abbr(""), dst_offset(0) {}
 
   explicit PosixTimeZone(const cpp::string_view &spec,
                          cpp::string_view std_abbr, int32_t std_offset,
                          cpp::string_view dst_abbr, int32_t dst_offset,
                          time_zone_posix::PosixTransition dst_start,
                          time_zone_posix::PosixTransition dst_end)
-      : spec(spec), std_abbr(std_abbr), std_offset(std_offset),
-        dst_abbr(dst_abbr), dst_offset(dst_offset), dst_start(dst_start),
-        dst_end(dst_end) {}
+      : spec(spec), original_spec(spec), std_abbr(std_abbr),
+        std_offset(std_offset), dst_abbr(dst_abbr), dst_offset(dst_offset),
+        dst_start(dst_start), dst_end(dst_end) {}
 
   // Breaks down a POSIX time-zone specification into its constituent pieces,
   // filling in any missing values (DST offset, or start/end transition times)
@@ -163,7 +164,9 @@ public:
   static cpp::optional<PosixTimeZone>
   ParsePosixSpec(const cpp::string_view spec);
 
-  cpp::string_view spec;
+  cpp::string_view spec; // Mutable parse position (modified during parsing)
+  cpp::string_view
+      original_spec; // Immutable original for string_view stability
 
   cpp::string_view std_abbr;
   int32_t std_offset;

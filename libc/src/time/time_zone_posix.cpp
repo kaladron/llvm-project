@@ -281,7 +281,10 @@ bool PosixTimeZone::UpdateStdAbbr() {
   const auto abbr_result = ParseAbbr();
   if (!abbr_result)
     return false;
-  std_abbr = *abbr_result;
+  // Calculate offset of abbr_result within original_spec
+  size_t offset = abbr_result->data() - original_spec.data();
+  // Assign as substring of original_spec (not shortened spec)
+  std_abbr = original_spec.substr(offset, abbr_result->size());
   return true;
 }
 
@@ -291,7 +294,10 @@ bool PosixTimeZone::UpdateDstAbbr() {
   const auto abbr_result = ParseAbbr();
   if (!abbr_result)
     return false;
-  dst_abbr = *abbr_result;
+  // Calculate offset of abbr_result within original_spec
+  size_t offset = abbr_result->data() - original_spec.data();
+  // Assign as substring of original_spec (not shortened spec)
+  dst_abbr = original_spec.substr(offset, abbr_result->size());
   return true;
 }
 
