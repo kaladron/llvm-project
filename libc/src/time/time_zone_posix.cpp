@@ -96,20 +96,21 @@ PosixTimeZone::Parser::parse_abbr(cpp::string_view &str) {
 // and PDT have default minus sign for the offset (relative to UTC). In,
 // PST8PDT, though 8 doesn't have any sign, but the offset is (-8 * 3600).
 cpp::optional<int32_t>
-PosixTimeZone::ParseOffset(int min_hour, int max_hour,
-                           TZOffset default_sign_for_offset) {
-  if (spec.empty())
+PosixTimeZone::Parser::parse_offset(cpp::string_view &str, int min_hour,
+                                    int max_hour,
+                                    TZOffset default_sign_for_offset) {
+  if (str.empty())
     return cpp::nullopt;
 
   // Handle [+|-].
   int multiplier = default_sign_for_offset;
-  if (spec.starts_with('+') || spec.starts_with('-')) {
-    if (spec.starts_with('-')) {
+  if (str.starts_with('+') || str.starts_with('-')) {
+    if (str.starts_with('-')) {
       // If spec says minus, then we reverse the multiplication_factor otherwise
       // we use it as is.
       multiplier = (default_sign_for_offset == TZOffset::NEGATIVE) ? 1 : -1;
     }
-    spec.remove_prefix(1);
+    str.remove_prefix(1);
   }
 
   int hours = 0;
@@ -117,29 +118,29 @@ PosixTimeZone::ParseOffset(int min_hour, int max_hour,
   int seconds = 0;
 
   // Parse hours - hh
-  cpp::optional<int> result = Parser::parse_int(spec, min_hour, max_hour);
+  cpp::optional<int> result = Parser::parse_int(str, min_hour, max_hour);
   if (!result)
     return cpp::nullopt;
   hours = result.value();
 
   // Check for optional minutes.
   // Parse minutes and if there is no data, then default to 0 - hh[:mm]
-  if (spec.starts_with(':')) {
-    spec.remove_prefix(1);
+  if (str.starts_with(':')) {
+    str.remove_prefix(1);
 
     // Parse minutes (minimum is 0 and maximum is 59).
-    result = Parser::parse_int(spec, 0, TimeConstants::MINUTES_PER_HOUR - 1);
+    result = Parser::parse_int(str, 0, TimeConstants::MINUTES_PER_HOUR - 1);
     if (!result)
       return cpp::nullopt;
     minutes = result.value();
 
     // Check for optional seconds.
     // Parse seconds and if there is no data, then default to 0 -  hh[:mm[:ss]]
-    if (spec.starts_with(':')) {
-      spec.remove_prefix(1);
+    if (str.starts_with(':')) {
+      str.remove_prefix(1);
 
       // Parse seconds (minimum is 0 and maximum is 59).
-      result = Parser::parse_int(spec, 0, TimeConstants::SECONDS_PER_MIN - 1);
+      result = Parser::parse_int(str, 0, TimeConstants::SECONDS_PER_MIN - 1);
       if (!result)
         return cpp::nullopt;
       seconds = result.value();
@@ -269,9 +270,9 @@ cpp::optional<PosixTransition> PosixTimeZone::ParseDateTime() {
     spec.remove_prefix(1);
     // offset value after "/" is always positive.
     TZOffset default_sign_for_offset = TZOffset::POSITIVE;
-    const cpp::optional<int32_t> offset =
-        ParseOffset(-MAX_HOURS_IN_TRANSITION_TIMES,
-                    MAX_HOURS_IN_TRANSITION_TIMES, default_sign_for_offset);
+    const cpp::optional<int32_t> offset = Parser::parse_offset(
+        spec, -MAX_HOURS_IN_TRANSITION_TIMES, MAX_HOURS_IN_TRANSITION_TIMES,
+        default_sign_for_offset);
     if (!offset)
       return cpp::nullopt;
     posixTransition.time.offset = offset.value();
@@ -320,7 +321,7 @@ bool PosixTimeZone::UpdateStdOffset() {
   // PST and PDT have default minus sign for the offset (relative to UTC). In,
   // PST8PDT, though 8 doesn't have any sign, but the offset is (-8 * 3600).
   const cpp::optional<int32_t> offset =
-      ParseOffset(0, 24, default_sign_for_offset);
+      Parser::parse_offset(spec, 0, 24, default_sign_for_offset);
   if (!offset)
     return false;
   std_offset = offset.value();
@@ -340,7 +341,7 @@ bool PosixTimeZone::UpdateDstOffset() {
     // UTC). In, PST8PDT, though 8 doesn't have any sign, but the offset is (-8
     // * 3600).
     const cpp::optional<int32_t> offset =
-        ParseOffset(0, 24, default_sign_for_offset);
+        Parser::parse_offset(spec, 0, 24, default_sign_for_offset);
     if (!offset)
       return false;
     dst_offset = offset.value();

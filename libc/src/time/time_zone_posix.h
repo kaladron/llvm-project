@@ -214,6 +214,11 @@ public:
     
     // Parse timezone abbreviation from string
     static cpp::optional<cpp::string_view> parse_abbr(cpp::string_view &str);
+    
+    // Parse timezone offset [+|-]hh[:mm[:ss]] from string
+    static cpp::optional<int32_t> parse_offset(cpp::string_view &str,
+                                                int min_hour, int max_hour,
+                                                TZOffset default_sign_for_offset);
   };
 
   bool UpdateStdAbbr();
@@ -224,8 +229,6 @@ public:
   bool UpdateDstEnd();
   bool SpecHasData();
 
-  cpp::optional<int32_t> ParseOffset(int min_hour, int max_hour,
-                                     TZOffset multiplier);
   cpp::optional<PosixTransition> ParseMonthWeekWeekday();
   cpp::optional<PosixTransition> ParseNonLeapDay();
   cpp::optional<PosixTransition> ParseLeapDay();
