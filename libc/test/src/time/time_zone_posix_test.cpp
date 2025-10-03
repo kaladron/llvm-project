@@ -50,6 +50,90 @@ TEST(LlvmLibcParsePosixSpec, ParserBasicTest) {
   EXPECT_STREQ(parser.get_original().data(), test_spec);
 }
 
+TEST(LlvmLibcParsePosixSpec, ParseOffsetTest) {
+  using LIBC_NAMESPACE::time_zone_posix::PosixTimeZone;
+  using LIBC_NAMESPACE::time_zone_posix::TZOffset;
+
+  // Test default negative sign (no sign means west/negative)
+  {
+    string_view spec = "5";
+    auto result = PosixTimeZone::Parser::parse_offset(spec, 0, 24, TZOffset::NEGATIVE);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(*result, -18000); // -5 hours in seconds
+    EXPECT_TRUE(spec.empty());
+  }
+
+  // Test explicit positive sign with NEGATIVE default
+  {
+    string_view spec = "+5";
+    auto result = PosixTimeZone::Parser::parse_offset(spec, 0, 24, TZOffset::NEGATIVE);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(*result, -18000); // Still negative because default is NEGATIVE
+    EXPECT_TRUE(spec.empty());
+  }
+
+  // Test explicit negative sign with NEGATIVE default (double negative = positive)
+  {
+    string_view spec = "-5";
+    auto result = PosixTimeZone::Parser::parse_offset(spec, 0, 24, TZOffset::NEGATIVE);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(*result, 18000); // +5 hours in seconds (negates the default)
+    EXPECT_TRUE(spec.empty());
+  }
+
+  // Test hours:minutes:seconds format
+  {
+    string_view spec = "5:30:45";
+    auto result = PosixTimeZone::Parser::parse_offset(spec, 0, 24, TZOffset::NEGATIVE);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(*result, -(5 * 3600 + 30 * 60 + 45)); // -5:30:45 in seconds
+    EXPECT_TRUE(spec.empty());
+  }
+
+  // Test hours:minutes format (no seconds)
+  {
+    string_view spec = "5:30";
+    auto result = PosixTimeZone::Parser::parse_offset(spec, 0, 24, TZOffset::NEGATIVE);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(*result, -(5 * 3600 + 30 * 60)); // -5:30:00 in seconds
+    EXPECT_TRUE(spec.empty());
+  }
+
+  // Test boundary: 24 hours (max for standard offset)
+  {
+    string_view spec = "24";
+    auto result = PosixTimeZone::Parser::parse_offset(spec, 0, 24, TZOffset::NEGATIVE);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(*result, -86400); // -24 hours in seconds
+    EXPECT_TRUE(spec.empty());
+  }
+
+  // Test out of range hour (should fail)
+  {
+    string_view spec = "25";
+    auto result = PosixTimeZone::Parser::parse_offset(spec, 0, 24, TZOffset::NEGATIVE);
+    EXPECT_FALSE(result.has_value());
+  }
+
+  // Test positive offset with POSITIVE default
+  {
+    string_view spec = "+5:30";
+    auto result = PosixTimeZone::Parser::parse_offset(spec, 0, 24, TZOffset::POSITIVE);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(*result, 5 * 3600 + 30 * 60); // +5:30:00 in seconds
+    EXPECT_TRUE(spec.empty());
+  }
+
+  // Test zero offset
+  {
+    string_view spec = "0";
+    auto result = PosixTimeZone::Parser::parse_offset(spec, 0, 24, TZOffset::NEGATIVE);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(*result, 0);
+    EXPECT_TRUE(spec.empty());
+  }
+}
+
 TEST(LlvmLibcParsePosixSpec, InvalidTest) {
   const char *bad_timezones[] = {
       "",
