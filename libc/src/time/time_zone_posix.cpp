@@ -155,40 +155,40 @@ PosixTimeZone::Parser::parse_offset(cpp::string_view &str, int min_hour,
 
 // (M) the Nth weekday of a month (e.g., the 2nd Sunday in March).
 // Mm.w.d
-cpp::optional<PosixTransition> PosixTimeZone::ParseMonthWeekWeekday() {
+cpp::optional<PosixTransition>
+PosixTimeZone::Parser::parse_month_week_weekday(cpp::string_view &str) {
   // Parse month (minimum is 1 and maximum is 12).
-  cpp::optional<int> result =
-      Parser::parse_int(spec, 1, TimeConstants::MONTHS_PER_YEAR);
+  cpp::optional<int> result = parse_int(str, 1, TimeConstants::MONTHS_PER_YEAR);
   if (!result)
     return cpp::nullopt;
   int month = result.value();
 
   // Error if there is no dot.
-  if (!spec.starts_with('.'))
+  if (!str.starts_with('.'))
     return cpp::nullopt;
-  spec.remove_prefix(1);
+  str.remove_prefix(1);
 
   // Error if there is no week.
-  if (spec.empty())
+  if (str.empty())
     return cpp::nullopt;
 
   // Parse week (minimum is 1 and maximum is 5).
-  result = Parser::parse_int(spec, 1, TimeConstants::MAXIMUM_WEEKS_PER_MONTH);
+  result = parse_int(str, 1, TimeConstants::MAXIMUM_WEEKS_PER_MONTH);
   if (!result)
     return cpp::nullopt;
   int week = result.value();
 
   // Error if there is no dot.
-  if (!spec.starts_with('.'))
+  if (!str.starts_with('.'))
     return cpp::nullopt;
-  spec.remove_prefix(1);
+  str.remove_prefix(1);
 
   // Error if there is no weekday.
-  if (spec.empty())
+  if (str.empty())
     return cpp::nullopt;
 
   // Parse Weekday (minimum is 0 and maximum is 6).
-  result = Parser::parse_int(spec, 0, TimeConstants::DAYS_PER_WEEK - 1);
+  result = parse_int(str, 0, TimeConstants::DAYS_PER_WEEK - 1);
   if (!result)
     return cpp::nullopt;
   int weekday = result.value();
@@ -203,9 +203,10 @@ cpp::optional<PosixTransition> PosixTimeZone::ParseMonthWeekWeekday() {
 
 // Parse Jn
 // (J) the Nth day of the year (1 <= N <= 365), excluding leap days.
-cpp::optional<PosixTransition> PosixTimeZone::ParseNonLeapDay() {
+cpp::optional<PosixTransition>
+PosixTimeZone::Parser::parse_non_leap_day(cpp::string_view &str) {
   const cpp::optional<int> result =
-      Parser::parse_int(spec, 1, TimeConstants::DAYS_PER_NON_LEAP_YEAR);
+      parse_int(str, 1, TimeConstants::DAYS_PER_NON_LEAP_YEAR);
   if (!result)
     return cpp::nullopt;
   PosixTransition posixTransition;
@@ -216,9 +217,10 @@ cpp::optional<PosixTransition> PosixTimeZone::ParseNonLeapDay() {
 
 // Parse n
 // (N) the Nth day of the year (0 <= N <= 365), including leap days
-cpp::optional<PosixTransition> PosixTimeZone::ParseLeapDay() {
+cpp::optional<PosixTransition>
+PosixTimeZone::Parser::parse_leap_day(cpp::string_view &str) {
   const cpp::optional<int> result =
-      Parser::parse_int(spec, 0, TimeConstants::DAYS_PER_LEAP_YEAR - 1);
+      parse_int(str, 0, TimeConstants::DAYS_PER_LEAP_YEAR - 1);
   if (!result)
     return cpp::nullopt;
   PosixTransition posixTransition;
@@ -242,20 +244,21 @@ cpp::optional<PosixTransition> PosixTimeZone::ParseLeapDay() {
 //         offset = 7200
 //       }
 //     }
-cpp::optional<PosixTransition> PosixTimeZone::ParseDateTime() {
+cpp::optional<PosixTransition>
+PosixTimeZone::Parser::parse_date_time(cpp::string_view &str) {
   PosixTransition posixTransition;
-  if (spec.starts_with(',')) {
-    spec.remove_prefix(1);
+  if (str.starts_with(',')) {
+    str.remove_prefix(1);
 
     cpp::optional<PosixTransition> optionalPosixTransition;
-    if (spec.starts_with('M')) {
-      spec.remove_prefix(1);
-      optionalPosixTransition = ParseMonthWeekWeekday(); // Mm.w.d
-    } else if (spec.starts_with('J')) {
-      spec.remove_prefix(1);
-      optionalPosixTransition = ParseNonLeapDay(); // Jn
+    if (str.starts_with('M')) {
+      str.remove_prefix(1);
+      optionalPosixTransition = parse_month_week_weekday(str); // Mm.w.d
+    } else if (str.starts_with('J')) {
+      str.remove_prefix(1);
+      optionalPosixTransition = parse_non_leap_day(str); // Jn
     } else {
-      optionalPosixTransition = ParseLeapDay(); // n
+      optionalPosixTransition = parse_leap_day(str); // n
     }
     if (optionalPosixTransition)
       posixTransition = optionalPosixTransition.value();
@@ -266,13 +269,13 @@ cpp::optional<PosixTransition> PosixTimeZone::ParseDateTime() {
   // Parse time offset: / offset
   posixTransition.time.offset =
       2 * TimeConstants::SECONDS_PER_HOUR; // default offset is 02:00:00
-  if (spec.starts_with('/')) {
-    spec.remove_prefix(1);
+  if (str.starts_with('/')) {
+    str.remove_prefix(1);
     // offset value after "/" is always positive.
     TZOffset default_sign_for_offset = TZOffset::POSITIVE;
-    const cpp::optional<int32_t> offset = Parser::parse_offset(
-        spec, -MAX_HOURS_IN_TRANSITION_TIMES, MAX_HOURS_IN_TRANSITION_TIMES,
-        default_sign_for_offset);
+    const cpp::optional<int32_t> offset =
+        parse_offset(str, -MAX_HOURS_IN_TRANSITION_TIMES,
+                     MAX_HOURS_IN_TRANSITION_TIMES, default_sign_for_offset);
     if (!offset)
       return cpp::nullopt;
     posixTransition.time.offset = offset.value();
@@ -364,7 +367,7 @@ bool PosixTimeZone::UpdateDstOffset() {
 //       }
 //     }
 bool PosixTimeZone::UpdateDstStart() {
-  const auto date_time_result = ParseDateTime();
+  const auto date_time_result = Parser::parse_date_time(spec);
   if (!date_time_result)
     return false;
   dst_start = *date_time_result;
@@ -386,7 +389,7 @@ bool PosixTimeZone::UpdateDstStart() {
 //       }
 //     }
 bool PosixTimeZone::UpdateDstEnd() {
-  const auto date_time_result = ParseDateTime();
+  const auto date_time_result = Parser::parse_date_time(spec);
   if (!date_time_result)
     return false;
   dst_end = *date_time_result;

@@ -219,6 +219,21 @@ public:
     static cpp::optional<int32_t> parse_offset(cpp::string_view &str,
                                                 int min_hour, int max_hour,
                                                 TZOffset default_sign_for_offset);
+
+    // Parse Mm.w.d format (Nth weekday of a month)
+    static cpp::optional<PosixTransition>
+    parse_month_week_weekday(cpp::string_view &str);
+
+    // Parse Jn format (Nth day of year, excluding leap days)
+    static cpp::optional<PosixTransition>
+    parse_non_leap_day(cpp::string_view &str);
+
+    // Parse n format (Nth day of year, including leap days)
+    static cpp::optional<PosixTransition> parse_leap_day(cpp::string_view &str);
+
+    // Parse date/time transition: (Jn | n | Mm.w.d) [/offset]
+    static cpp::optional<PosixTransition>
+    parse_date_time(cpp::string_view &str);
   };
 
   bool UpdateStdAbbr();
@@ -228,11 +243,6 @@ public:
   bool UpdateDstStart();
   bool UpdateDstEnd();
   bool SpecHasData();
-
-  cpp::optional<PosixTransition> ParseMonthWeekWeekday();
-  cpp::optional<PosixTransition> ParseNonLeapDay();
-  cpp::optional<PosixTransition> ParseLeapDay();
-  cpp::optional<PosixTransition> ParseDateTime();
 };
 
 } // namespace time_zone_posix

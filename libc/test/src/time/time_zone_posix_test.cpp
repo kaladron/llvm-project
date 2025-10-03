@@ -134,6 +134,142 @@ TEST(LlvmLibcParsePosixSpec, ParseOffsetTest) {
   }
 }
 
+TEST(LlvmLibcParsePosixSpec, ParseDateTimeTest) {
+  using LIBC_NAMESPACE::time_zone_posix::PosixTimeZone;
+  using LIBC_NAMESPACE::time_zone_posix::PosixTransition;
+
+  // Test M format: M3.2.0 (2nd Sunday in March)
+  {
+    string_view spec = ",M3.2.0";
+    auto result = PosixTimeZone::Parser::parse_date_time(spec);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->date.fmt, PosixTransition::DateFormat::M);
+    EXPECT_EQ(result->date.m.month, static_cast<int8_t>(3));
+    EXPECT_EQ(result->date.m.week, static_cast<int8_t>(2));
+    EXPECT_EQ(result->date.m.weekday, static_cast<int8_t>(0));
+    EXPECT_EQ(result->time.offset, 7200); // Default 02:00:00
+    EXPECT_TRUE(spec.empty());
+  }
+
+  // Test M format with custom time: M11.1.0/1:30:45
+  {
+    string_view spec = ",M11.1.0/1:30:45";
+    auto result = PosixTimeZone::Parser::parse_date_time(spec);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->date.fmt, PosixTransition::DateFormat::M);
+    EXPECT_EQ(result->date.m.month, static_cast<int8_t>(11));
+    EXPECT_EQ(result->date.m.week, static_cast<int8_t>(1));
+    EXPECT_EQ(result->date.m.weekday, static_cast<int8_t>(0));
+    EXPECT_EQ(result->time.offset, 1 * 3600 + 30 * 60 + 45); // 1:30:45
+    EXPECT_TRUE(spec.empty());
+  }
+
+  // Test J format: J59 (59th day, excluding leap days)
+  {
+    string_view spec = ",J59";
+    auto result = PosixTimeZone::Parser::parse_date_time(spec);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->date.fmt, PosixTransition::DateFormat::J);
+    EXPECT_EQ(result->date.j.day, static_cast<int16_t>(59));
+    EXPECT_EQ(result->time.offset, 7200); // Default 02:00:00
+    EXPECT_TRUE(spec.empty());
+  }
+
+  // Test J format with custom time: J365/0
+  {
+    string_view spec = ",J365/0";
+    auto result = PosixTimeZone::Parser::parse_date_time(spec);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->date.fmt, PosixTransition::DateFormat::J);
+    EXPECT_EQ(result->date.j.day, static_cast<int16_t>(365));
+    EXPECT_EQ(result->time.offset, 0); // Midnight
+    EXPECT_TRUE(spec.empty());
+  }
+
+  // Test N format: 59 (59th day, including leap days)
+  {
+    string_view spec = ",59";
+    auto result = PosixTimeZone::Parser::parse_date_time(spec);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->date.fmt, PosixTransition::DateFormat::N);
+    EXPECT_EQ(result->date.n.day, static_cast<int16_t>(59));
+    EXPECT_EQ(result->time.offset, 7200); // Default 02:00:00
+    EXPECT_TRUE(spec.empty());
+  }
+
+  // Test N format with custom time: 0/2:30:45
+  {
+    string_view spec = ",0/2:30:45";
+    auto result = PosixTimeZone::Parser::parse_date_time(spec);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->date.fmt, PosixTransition::DateFormat::N);
+    EXPECT_EQ(result->date.n.day, static_cast<int16_t>(0));
+    EXPECT_EQ(result->time.offset, 2 * 3600 + 30 * 60 + 45); // 2:30:45
+    EXPECT_TRUE(spec.empty());
+  }
+
+  // Test with negative time offset (before midnight)
+  {
+    string_view spec = ",M3.2.0/-1";
+    auto result = PosixTimeZone::Parser::parse_date_time(spec);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->date.fmt, PosixTransition::DateFormat::M);
+    EXPECT_EQ(result->time.offset, -3600); // -1 hour
+    EXPECT_TRUE(spec.empty());
+  }
+
+  // Test with large positive time offset (RFC 8536)
+  {
+    string_view spec = ",M3.2.0/167";
+    auto result = PosixTimeZone::Parser::parse_date_time(spec);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->time.offset, 167 * 3600); // 167 hours
+    EXPECT_TRUE(spec.empty());
+  }
+
+  // Test invalid: out of range month
+  {
+    string_view spec = ",M13.2.0";
+    auto result = PosixTimeZone::Parser::parse_date_time(spec);
+    EXPECT_FALSE(result.has_value());
+  }
+
+  // Test invalid: out of range week
+  {
+    string_view spec = ",M3.6.0";
+    auto result = PosixTimeZone::Parser::parse_date_time(spec);
+    EXPECT_FALSE(result.has_value());
+  }
+
+  // Test invalid: out of range weekday
+  {
+    string_view spec = ",M3.2.7";
+    auto result = PosixTimeZone::Parser::parse_date_time(spec);
+    EXPECT_FALSE(result.has_value());
+  }
+
+  // Test invalid: J format with day 0
+  {
+    string_view spec = ",J0";
+    auto result = PosixTimeZone::Parser::parse_date_time(spec);
+    EXPECT_FALSE(result.has_value());
+  }
+
+  // Test invalid: J format with day > 365
+  {
+    string_view spec = ",J366";
+    auto result = PosixTimeZone::Parser::parse_date_time(spec);
+    EXPECT_FALSE(result.has_value());
+  }
+
+  // Test invalid: N format with day > 365
+  {
+    string_view spec = ",366";
+    auto result = PosixTimeZone::Parser::parse_date_time(spec);
+    EXPECT_FALSE(result.has_value());
+  }
+}
+
 TEST(LlvmLibcParsePosixSpec, InvalidTest) {
   const char *bad_timezones[] = {
       "",
