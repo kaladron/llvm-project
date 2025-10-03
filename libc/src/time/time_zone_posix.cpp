@@ -283,148 +283,89 @@ PosixTimeZone::Parser::parse_date_time(cpp::string_view &str) {
   return posixTransition;
 }
 
-// The current POSIX spec for America/Los_Angeles is "PST8PDT,M3.2.0,M11.1.0",
-// which would be broken down for std_abbr as "PST".
-bool PosixTimeZone::UpdateStdAbbr() {
-  const auto abbr_result = Parser::parse_abbr(spec);
-  if (!abbr_result)
-    return false;
-  // Calculate offset of abbr_result within original_spec
-  size_t offset = abbr_result->data() - original_spec.data();
-  // Assign as substring of original_spec (not shortened spec)
-  std_abbr = original_spec.substr(offset, abbr_result->size());
-  return true;
-}
-
-// The current POSIX spec for America/Los_Angeles is "PST8PDT,M3.2.0,M11.1.0",
-// which would be broken down for dst_abbr as "PDT".
-bool PosixTimeZone::UpdateDstAbbr() {
-  const auto abbr_result = Parser::parse_abbr(spec);
-  if (!abbr_result)
-    return false;
-  // Calculate offset of abbr_result within original_spec
-  size_t offset = abbr_result->data() - original_spec.data();
-  // Assign as substring of original_spec (not shortened spec)
-  dst_abbr = original_spec.substr(offset, abbr_result->size());
-  return true;
-}
-
-// A zone offset is the difference in hours and minutes between a particular
-// time zone and UTC. In ISO 8601, the particular zone offset can be indicated
-// in a date or time value. The zone offset can be Z for UTC or it can be a
-// value "+" or "-" from UTC.
-//
-// For the current POSIX spec for America/Los_Angeles is
-// "PST8PDT,M3.2.0,M11.1.0", which would be broken down for std_offset would be
-// -28800. It is same as -1 * 8 * 3600. 8 is the offset.
-bool PosixTimeZone::UpdateStdOffset() {
-  // offset should be between 0 and 24 hours.
-  TZOffset default_sign_for_offset = TZOffset::NEGATIVE;
-  // |default_sign_for_offset| for std and dst offset is negative. For example,
-  // PST and PDT have default minus sign for the offset (relative to UTC). In,
-  // PST8PDT, though 8 doesn't have any sign, but the offset is (-8 * 3600).
-  const cpp::optional<int32_t> offset =
-      Parser::parse_offset(spec, 0, 24, default_sign_for_offset);
-  if (!offset)
-    return false;
-  std_offset = offset.value();
-  return true;
-}
-
-// For the current POSIX spec for America/Los_Angeles is
-// "PST8PDT,M3.2.0,M11.1.0", which would be broken down for dst_offset as
-// -25800. It is same as 3600 + (-1 * 8 * 3600).
-bool PosixTimeZone::UpdateDstOffset() {
-  dst_offset = std_offset + TimeConstants::SECONDS_PER_HOUR; // default
-  if (!spec.starts_with(',')) {
-    // offset should be between 0 and 24 hours.
-    TZOffset default_sign_for_offset = TZOffset::NEGATIVE;
-    // |default_sign_for_offset| for std and dst offset is negative. For
-    // example, PST and PDT have default minus sign for the offset (relative to
-    // UTC). In, PST8PDT, though 8 doesn't have any sign, but the offset is (-8
-    // * 3600).
-    const cpp::optional<int32_t> offset =
-        Parser::parse_offset(spec, 0, 24, default_sign_for_offset);
-    if (!offset)
-      return false;
-    dst_offset = offset.value();
-  }
-  return true;
-}
-
-// The current POSIX spec for America/Los_Angeles is "PST8PDT,M3.2.0,M11.1.0",
-// which would be broken down as ...
-//     dst_start = PosixTransition {
-//       date {
-//         m {
-//           month = 3
-//           week = 2
-//           weekday = 0
-//         }
-//       }
-//       time {
-//         offset = 7200
-//       }
-//     }
-bool PosixTimeZone::UpdateDstStart() {
-  const auto date_time_result = Parser::parse_date_time(spec);
-  if (!date_time_result)
-    return false;
-  dst_start = *date_time_result;
-  return true;
-}
-
-// The current POSIX spec for America/Los_Angeles is "PST8PDT,M3.2.0,M11.1.0",
-// which would be broken down as ...
-//     dst_end = PosixTransition {
-//       date {
-//         m {
-//           month = 11
-//           week = 1
-//           weekday = 0
-//         }
-//       }
-//       time {
-//         offset = 7200
-//       }
-//     }
-bool PosixTimeZone::UpdateDstEnd() {
-  const auto date_time_result = Parser::parse_date_time(spec);
-  if (!date_time_result)
-    return false;
-  dst_end = *date_time_result;
-  return true;
-}
-
-bool PosixTimeZone::SpecHasData() {
-  if (spec.empty())
-    return false;
-  return true;
-}
-
 // spec = std offset [ dst [ offset ] , datetime , datetime ]
 cpp::optional<PosixTimeZone>
-PosixTimeZone::ParsePosixSpec(const cpp::string_view spec) {
-  if (spec.starts_with(':'))
+PosixTimeZone::ParsePosixSpec(const cpp::string_view spec_input) {
+  if (spec_input.starts_with(':'))
     return cpp::nullopt;
 
-  PosixTimeZone res(spec);
-  if (!res.UpdateStdAbbr())
+  // Create a mutable copy of the spec for parsing
+  cpp::string_view spec = spec_input;
+
+  // Create result object with original spec preserved
+  PosixTimeZone res;
+  res.original_spec = spec_input;
+  res.spec = ""; // Will remain empty to indicate parsing is complete
+
+  // Track position in original spec
+  size_t consumed = 0;
+
+  // Parse standard timezone abbreviation (e.g., "PST" from
+  // "PST8PDT,M3.2.0,M11.1.0") This extracts the name of the standard
+  // (non-daylight-saving) timezone.
+  const auto std_abbr_result = Parser::parse_abbr(spec);
+  if (!std_abbr_result)
     return cpp::nullopt;
-  if (!res.UpdateStdOffset())
+  res.std_abbr = res.original_spec.substr(consumed, std_abbr_result->size());
+  consumed += std_abbr_result->size();
+
+  // Parse standard timezone offset (e.g., "8" from "PST8PDT,M3.2.0,M11.1.0")
+  // This is the offset from UTC in hours (can include minutes and seconds).
+  // For PST8, the offset is -28800 seconds (8 hours west of UTC).
+  TZOffset default_sign_for_offset = TZOffset::NEGATIVE;
+  const cpp::optional<int32_t> std_offset =
+      Parser::parse_offset(spec, 0, 24, default_sign_for_offset);
+  if (!std_offset)
     return cpp::nullopt;
-  if (res.spec.empty())
+  res.std_offset = std_offset.value();
+
+  // If no DST info, return early (e.g., "EST5" has no DST component)
+  if (spec.empty())
     return res;
-  if (!res.UpdateDstAbbr())
+
+  // Update consumed position for DST parsing
+  consumed = res.original_spec.size() - spec.size();
+
+  // Parse DST timezone abbreviation (e.g., "PDT" from "PST8PDT,M3.2.0,M11.1.0")
+  // This extracts the name of the daylight-saving timezone.
+  const auto dst_abbr_result = Parser::parse_abbr(spec);
+  if (!dst_abbr_result)
     return cpp::nullopt;
-  if (!res.UpdateDstOffset())
+  res.dst_abbr = res.original_spec.substr(consumed, dst_abbr_result->size());
+  consumed += dst_abbr_result->size();
+
+  // Parse DST timezone offset (optional, defaults to std_offset + 1 hour)
+  // If omitted, DST is assumed to be 1 hour ahead of standard time.
+  // For "PST8PDT", PDT defaults to -25200 seconds (7 hours west of UTC).
+  res.dst_offset = res.std_offset + TimeConstants::SECONDS_PER_HOUR;
+  if (!spec.starts_with(',')) {
+    const cpp::optional<int32_t> dst_offset =
+        Parser::parse_offset(spec, 0, 24, default_sign_for_offset);
+    if (!dst_offset)
+      return cpp::nullopt;
+    res.dst_offset = dst_offset.value();
+  }
+
+  // Parse DST start date/time (e.g., "M3.2.0" from "PST8PDT,M3.2.0,M11.1.0")
+  // M3.2.0 means: 2nd Sunday (week 2, weekday 0) of March (month 3)
+  // Default time is 02:00:00 if no time offset is specified.
+  const auto dst_start_result = Parser::parse_date_time(spec);
+  if (!dst_start_result)
     return cpp::nullopt;
-  if (!res.UpdateDstStart())
+  res.dst_start = *dst_start_result;
+
+  // Parse DST end date/time (e.g., "M11.1.0" from "PST8PDT,M3.2.0,M11.1.0")
+  // M11.1.0 means: 1st Sunday (week 1, weekday 0) of November (month 11)
+  // Default time is 02:00:00 if no time offset is specified.
+  const auto dst_end_result = Parser::parse_date_time(spec);
+  if (!dst_end_result)
     return cpp::nullopt;
-  if (!res.UpdateDstEnd())
+  res.dst_end = *dst_end_result;
+
+  // Ensure all spec was consumed
+  if (spec.size() != 0)
     return cpp::nullopt;
-  if (res.spec.size() != 0)
-    return cpp::nullopt;
+
   return res;
 }
 

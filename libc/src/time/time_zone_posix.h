@@ -235,14 +235,6 @@ public:
     static cpp::optional<PosixTransition>
     parse_date_time(cpp::string_view &str);
   };
-
-  bool UpdateStdAbbr();
-  bool UpdateDstAbbr();
-  bool UpdateStdOffset();
-  bool UpdateDstOffset();
-  bool UpdateDstStart();
-  bool UpdateDstEnd();
-  bool SpecHasData();
 };
 
 } // namespace time_zone_posix
