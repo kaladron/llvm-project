@@ -188,6 +188,17 @@ add_header_library(
 )
 
 add_header_library(
+  variant
+  HDRS
+    variant.h
+  DEPENDS
+    .type_traits
+    .utility
+    libc.src.__support.macros.attributes
+    libc.src.__support.macros.config
+)
+
+add_header_library(
   atomic
   HDRS
     atomic.h
