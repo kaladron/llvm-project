@@ -69,30 +69,9 @@ public:
     }
   }
 
-  // Assignment operators
-  LIBC_INLINE constexpr variant& operator=(const variant& other) {
-    if (this != &other) {
-      index_ = other.index_;
-      if (index_ == 0) {
-        *reinterpret_cast<T1*>(storage_) = *reinterpret_cast<const T1*>(other.storage_);
-      } else {
-        *reinterpret_cast<T2*>(storage_) = *reinterpret_cast<const T2*>(other.storage_);
-      }
-    }
-    return *this;
-  }
-
-  LIBC_INLINE constexpr variant& operator=(variant&& other) {
-    if (this != &other) {
-      index_ = other.index_;
-      if (index_ == 0) {
-        *reinterpret_cast<T1*>(storage_) = move(*reinterpret_cast<T1*>(other.storage_));
-      } else {
-        *reinterpret_cast<T2*>(storage_) = move(*reinterpret_cast<T2*>(other.storage_));
-      }
-    }
-    return *this;
-  }
+  // Assignment operators - defaulted for trivial types
+  variant& operator=(const variant& other) = default;
+  variant& operator=(variant&& other) = default;
 
   // Get the index of the currently active type
   LIBC_INLINE constexpr int index() const { return index_; }
