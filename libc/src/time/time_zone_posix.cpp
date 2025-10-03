@@ -195,9 +195,11 @@ PosixTimeZone::Parser::parse_month_week_weekday(cpp::string_view &str) {
 
   PosixTransition posixTransition;
   posixTransition.date.fmt = PosixTransition::DateFormat::M;
-  posixTransition.date.m.month = static_cast<int8_t>(month);
-  posixTransition.date.m.week = static_cast<int8_t>(week);
-  posixTransition.date.m.weekday = static_cast<int8_t>(weekday);
+  posixTransition.date.data = PosixTransition::Date::MonthWeekWeekday{
+    static_cast<int8_t>(month),
+    static_cast<int8_t>(week), 
+    static_cast<int8_t>(weekday)
+  };
   return posixTransition;
 }
 
@@ -211,7 +213,7 @@ PosixTimeZone::Parser::parse_non_leap_day(cpp::string_view &str) {
     return cpp::nullopt;
   PosixTransition posixTransition;
   posixTransition.date.fmt = PosixTransition::DateFormat::J;
-  posixTransition.date.j.day = static_cast<int16_t>(result.value());
+  posixTransition.date.data = PosixTransition::Date::NonLeapDay{static_cast<int16_t>(result.value())};
   return posixTransition;
 }
 
@@ -225,7 +227,7 @@ PosixTimeZone::Parser::parse_leap_day(cpp::string_view &str) {
     return cpp::nullopt;
   PosixTransition posixTransition;
   posixTransition.date.fmt = PosixTransition::DateFormat::N;
-  posixTransition.date.n.day = static_cast<int16_t>(result.value());
+  posixTransition.date.data = PosixTransition::Date::Day{static_cast<int16_t>(result.value())};
   return posixTransition;
 }
 
@@ -250,20 +252,30 @@ PosixTimeZone::Parser::parse_date_time(cpp::string_view &str) {
   if (str.starts_with(',')) {
     str.remove_prefix(1);
 
-    cpp::optional<PosixTransition> optionalPosixTransition;
     if (str.starts_with('M')) {
       str.remove_prefix(1);
-      optionalPosixTransition = parse_month_week_weekday(str); // Mm.w.d
+      auto result = parse_month_week_weekday(str); // Mm.w.d
+      if (result) {
+        posixTransition = result.value();
+      } else {
+        return cpp::nullopt;
+      }
     } else if (str.starts_with('J')) {
       str.remove_prefix(1);
-      optionalPosixTransition = parse_non_leap_day(str); // Jn
+      auto result = parse_non_leap_day(str); // Jn
+      if (result) {
+        posixTransition = result.value();
+      } else {
+        return cpp::nullopt;
+      }
     } else {
-      optionalPosixTransition = parse_leap_day(str); // n
+      auto result = parse_leap_day(str); // n
+      if (result) {
+        posixTransition = result.value();
+      } else {
+        return cpp::nullopt;
+      }
     }
-    if (optionalPosixTransition)
-      posixTransition = optionalPosixTransition.value();
-    else
-      return cpp::nullopt;
   }
 
   // Parse time offset: / offset

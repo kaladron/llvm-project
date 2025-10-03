@@ -144,9 +144,10 @@ TEST(LlvmLibcParsePosixSpec, ParseDateTimeTest) {
     auto result = PosixTimeZone::Parser::parse_date_time(spec);
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result->date.fmt, PosixTransition::DateFormat::M);
-    EXPECT_EQ(result->date.m.month, static_cast<int8_t>(3));
-    EXPECT_EQ(result->date.m.week, static_cast<int8_t>(2));
-    EXPECT_EQ(result->date.m.weekday, static_cast<int8_t>(0));
+    auto& month_week_weekday = result->date.data.get<PosixTransition::Date::MonthWeekWeekday>();
+    EXPECT_EQ(month_week_weekday.month, static_cast<int8_t>(3));
+    EXPECT_EQ(month_week_weekday.week, static_cast<int8_t>(2));
+    EXPECT_EQ(month_week_weekday.weekday, static_cast<int8_t>(0));
     EXPECT_EQ(result->time.offset, 7200); // Default 02:00:00
     EXPECT_TRUE(spec.empty());
   }
@@ -157,9 +158,10 @@ TEST(LlvmLibcParsePosixSpec, ParseDateTimeTest) {
     auto result = PosixTimeZone::Parser::parse_date_time(spec);
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result->date.fmt, PosixTransition::DateFormat::M);
-    EXPECT_EQ(result->date.m.month, static_cast<int8_t>(11));
-    EXPECT_EQ(result->date.m.week, static_cast<int8_t>(1));
-    EXPECT_EQ(result->date.m.weekday, static_cast<int8_t>(0));
+    auto& month_week_weekday = result->date.data.get<PosixTransition::Date::MonthWeekWeekday>();
+    EXPECT_EQ(month_week_weekday.month, static_cast<int8_t>(11));
+    EXPECT_EQ(month_week_weekday.week, static_cast<int8_t>(1));
+    EXPECT_EQ(month_week_weekday.weekday, static_cast<int8_t>(0));
     EXPECT_EQ(result->time.offset, 1 * 3600 + 30 * 60 + 45); // 1:30:45
     EXPECT_TRUE(spec.empty());
   }
@@ -170,7 +172,8 @@ TEST(LlvmLibcParsePosixSpec, ParseDateTimeTest) {
     auto result = PosixTimeZone::Parser::parse_date_time(spec);
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result->date.fmt, PosixTransition::DateFormat::J);
-    EXPECT_EQ(result->date.j.day, static_cast<int16_t>(59));
+    auto& non_leap_day = result->date.data.get<PosixTransition::Date::NonLeapDay>();
+    EXPECT_EQ(non_leap_day.day, static_cast<int16_t>(59));
     EXPECT_EQ(result->time.offset, 7200); // Default 02:00:00
     EXPECT_TRUE(spec.empty());
   }
@@ -181,7 +184,8 @@ TEST(LlvmLibcParsePosixSpec, ParseDateTimeTest) {
     auto result = PosixTimeZone::Parser::parse_date_time(spec);
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result->date.fmt, PosixTransition::DateFormat::J);
-    EXPECT_EQ(result->date.j.day, static_cast<int16_t>(365));
+    auto& non_leap_day = result->date.data.get<PosixTransition::Date::NonLeapDay>();
+    EXPECT_EQ(non_leap_day.day, static_cast<int16_t>(365));
     EXPECT_EQ(result->time.offset, 0); // Midnight
     EXPECT_TRUE(spec.empty());
   }
@@ -192,7 +196,8 @@ TEST(LlvmLibcParsePosixSpec, ParseDateTimeTest) {
     auto result = PosixTimeZone::Parser::parse_date_time(spec);
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result->date.fmt, PosixTransition::DateFormat::N);
-    EXPECT_EQ(result->date.n.day, static_cast<int16_t>(59));
+    auto& day = result->date.data.get<PosixTransition::Date::Day>();
+    EXPECT_EQ(day.day, static_cast<int16_t>(59));
     EXPECT_EQ(result->time.offset, 7200); // Default 02:00:00
     EXPECT_TRUE(spec.empty());
   }
@@ -203,7 +208,8 @@ TEST(LlvmLibcParsePosixSpec, ParseDateTimeTest) {
     auto result = PosixTimeZone::Parser::parse_date_time(spec);
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result->date.fmt, PosixTransition::DateFormat::N);
-    EXPECT_EQ(result->date.n.day, static_cast<int16_t>(0));
+    auto& day = result->date.data.get<PosixTransition::Date::Day>();
+    EXPECT_EQ(day.day, static_cast<int16_t>(0));
     EXPECT_EQ(result->time.offset, 2 * 3600 + 30 * 60 + 45); // 2:30:45
     EXPECT_TRUE(spec.empty());
   }

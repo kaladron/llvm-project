@@ -13,6 +13,7 @@
 
 #include "src/__support/CPP/optional.h"
 #include "src/__support/CPP/string_view.h"
+#include "src/__support/CPP/variant.h"
 
 namespace LIBC_NAMESPACE {
 namespace time_zone_posix {
@@ -93,13 +94,7 @@ public:
     };
 
     DateFormat fmt;
-
-    // TODO(rtenneti): convert the following to libc variant.
-    union {
-      NonLeapDay j;
-      Day n;
-      MonthWeekWeekday m;
-    };
+    cpp::variant<NonLeapDay, Day, MonthWeekWeekday> data;
   };
 
   struct Time {
@@ -111,22 +106,24 @@ public:
 
   PosixTransition() {
     date.fmt = DateFormat::N;
-    date.j.day = 0;
+    date.data = Date::Day{0};
     time.offset = 0;
   }
 
   explicit PosixTransition(DateFormat fmt, int16_t day, int32_t offset) {
     date.fmt = fmt;
-    date.j.day = day;
+    if (fmt == DateFormat::J) {
+      date.data = Date::NonLeapDay{day};
+    } else { // DateFormat::N
+      date.data = Date::Day{day};
+    }
     time.offset = offset;
   }
 
   explicit PosixTransition(DateFormat fmt, int8_t month, int8_t week,
                            int8_t weekday, int32_t offset) {
     date.fmt = fmt;
-    date.m.month = month;
-    date.m.week = week;
-    date.m.weekday = weekday;
+    date.data = Date::MonthWeekWeekday{month, week, weekday};
     time.offset = offset;
   }
 };
