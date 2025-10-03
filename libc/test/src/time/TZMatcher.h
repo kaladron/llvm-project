@@ -12,12 +12,11 @@
 #include "src/time/time_zone_posix.h"
 #include "test/UnitTest/Test.h"
 
-namespace __llvm_libc {
-namespace tzmatcher {
+namespace LIBC_NAMESPACE {
 namespace testing {
 
 class PosixTimeZoneMatcher
-    : public __llvm_libc::testing::Matcher<time_zone_posix::PosixTimeZone> {
+    : public Matcher<time_zone_posix::PosixTimeZone> {
   time_zone_posix::PosixTimeZone expected;
   time_zone_posix::PosixTimeZone actual;
 
@@ -46,28 +45,27 @@ public:
   }
 
   void posix_transition_describe_value(
-      const char *label, time_zone_posix::PosixTransition value,
-      __llvm_libc::testutils::StreamWrapper &stream) {
+      const char *label, time_zone_posix::PosixTransition value) {
     switch (value.date.fmt) {
     case time_zone_posix::PosixTransition::DateFormat::J:
-      stream << label << ".date.fmt: J ";
-      stream << label << ".date.j.day: " << value.date.j.day;
+      tlog << label << ".date.fmt: J ";
+      tlog << label << ".date.j.day: " << value.date.j.day;
       break;
     case time_zone_posix::PosixTransition::DateFormat::N:
-      stream << label << ".date.fmt: N ";
-      stream << label << ".date.n.day: " << value.date.n.day;
+      tlog << label << ".date.fmt: N ";
+      tlog << label << ".date.n.day: " << value.date.n.day;
       break;
     case time_zone_posix::PosixTransition::DateFormat::M:
-      stream << label << ".date.fmt: M ";
-      stream << label
+      tlog << label << ".date.fmt: M ";
+      tlog << label
              << ".date.m.month: " << static_cast<int>(value.date.m.month);
-      stream << label
+      tlog << label
              << ".date.m.week: " << static_cast<int>(value.date.m.week);
-      stream << label
+      tlog << label
              << ".date.m.weekday: " << static_cast<int>(value.date.m.weekday);
       break;
     }
-    stream << label << ".time.offset: " << value.time.offset;
+    tlog << label << ".time.offset: " << value.time.offset;
   }
 
   bool match(time_zone_posix::PosixTimeZone actualValue) {
@@ -81,25 +79,24 @@ public:
             posix_transition_equals(expected.dst_end, actual.dst_end));
   }
 
-  void describeValue(const char *label, time_zone_posix::PosixTimeZone value,
-                     __llvm_libc::testutils::StreamWrapper &stream) {
-    stream << label;
+  void describeValue(const char *label, time_zone_posix::PosixTimeZone value) {
+    tlog << label;
     if (value.spec.data())
-      stream << " m_spec: " << value.spec.data();
+      tlog << " m_spec: " << value.spec.data();
     else
-      stream << " m_spec: null";
-    stream << " m_std_abbr: " << value.std_abbr.data();
-    stream << " m_std_offset: " << value.std_offset;
-    stream << " m_dst_abbr: " << value.dst_abbr.data();
-    stream << " m_dst_offset: " << value.dst_offset;
-    posix_transition_describe_value(" m_dst_start", value.dst_start, stream);
-    posix_transition_describe_value(" m_dst_end", value.dst_end, stream);
-    stream << '\n';
+      tlog << " m_spec: null";
+    tlog << " m_std_abbr: " << value.std_abbr.data();
+    tlog << " m_std_offset: " << value.std_offset;
+    tlog << " m_dst_abbr: " << value.dst_abbr.data();
+    tlog << " m_dst_offset: " << value.dst_offset;
+    posix_transition_describe_value(" m_dst_start", value.dst_start);
+    posix_transition_describe_value(" m_dst_end", value.dst_end);
+    tlog << '\n';
   }
 
-  void explainError(__llvm_libc::testutils::StreamWrapper &stream) override {
-    describeValue("Expected PosixTimeZone value: ", expected, stream);
-    describeValue("  Actual PosixTimeZone value: ", actual, stream);
+  void explainError() override {
+    describeValue("Expected PosixTimeZone value: ", expected);
+    describeValue("  Actual PosixTimeZone value: ", actual);
   }
 };
 
@@ -112,7 +109,7 @@ struct PosixTimeZoneTestData {
 };
 
 class PosixTimeZoneTestDataMatcher
-    : public __llvm_libc::testing::Matcher<time_zone_posix::PosixTimeZone> {
+    : public Matcher<time_zone_posix::PosixTimeZone> {
   struct PosixTimeZoneTestData expected;
   time_zone_posix::PosixTimeZone actual;
 
@@ -129,48 +126,45 @@ public:
   }
 
   void describeExpectedValue(const char *label,
-                             struct PosixTimeZoneTestData value,
-                             __llvm_libc::testutils::StreamWrapper &stream) {
-    stream << label;
-    stream << " m_spec: " << value.spec;
-    stream << " m_std_abbr: " << value.std_abbr;
-    stream << " m_std_offset: " << value.std_offset;
-    stream << " m_dst_abbr: " << value.dst_abbr;
-    stream << " m_dst_offset: " << value.dst_offset;
-    stream << '\n';
+                             struct PosixTimeZoneTestData value) {
+    tlog << label;
+    tlog << " m_spec: " << value.spec;
+    tlog << " m_std_abbr: " << value.std_abbr;
+    tlog << " m_std_offset: " << value.std_offset;
+    tlog << " m_dst_abbr: " << value.dst_abbr;
+    tlog << " m_dst_offset: " << value.dst_offset;
+    tlog << '\n';
   }
 
-  void describeValue(const char *label, time_zone_posix::PosixTimeZone value,
-                     __llvm_libc::testutils::StreamWrapper &stream) {
-    stream << label;
+  void describeValue(const char *label, time_zone_posix::PosixTimeZone value) {
+    tlog << label;
     if (value.spec.data())
-      stream << " m_spec: " << value.spec.data();
+      tlog << " m_spec: " << value.spec.data();
     else
-      stream << " m_spec: null";
-    stream << " m_std_abbr: " << value.std_abbr.data();
-    stream << " m_std_offset: " << value.std_offset;
-    stream << " m_dst_abbr: " << value.dst_abbr.data();
-    stream << " m_dst_offset: " << value.dst_offset;
-    stream << '\n';
+      tlog << " m_spec: null";
+    tlog << " m_std_abbr: " << value.std_abbr.data();
+    tlog << " m_std_offset: " << value.std_offset;
+    tlog << " m_dst_abbr: " << value.dst_abbr.data();
+    tlog << " m_dst_offset: " << value.dst_offset;
+    tlog << '\n';
   }
 
-  void explainError(__llvm_libc::testutils::StreamWrapper &stream) override {
-    describeExpectedValue("Expected PosixTimeZone value: ", expected, stream);
-    describeValue("  Actual PosixTimeZone value: ", actual, stream);
+  void explainError() override {
+    describeExpectedValue("Expected PosixTimeZone value: ", expected);
+    describeValue("  Actual PosixTimeZone value: ", actual);
   }
 };
 
 } // namespace testing
-} // namespace tzmatcher
-} // namespace __llvm_libc
+} // namespace LIBC_NAMESPACE
 
 #define EXPECT_POSIX_TIME_ZONE_EQ(expected, actual)                            \
-  EXPECT_THAT((actual), __llvm_libc::tzmatcher::testing::PosixTimeZoneMatcher( \
+  EXPECT_THAT((actual), LIBC_NAMESPACE::testing::PosixTimeZoneMatcher( \
                             (expected)))
 
 #define EXPECT_POSIX_TIME_ZONE_TEST_DATA_EQ(expected, actual)                  \
   EXPECT_THAT((actual),                                                        \
-              __llvm_libc::tzmatcher::testing::PosixTimeZoneTestDataMatcher(   \
+              LIBC_NAMESPACE::testing::PosixTimeZoneTestDataMatcher(   \
                   (expected)))
 
 #endif // LLVM_LIBC_TEST_SRC_TIME_TZ_MATCHER_H

@@ -35,12 +35,22 @@ cpp::optional<int> PosixTimeZone::ParseInt(int min, int max) {
     return cpp::nullopt;
 
   char *pEnd;
-  int value = strtol(spec.data(), &pEnd, 10); // NOLINT(runtime/deprecated_fn)
-  if (value < min || value > max)
+  long long_value =
+      strtol(spec.data(), &pEnd, 10); // NOLINT(runtime/deprecated_fn)
+
+  // Check for parsing errors
+  if (pEnd == spec.data())
     return cpp::nullopt;
 
+  // Explicit cast to int with range check to avoid truncation warning
+  if (long_value < static_cast<long>(min) ||
+      long_value > static_cast<long>(max))
+    return cpp::nullopt;
+
+  int value = static_cast<int>(long_value);
+
   // Delete the number from the input string.
-  size_t len = pEnd - spec.data();
+  size_t len = static_cast<size_t>(pEnd - spec.data());
   spec.remove_prefix(len);
   return value;
 }
@@ -51,16 +61,15 @@ cpp::optional<cpp::string_view> PosixTimeZone::ParseAbbr() {
     return cpp::nullopt;
 
   // Handle special zoneinfo <...> form.
-  cpp::optional<cpp::string_view> abbr;
   if (spec.starts_with('<')) {
     spec.remove_prefix(1);
     const auto pos = spec.find_first_of('>');
     if (pos == cpp::string_view::npos)
       return cpp::nullopt;
-    abbr = spec.substr(0, pos);
+    cpp::string_view result = spec.substr(0, pos);
     // Delete the data up to and including '>' character.
     spec.remove_prefix(pos + 1);
-    return abbr;
+    return result;
   }
 
   size_t len = 0;
@@ -74,9 +83,9 @@ cpp::optional<cpp::string_view> PosixTimeZone::ParseAbbr() {
   }
   if (len < 3)
     return cpp::nullopt;
-  abbr = spec.substr(0, len);
+  cpp::string_view result = spec.substr(0, len);
   spec.remove_prefix(len);
-  return abbr;
+  return result;
 }
 
 // offset = [+|-]hh[:mm[:ss]] (aggregated into single seconds value)
