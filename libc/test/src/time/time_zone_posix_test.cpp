@@ -177,31 +177,31 @@ TEST(LlvmLibcParsePosixSpec, InvalidTest) {
 }
 
 TEST(LlvmLibcParsePosixSpec, ValidTest) {
-  struct LIBC_NAMESPACE::tzmatcher::testing::PosixTimeZoneTestData
+  struct LIBC_NAMESPACE::testing::PosixTimeZoneTestData
       good_timezones[] = {
           // [Pacific/Honolulu]
-          LIBC_NAMESPACE::tzmatcher::testing::PosixTimeZoneTestData{
+          LIBC_NAMESPACE::testing::PosixTimeZoneTestData{
               .spec = "HST10",
               .std_abbr = "HST",
               .std_offset = -36000,
               .dst_abbr = "",
               .dst_offset = 0},
           // [Asia/Beijing]
-          LIBC_NAMESPACE::tzmatcher::testing::PosixTimeZoneTestData{
+          LIBC_NAMESPACE::testing::PosixTimeZoneTestData{
               .spec = "CST-8",
               .std_abbr = "CST",
               .std_offset = 28800,
               .dst_abbr = "",
               .dst_offset = 0},
           // [America/New_York]
-          LIBC_NAMESPACE::tzmatcher::testing::PosixTimeZoneTestData{
+          LIBC_NAMESPACE::testing::PosixTimeZoneTestData{
               .spec = "EST5EDT,M3.2.0/2,M11.1.0",
               .std_abbr = "EST",
               .std_offset = -18000,
               .dst_abbr = "EDT",
               .dst_offset = -14400},
           // [Europe/Paris]
-          LIBC_NAMESPACE::tzmatcher::testing::PosixTimeZoneTestData{
+          LIBC_NAMESPACE::testing::PosixTimeZoneTestData{
               .spec = "CET-1CEST,M3.5.0/2,M10.5.0/3",
               .std_abbr = "CET",
               .std_offset = 3600,
@@ -209,7 +209,7 @@ TEST(LlvmLibcParsePosixSpec, ValidTest) {
               .dst_offset = 7200},
 
           // [America/St_Johns]
-          LIBC_NAMESPACE::tzmatcher::testing::PosixTimeZoneTestData{
+          LIBC_NAMESPACE::testing::PosixTimeZoneTestData{
               .spec = "NST03:30NDT,M3.2.0/0:01,M11.1.0/0:01",
               .std_abbr = "NST",
               .std_offset = -12600,
@@ -217,7 +217,7 @@ TEST(LlvmLibcParsePosixSpec, ValidTest) {
               .dst_offset = -9000},
 
           // [Atlantis/Foobar]
-          LIBC_NAMESPACE::tzmatcher::testing::PosixTimeZoneTestData{
+          LIBC_NAMESPACE::testing::PosixTimeZoneTestData{
               .spec = "AST2:45ADT0:45,M4.1.6/1:45,M10.5.6/2:45",
               .std_abbr = "AST",
               .std_offset = -9900,
@@ -227,317 +227,317 @@ TEST(LlvmLibcParsePosixSpec, ValidTest) {
           //
           // We need to verify the data by setting the TZ and calling localtime.
           //
-          LIBC_NAMESPACE::tzmatcher::testing::PosixTimeZoneTestData{
+          LIBC_NAMESPACE::testing::PosixTimeZoneTestData{
               .spec = "EST5",
               .std_abbr = "EST",
               .std_offset = -18000,
               .dst_abbr = "",
               .dst_offset = 0},
 
-          LIBC_NAMESPACE::tzmatcher::testing::PosixTimeZoneTestData{
+          LIBC_NAMESPACE::testing::PosixTimeZoneTestData{
               .spec = "EST5:0",
               .std_abbr = "EST",
               .std_offset = -18000,
               .dst_abbr = "",
               .dst_offset = 0},
 
-          LIBC_NAMESPACE::tzmatcher::testing::PosixTimeZoneTestData{
+          LIBC_NAMESPACE::testing::PosixTimeZoneTestData{
               .spec = "EST5:59",
               .std_abbr = "EST",
               .std_offset = -21540,
               .dst_abbr = "",
               .dst_offset = 0},
 
-          LIBC_NAMESPACE::tzmatcher::testing::PosixTimeZoneTestData{
+          LIBC_NAMESPACE::testing::PosixTimeZoneTestData{
               .spec = "EST5:0:0",
               .std_abbr = "EST",
               .std_offset = -18000,
               .dst_abbr = "",
               .dst_offset = 0},
 
-          LIBC_NAMESPACE::tzmatcher::testing::PosixTimeZoneTestData{
+          LIBC_NAMESPACE::testing::PosixTimeZoneTestData{
               .spec = "EST5:0:59",
               .std_abbr = "EST",
               .std_offset = -18059,
               .dst_abbr = "",
               .dst_offset = 0},
 
-          LIBC_NAMESPACE::tzmatcher::testing::PosixTimeZoneTestData{
+          LIBC_NAMESPACE::testing::PosixTimeZoneTestData{
               .spec = "EST+5",
               .std_abbr = "EST",
               .std_offset = -18000,
               .dst_abbr = "",
               .dst_offset = 0},
 
-          LIBC_NAMESPACE::tzmatcher::testing::PosixTimeZoneTestData{
+          LIBC_NAMESPACE::testing::PosixTimeZoneTestData{
               .spec = "EST+5:0",
               .std_abbr = "EST",
               .std_offset = -18000,
               .dst_abbr = "",
               .dst_offset = 0},
 
-          LIBC_NAMESPACE::tzmatcher::testing::PosixTimeZoneTestData{
+          LIBC_NAMESPACE::testing::PosixTimeZoneTestData{
               .spec = "EST+5:59",
               .std_abbr = "EST",
               .std_offset = -21540,
               .dst_abbr = "",
               .dst_offset = 0},
 
-          LIBC_NAMESPACE::tzmatcher::testing::PosixTimeZoneTestData{
+          LIBC_NAMESPACE::testing::PosixTimeZoneTestData{
               .spec = "EST+5:0:0",
               .std_abbr = "EST",
               .std_offset = -18000,
               .dst_abbr = "",
               .dst_offset = 0},
 
-          LIBC_NAMESPACE::tzmatcher::testing::PosixTimeZoneTestData{
+          LIBC_NAMESPACE::testing::PosixTimeZoneTestData{
               .spec = "EST+5:0:59",
               .std_abbr = "EST",
               .std_offset = -18059,
               .dst_abbr = "",
               .dst_offset = 0},
 
-          LIBC_NAMESPACE::tzmatcher::testing::PosixTimeZoneTestData{
+          LIBC_NAMESPACE::testing::PosixTimeZoneTestData{
               .spec = "EST-5",
               .std_abbr = "EST",
               .std_offset = 18000,
               .dst_abbr = "",
               .dst_offset = 0},
 
-          LIBC_NAMESPACE::tzmatcher::testing::PosixTimeZoneTestData{
+          LIBC_NAMESPACE::testing::PosixTimeZoneTestData{
               .spec = "EST-5:0",
               .std_abbr = "EST",
               .std_offset = 18000,
               .dst_abbr = "",
               .dst_offset = 0},
 
-          LIBC_NAMESPACE::tzmatcher::testing::PosixTimeZoneTestData{
+          LIBC_NAMESPACE::testing::PosixTimeZoneTestData{
               .spec = "EST-5:59",
               .std_abbr = "EST",
               .std_offset = 21540,
               .dst_abbr = "",
               .dst_offset = 0},
 
-          LIBC_NAMESPACE::tzmatcher::testing::PosixTimeZoneTestData{
+          LIBC_NAMESPACE::testing::PosixTimeZoneTestData{
               .spec = "EST-5:0:0",
               .std_abbr = "EST",
               .std_offset = 18000,
               .dst_abbr = "",
               .dst_offset = 0},
 
-          LIBC_NAMESPACE::tzmatcher::testing::PosixTimeZoneTestData{
+          LIBC_NAMESPACE::testing::PosixTimeZoneTestData{
               .spec = "EST-5:0:59",
               .std_abbr = "EST",
               .std_offset = 18059,
               .dst_abbr = "",
               .dst_offset = 0},
 
-          LIBC_NAMESPACE::tzmatcher::testing::PosixTimeZoneTestData{
+          LIBC_NAMESPACE::testing::PosixTimeZoneTestData{
               .spec = "EST5EDT6",
               .std_abbr = "EST",
               .std_offset = -18000,
               .dst_abbr = "EDT",
               .dst_offset = -21600},
 
-          LIBC_NAMESPACE::tzmatcher::testing::PosixTimeZoneTestData{
+          LIBC_NAMESPACE::testing::PosixTimeZoneTestData{
               .spec = "EST5EDT6:0",
               .std_abbr = "EST",
               .std_offset = -18000,
               .dst_abbr = "EDT",
               .dst_offset = -21600},
 
-          LIBC_NAMESPACE::tzmatcher::testing::PosixTimeZoneTestData{
+          LIBC_NAMESPACE::testing::PosixTimeZoneTestData{
               .spec = "EST5EDT6:59",
               .std_abbr = "EST",
               .std_offset = -18000,
               .dst_abbr = "EDT",
               .dst_offset = -25140},
 
-          LIBC_NAMESPACE::tzmatcher::testing::PosixTimeZoneTestData{
+          LIBC_NAMESPACE::testing::PosixTimeZoneTestData{
               .spec = "EST5EDT6:0:0",
               .std_abbr = "EST",
               .std_offset = -18000,
               .dst_abbr = "EDT",
               .dst_offset = -21600},
 
-          LIBC_NAMESPACE::tzmatcher::testing::PosixTimeZoneTestData{
+          LIBC_NAMESPACE::testing::PosixTimeZoneTestData{
               .spec = "EST5EDT6:0:59",
               .std_abbr = "EST",
               .std_offset = -18000,
               .dst_abbr = "EDT",
               .dst_offset = -21659},
 
-          LIBC_NAMESPACE::tzmatcher::testing::PosixTimeZoneTestData{
+          LIBC_NAMESPACE::testing::PosixTimeZoneTestData{
               .spec = "EST5EDT+6",
               .std_abbr = "EST",
               .std_offset = -18000,
               .dst_abbr = "EDT",
               .dst_offset = -21600},
 
-          LIBC_NAMESPACE::tzmatcher::testing::PosixTimeZoneTestData{
+          LIBC_NAMESPACE::testing::PosixTimeZoneTestData{
               .spec = "EST5EDT+6:0",
               .std_abbr = "EST",
               .std_offset = -18000,
               .dst_abbr = "EDT",
               .dst_offset = -21600},
 
-          LIBC_NAMESPACE::tzmatcher::testing::PosixTimeZoneTestData{
+          LIBC_NAMESPACE::testing::PosixTimeZoneTestData{
               .spec = "EST5EDT+6:59",
               .std_abbr = "EST",
               .std_offset = -18000,
               .dst_abbr = "EDT",
               .dst_offset = -25140},
 
-          LIBC_NAMESPACE::tzmatcher::testing::PosixTimeZoneTestData{
+          LIBC_NAMESPACE::testing::PosixTimeZoneTestData{
               .spec = "EST5EDT+6:0:0",
               .std_abbr = "EST",
               .std_offset = -18000,
               .dst_abbr = "EDT",
               .dst_offset = -21600},
 
-          LIBC_NAMESPACE::tzmatcher::testing::PosixTimeZoneTestData{
+          LIBC_NAMESPACE::testing::PosixTimeZoneTestData{
               .spec = "EST5EDT+6:0:59",
               .std_abbr = "EST",
               .std_offset = -18000,
               .dst_abbr = "EDT",
               .dst_offset = -21659},
 
-          LIBC_NAMESPACE::tzmatcher::testing::PosixTimeZoneTestData{
+          LIBC_NAMESPACE::testing::PosixTimeZoneTestData{
               .spec = "EST5EDT-6",
               .std_abbr = "EST",
               .std_offset = -18000,
               .dst_abbr = "EDT",
               .dst_offset = 21600},
 
-          LIBC_NAMESPACE::tzmatcher::testing::PosixTimeZoneTestData{
+          LIBC_NAMESPACE::testing::PosixTimeZoneTestData{
               .spec = "EST5EDT-6/1:2:3",
               .std_abbr = "EST",
               .std_offset = -18000,
               .dst_abbr = "EDT",
               .dst_offset = 21600},
 
-          LIBC_NAMESPACE::tzmatcher::testing::PosixTimeZoneTestData{
+          LIBC_NAMESPACE::testing::PosixTimeZoneTestData{
               .spec = "EST5EDT-6:0",
               .std_abbr = "EST",
               .std_offset = -18000,
               .dst_abbr = "EDT",
               .dst_offset = 21600},
 
-          LIBC_NAMESPACE::tzmatcher::testing::PosixTimeZoneTestData{
+          LIBC_NAMESPACE::testing::PosixTimeZoneTestData{
               .spec = "EST5EDT-6:0/1:2:3",
               .std_abbr = "EST",
               .std_offset = -18000,
               .dst_abbr = "EDT",
               .dst_offset = 21600},
 
-          LIBC_NAMESPACE::tzmatcher::testing::PosixTimeZoneTestData{
+          LIBC_NAMESPACE::testing::PosixTimeZoneTestData{
               .spec = "EST5EDT-6:59",
               .std_abbr = "EST",
               .std_offset = -18000,
               .dst_abbr = "EDT",
               .dst_offset = 25140},
 
-          LIBC_NAMESPACE::tzmatcher::testing::PosixTimeZoneTestData{
+          LIBC_NAMESPACE::testing::PosixTimeZoneTestData{
               .spec = "EST5EDT-6:59/1:2:3",
               .std_abbr = "EST",
               .std_offset = -18000,
               .dst_abbr = "EDT",
               .dst_offset = 25140},
 
-          LIBC_NAMESPACE::tzmatcher::testing::PosixTimeZoneTestData{
+          LIBC_NAMESPACE::testing::PosixTimeZoneTestData{
               .spec = "EST5EDT-6:0:0",
               .std_abbr = "EST",
               .std_offset = -18000,
               .dst_abbr = "EDT",
               .dst_offset = 21600},
 
-          LIBC_NAMESPACE::tzmatcher::testing::PosixTimeZoneTestData{
+          LIBC_NAMESPACE::testing::PosixTimeZoneTestData{
               .spec = "EST5EDT-6:0:0/1:2:3",
               .std_abbr = "EST",
               .std_offset = -18000,
               .dst_abbr = "EDT",
               .dst_offset = 21600},
 
-          LIBC_NAMESPACE::tzmatcher::testing::PosixTimeZoneTestData{
+          LIBC_NAMESPACE::testing::PosixTimeZoneTestData{
               .spec = "EST5EDT-6:0:59",
               .std_abbr = "EST",
               .std_offset = -18000,
               .dst_abbr = "EDT",
               .dst_offset = 21659},
 
-          LIBC_NAMESPACE::tzmatcher::testing::PosixTimeZoneTestData{
+          LIBC_NAMESPACE::testing::PosixTimeZoneTestData{
               .spec = "EST5EDT-6:0:59/1:2:3",
               .std_abbr = "EST",
               .std_offset = -18000,
               .dst_abbr = "EDT",
               .dst_offset = 21659},
-          LIBC_NAMESPACE::tzmatcher::testing::PosixTimeZoneTestData{
+          LIBC_NAMESPACE::testing::PosixTimeZoneTestData{
               .spec = "PST8PDT,M3.2.0",
               .std_abbr = "PST",
               .std_offset = -28800,
               .dst_abbr = "PDT",
               .dst_offset = -25200},
-          LIBC_NAMESPACE::tzmatcher::testing::PosixTimeZoneTestData{
+          LIBC_NAMESPACE::testing::PosixTimeZoneTestData{
               .spec = "PST8PDT,M3.2.0/1:2:3",
               .std_abbr = "PST",
               .std_offset = -28800,
               .dst_abbr = "PDT",
               .dst_offset = -25200},
-          LIBC_NAMESPACE::tzmatcher::testing::PosixTimeZoneTestData{
+          LIBC_NAMESPACE::testing::PosixTimeZoneTestData{
               .spec = "PST8PDT,M3.2.0,M11.1.0",
               .std_abbr = "PST",
               .std_offset = -28800,
               .dst_abbr = "PDT",
               .dst_offset = -25200},
-          LIBC_NAMESPACE::tzmatcher::testing::PosixTimeZoneTestData{
+          LIBC_NAMESPACE::testing::PosixTimeZoneTestData{
               .spec = "PST8PDT,M3.2.0,M11.1.0/1:2:3",
               .std_abbr = "PST",
               .std_offset = -28800,
               .dst_abbr = "PDT",
               .dst_offset = -25200},
-          LIBC_NAMESPACE::tzmatcher::testing::PosixTimeZoneTestData{
+          LIBC_NAMESPACE::testing::PosixTimeZoneTestData{
               .spec = "PST8PDT,J59",
               .std_abbr = "PST",
               .std_offset = -28800,
               .dst_abbr = "PDT",
               .dst_offset = -25200},
-          LIBC_NAMESPACE::tzmatcher::testing::PosixTimeZoneTestData{
+          LIBC_NAMESPACE::testing::PosixTimeZoneTestData{
               .spec = "PST8PDT,J59/1:2:3",
               .std_abbr = "PST",
               .std_offset = -28800,
               .dst_abbr = "PDT",
               .dst_offset = -25200},
-          LIBC_NAMESPACE::tzmatcher::testing::PosixTimeZoneTestData{
+          LIBC_NAMESPACE::testing::PosixTimeZoneTestData{
               .spec = "PST8PDT,J59,J58",
               .std_abbr = "PST",
               .std_offset = -28800,
               .dst_abbr = "PDT",
               .dst_offset = -25200},
-          LIBC_NAMESPACE::tzmatcher::testing::PosixTimeZoneTestData{
+          LIBC_NAMESPACE::testing::PosixTimeZoneTestData{
               .spec = "PST8PDT,J59,J58/1:2:3",
               .std_abbr = "PST",
               .std_offset = -28800,
               .dst_abbr = "PDT",
               .dst_offset = -25200},
-          LIBC_NAMESPACE::tzmatcher::testing::PosixTimeZoneTestData{
+          LIBC_NAMESPACE::testing::PosixTimeZoneTestData{
               .spec = "PST8PDT,59",
               .std_abbr = "PST",
               .std_offset = -28800,
               .dst_abbr = "PDT",
               .dst_offset = -25200},
-          LIBC_NAMESPACE::tzmatcher::testing::PosixTimeZoneTestData{
+          LIBC_NAMESPACE::testing::PosixTimeZoneTestData{
               .spec = "PST8PDT,59/1:2:3",
               .std_abbr = "PST",
               .std_offset = -28800,
               .dst_abbr = "PDT",
               .dst_offset = -25200},
-          LIBC_NAMESPACE::tzmatcher::testing::PosixTimeZoneTestData{
+          LIBC_NAMESPACE::testing::PosixTimeZoneTestData{
               .spec = "PST8PDT,59,58",
               .std_abbr = "PST",
               .std_offset = -28800,
               .dst_abbr = "PDT",
               .dst_offset = -25200},
-          LIBC_NAMESPACE::tzmatcher::testing::PosixTimeZoneTestData{
+          LIBC_NAMESPACE::testing::PosixTimeZoneTestData{
               .spec = "PST8PDT,59,58/1:2:3",
               .std_abbr = "PST",
               .std_offset = -28800,
