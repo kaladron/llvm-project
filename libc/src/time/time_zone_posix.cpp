@@ -58,25 +58,26 @@ cpp::optional<int> PosixTimeZone::Parser::parse_int(cpp::string_view &str,
 }
 
 // abbr = <.*?> | [^-+,\d]{3,}
-cpp::optional<cpp::string_view> PosixTimeZone::ParseAbbr() {
-  if (spec.empty())
+cpp::optional<cpp::string_view>
+PosixTimeZone::Parser::parse_abbr(cpp::string_view &str) {
+  if (str.empty())
     return cpp::nullopt;
 
   // Handle special zoneinfo <...> form.
-  if (spec.starts_with('<')) {
-    spec.remove_prefix(1);
-    const auto pos = spec.find_first_of('>');
+  if (str.starts_with('<')) {
+    str.remove_prefix(1);
+    const auto pos = str.find_first_of('>');
     if (pos == cpp::string_view::npos)
       return cpp::nullopt;
-    cpp::string_view result = spec.substr(0, pos);
+    cpp::string_view result = str.substr(0, pos);
     // Delete the data up to and including '>' character.
-    spec.remove_prefix(pos + 1);
+    str.remove_prefix(pos + 1);
     return result;
   }
 
   size_t len = 0;
   // Handle [^-+,\d]{3,}
-  for (const auto &p : spec) {
+  for (const auto &p : str) {
     if (strchr("-+,", p))
       break;
     if (isdigit(p))
@@ -85,8 +86,8 @@ cpp::optional<cpp::string_view> PosixTimeZone::ParseAbbr() {
   }
   if (len < 3)
     return cpp::nullopt;
-  cpp::string_view result = spec.substr(0, len);
-  spec.remove_prefix(len);
+  cpp::string_view result = str.substr(0, len);
+  str.remove_prefix(len);
   return result;
 }
 
@@ -281,7 +282,7 @@ cpp::optional<PosixTransition> PosixTimeZone::ParseDateTime() {
 // The current POSIX spec for America/Los_Angeles is "PST8PDT,M3.2.0,M11.1.0",
 // which would be broken down for std_abbr as "PST".
 bool PosixTimeZone::UpdateStdAbbr() {
-  const auto abbr_result = ParseAbbr();
+  const auto abbr_result = Parser::parse_abbr(spec);
   if (!abbr_result)
     return false;
   // Calculate offset of abbr_result within original_spec
@@ -294,7 +295,7 @@ bool PosixTimeZone::UpdateStdAbbr() {
 // The current POSIX spec for America/Los_Angeles is "PST8PDT,M3.2.0,M11.1.0",
 // which would be broken down for dst_abbr as "PDT".
 bool PosixTimeZone::UpdateDstAbbr() {
-  const auto abbr_result = ParseAbbr();
+  const auto abbr_result = Parser::parse_abbr(spec);
   if (!abbr_result)
     return false;
   // Calculate offset of abbr_result within original_spec

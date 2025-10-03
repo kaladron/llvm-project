@@ -211,6 +211,9 @@ public:
     // Parse integer value from string, returning nullopt if out of range
     static cpp::optional<int> parse_int(cpp::string_view &str, int min,
                                         int max);
+    
+    // Parse timezone abbreviation from string
+    static cpp::optional<cpp::string_view> parse_abbr(cpp::string_view &str);
   };
 
   bool UpdateStdAbbr();
@@ -221,7 +224,6 @@ public:
   bool UpdateDstEnd();
   bool SpecHasData();
 
-  cpp::optional<cpp::string_view> ParseAbbr();
   cpp::optional<int32_t> ParseOffset(int min_hour, int max_hour,
                                      TZOffset multiplier);
   cpp::optional<PosixTransition> ParseMonthWeekWeekday();
