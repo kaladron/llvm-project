@@ -843,3 +843,87 @@ TEST(LlvmLibcParsePosixSpec, ValidTestAndVerify) {
 
   EXPECT_POSIX_TIME_ZONE_EQ(expected_posix, posix);
 }
+
+TEST(LlvmLibcParsePosixSpec, QuotedTimeZoneNames) {
+  using LIBC_NAMESPACE::cpp::string_view;
+  using LIBC_NAMESPACE::time_zone_posix::PosixTimeZone;
+
+  // Test quoted timezone names with special characters (+ and -)
+  // These are allowed inside <...> but not in unquoted abbreviations
+
+  // Test 1: Plus sign in name
+  {
+    string_view spec = "<UTC+5>-5";
+    auto result = PosixTimeZone::ParsePosixSpec(spec);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->std_abbr, string_view("UTC+5"));
+    EXPECT_EQ(result->std_offset, 5 * 3600); // -5 becomes +5*3600
+  }
+
+  // Test 2: Minus sign in name
+  {
+    string_view spec = "<UTC-5>5";
+    auto result = PosixTimeZone::ParsePosixSpec(spec);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->std_abbr, string_view("UTC-5"));
+    EXPECT_EQ(result->std_offset, -5 * 3600);
+  }
+
+  // Test 3: Both plus and minus signs in name
+  {
+    string_view spec = "<A-B+C>3";
+    auto result = PosixTimeZone::ParsePosixSpec(spec);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->std_abbr, string_view("A-B+C"));
+    EXPECT_EQ(result->std_offset, -3 * 3600);
+  }
+
+  // Test 4: Simple quoted name (no special chars)
+  {
+    string_view spec = "<ABC>5";
+    auto result = PosixTimeZone::ParsePosixSpec(spec);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->std_abbr, string_view("ABC"));
+    EXPECT_EQ(result->std_offset, -5 * 3600);
+  }
+
+  // Test 5: Quoted name with DST and special characters
+  {
+    string_view spec = "<EST-5>5<EDT-4>,M3.2.0,M11.1.0";
+    auto result = PosixTimeZone::ParsePosixSpec(spec);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->std_abbr, string_view("EST-5"));
+    EXPECT_EQ(result->std_offset, -5 * 3600);
+    EXPECT_EQ(result->dst_abbr, string_view("EDT-4"));
+    EXPECT_EQ(result->dst_offset, -4 * 3600);
+  }
+
+  // Test 6: Quoted name with digits
+  {
+    string_view spec = "<UTC5>-5";
+    auto result = PosixTimeZone::ParsePosixSpec(spec);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->std_abbr, string_view("UTC5"));
+  }
+
+  // Test 7: Empty quoted name (should fail)
+  {
+    string_view spec = "<>5";
+    auto result = PosixTimeZone::ParsePosixSpec(spec);
+    EXPECT_FALSE(result.has_value());
+  }
+
+  // Test 8: Unclosed quote (should fail)
+  {
+    string_view spec = "<ABC5";
+    auto result = PosixTimeZone::ParsePosixSpec(spec);
+    EXPECT_FALSE(result.has_value());
+  }
+
+  // Test 9: Closing quote without opening (should fail - invalid format)
+  {
+    string_view spec = "ABC>5";
+    auto result = PosixTimeZone::ParsePosixSpec(spec);
+    EXPECT_FALSE(result.has_value());
+  }
+}

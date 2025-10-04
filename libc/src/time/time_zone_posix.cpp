@@ -69,6 +69,9 @@ PosixTimeZone::Parser::parse_abbr(cpp::string_view &str) {
     const auto pos = str.find_first_of('>');
     if (pos == cpp::string_view::npos)
       return cpp::nullopt;
+    // Empty quoted names are not allowed
+    if (pos == 0)
+      return cpp::nullopt;
     cpp::string_view result = str.substr(0, pos);
     // Delete the data up to and including '>' character.
     str.remove_prefix(pos + 1);
@@ -76,9 +79,10 @@ PosixTimeZone::Parser::parse_abbr(cpp::string_view &str) {
   }
 
   size_t len = 0;
-  // Handle [^-+,\d]{3,}
+  // Handle [^-+,\d<>]{3,}
+  // Unquoted abbreviations must not contain: -, +, comma, digits, < or >
   for (const auto &p : str) {
-    if (strchr("-+,", p))
+    if (strchr("-+,<>", p))
       break;
     if (isdigit(p))
       break;
@@ -309,17 +313,13 @@ PosixTimeZone::ParsePosixSpec(const cpp::string_view spec_input) {
   res.original_spec = spec_input;
   res.spec = ""; // Will remain empty to indicate parsing is complete
 
-  // Track position in original spec
-  size_t consumed = 0;
-
   // Parse standard timezone abbreviation (e.g., "PST" from
   // "PST8PDT,M3.2.0,M11.1.0") This extracts the name of the standard
   // (non-daylight-saving) timezone.
   const auto std_abbr_result = Parser::parse_abbr(spec);
   if (!std_abbr_result)
     return cpp::nullopt;
-  res.std_abbr = res.original_spec.substr(consumed, std_abbr_result->size());
-  consumed += std_abbr_result->size();
+  res.std_abbr = *std_abbr_result;
 
   // Parse standard timezone offset (e.g., "8" from "PST8PDT,M3.2.0,M11.1.0")
   // This is the offset from UTC in hours (can include minutes and seconds).
@@ -335,16 +335,12 @@ PosixTimeZone::ParsePosixSpec(const cpp::string_view spec_input) {
   if (spec.empty())
     return res;
 
-  // Update consumed position for DST parsing
-  consumed = res.original_spec.size() - spec.size();
-
   // Parse DST timezone abbreviation (e.g., "PDT" from "PST8PDT,M3.2.0,M11.1.0")
   // This extracts the name of the daylight-saving timezone.
   const auto dst_abbr_result = Parser::parse_abbr(spec);
   if (!dst_abbr_result)
     return cpp::nullopt;
-  res.dst_abbr = res.original_spec.substr(consumed, dst_abbr_result->size());
-  consumed += dst_abbr_result->size();
+  res.dst_abbr = *dst_abbr_result;
 
   // Parse DST timezone offset (optional, defaults to std_offset + 1 hour)
   // If omitted, DST is assumed to be 1 hour ahead of standard time.
