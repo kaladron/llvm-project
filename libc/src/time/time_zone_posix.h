@@ -31,6 +31,30 @@ enum TZOffset { NEGATIVE = -1, POSITIVE = 1 };
 // The TZ environment variable is specified in
 // https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap08.html
 //
+// POSIX TZ Specification Format:
+//   std offset [dst [offset] [,start[/time],end[/time]]]
+//
+// Where:
+//   - std: Standard timezone abbreviation (3+ chars, or <...> for special
+//   chars)
+//   - offset: Hours[[:minutes][:seconds]] west of UTC
+//   - dst: Optional DST timezone abbreviation
+//   - start/end: Transition dates (Jn, n, or Mm.w.d format)
+//   - time: Transition time (default 02:00:00)
+//
+// Colon-Prefix Behavior:
+//   If TZ starts with ':', POSIX specifies this as "implementation-defined".
+//   Most Unix systems treat ":America/New_York" as a path to load IANA timezone
+//   database files (tzfile format) from /usr/share/zoneinfo/.
+//
+//   THIS IMPLEMENTATION currently rejects colon-prefixed strings and returns
+//   nullopt. This parser only handles POSIX TZ rules, not tzfile loading.
+//   Future support for standard Unix tzfile loading is planned (see Phase 7).
+//
+//   Users should specify POSIX TZ rules directly, for example:
+//     - Instead of ":America/New_York", use "EST5EDT,M3.2.0,M11.1.0"
+//     - Instead of ":UTC", use "UTC0"
+//
 // The following is an example of how the TZ spec is parsed and saved in the
 // PosixTimeZone object.
 //
@@ -154,10 +178,18 @@ public:
         std_offset(std_offset), dst_abbr(dst_abbr), dst_offset(dst_offset),
         dst_start(dst_start), dst_end(dst_end) {}
 
-  // Breaks down a POSIX time-zone specification into its constituent pieces,
+  // Parses a POSIX time-zone specification into its constituent pieces,
   // filling in any missing values (DST offset, or start/end transition times)
-  // with the standard-defined defaults. Returns false if the specification
-  // could not be parsed (although some fields of *res may have been altered).
+  // with the standard-defined defaults.
+  //
+  // Returns: cpp::optional<PosixTimeZone> containing parsed timezone on
+  // success,
+  //          or cpp::nullopt if parsing fails.
+  //
+  // Note: Colon-prefixed strings (e.g., ":America/New_York") are rejected.
+  //       These are implementation-defined per POSIX and typically used to load
+  //       IANA timezone database files. This implementation currently only
+  //       supports POSIX TZ rules. Use "EST5EDT,M3.2.0,M11.1.0" instead.
   static cpp::optional<PosixTimeZone>
   ParsePosixSpec(const cpp::string_view spec);
 

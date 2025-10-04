@@ -302,6 +302,10 @@ PosixTimeZone::Parser::parse_date_time(cpp::string_view &str) {
 // spec = std offset [ dst [ offset ] , datetime , datetime ]
 cpp::optional<PosixTimeZone>
 PosixTimeZone::ParsePosixSpec(const cpp::string_view spec_input) {
+  // Reject colon-prefix (implementation-defined per POSIX).
+  // Most Unix systems use ":America/New_York" to load IANA timezone database
+  // files (tzfile format). This implementation currently only supports POSIX
+  // TZ rules, not tzfile loading. Future tzfile support is planned (Phase 7).
   if (spec_input.starts_with(':'))
     return cpp::nullopt;
 

@@ -1033,3 +1033,63 @@ TEST(LlvmLibcParsePosixSpec, RFC8536ExtendedHours) {
     EXPECT_EQ(result->dst_end.time.offset, -167 * 3600);
   }
 }
+
+TEST(LlvmLibcParsePosixSpec, ColonPrefixRejected) {
+  using LIBC_NAMESPACE::cpp::string_view;
+  using LIBC_NAMESPACE::time_zone_posix::PosixTimeZone;
+
+  // Colon-prefix is implementation-defined per POSIX.
+  // Most Unix systems treat ":America/New_York" as a path to load IANA
+  // timezone database files (tzfile format) from /usr/share/zoneinfo/.
+  //
+  // This implementation currently only supports POSIX TZ rules, not tzfile
+  // loading, so colon-prefixed strings are rejected and return nullopt.
+  // Future support for tzfile loading is planned (Phase 7).
+
+  // Test 1: Typical IANA timezone path
+  {
+    string_view spec = ":America/New_York";
+    auto result = PosixTimeZone::ParsePosixSpec(spec);
+    EXPECT_FALSE(result.has_value());
+  }
+
+  // Test 2: Another common timezone path
+  {
+    string_view spec = ":US/Pacific";
+    auto result = PosixTimeZone::ParsePosixSpec(spec);
+    EXPECT_FALSE(result.has_value());
+  }
+
+  // Test 3: UTC path
+  {
+    string_view spec = ":UTC";
+    auto result = PosixTimeZone::ParsePosixSpec(spec);
+    EXPECT_FALSE(result.has_value());
+  }
+
+  // Test 4: Europe timezone path
+  {
+    string_view spec = ":Europe/London";
+    auto result = PosixTimeZone::ParsePosixSpec(spec);
+    EXPECT_FALSE(result.has_value());
+  }
+
+  // Test 5: Just a colon
+  {
+    string_view spec = ":";
+    auto result = PosixTimeZone::ParsePosixSpec(spec);
+    EXPECT_FALSE(result.has_value());
+  }
+
+  // Test 6: Colon with absolute path
+  // NOTE: Absolute paths (e.g., ":/some/path") should NEVER be supported.
+  // This would be a security vulnerability, especially for privileged
+  // processes, as it could allow loading arbitrary files from the filesystem.
+  // Standard IANA paths are relative (e.g., ":America/New_York" looks in
+  // /usr/share/zoneinfo/America/New_York), never absolute.
+  {
+    string_view spec = ":/some/random/path";
+    auto result = PosixTimeZone::ParsePosixSpec(spec);
+    EXPECT_FALSE(result.has_value());
+  }
+}
