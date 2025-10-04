@@ -927,3 +927,109 @@ TEST(LlvmLibcParsePosixSpec, QuotedTimeZoneNames) {
     EXPECT_FALSE(result.has_value());
   }
 }
+
+TEST(LlvmLibcParsePosixSpec, RFC8536ExtendedHours) {
+  using LIBC_NAMESPACE::cpp::string_view;
+  using LIBC_NAMESPACE::time_zone_posix::PosixTimeZone;
+
+  // RFC 8536 extends the hour range for transition times from 0-24 to -167 to +167
+  // This allows representing transitions that occur on days other than the nominal day
+
+  // Test 1: Maximum positive hours (167:59:59)
+  {
+    string_view spec = "EST5EDT,M3.2.0/167:59:59,M11.1.0";
+    auto result = PosixTimeZone::ParsePosixSpec(spec);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->dst_start.time.offset, 167 * 3600 + 59 * 60 + 59);
+  }
+
+  // Test 2: Maximum negative hours (-167:00:00)
+  {
+    string_view spec = "EST5EDT,M3.2.0/-167:00:00,M11.1.0";
+    auto result = PosixTimeZone::ParsePosixSpec(spec);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->dst_start.time.offset, -167 * 3600);
+  }
+
+  // Test 3: Negative hours with minutes and seconds (-167:30:45)
+  {
+    string_view spec = "EST5EDT,M3.2.0/-167:30:45,M11.1.0";
+    auto result = PosixTimeZone::ParsePosixSpec(spec);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->dst_start.time.offset, -167 * 3600 - 30 * 60 - 45);
+  }
+
+  // Test 4: Over maximum positive (168:00:00 should fail)
+  {
+    string_view spec = "EST5EDT,M3.2.0/168:00:00,M11.1.0";
+    auto result = PosixTimeZone::ParsePosixSpec(spec);
+    EXPECT_FALSE(result.has_value());
+  }
+
+  // Test 5: Under minimum negative (-168:00:00 should fail)
+  {
+    string_view spec = "EST5EDT,M3.2.0/-168:00:00,M11.1.0";
+    auto result = PosixTimeZone::ParsePosixSpec(spec);
+    EXPECT_FALSE(result.has_value());
+  }
+
+  // Test 6: Old POSIX maximum (24:00:00) should still work
+  {
+    string_view spec = "EST5EDT,M3.2.0/24:00:00,M11.1.0";
+    auto result = PosixTimeZone::ParsePosixSpec(spec);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->dst_start.time.offset, 24 * 3600);
+  }
+
+  // Test 7: Extended hours on end transition
+  {
+    string_view spec = "EST5EDT,M3.2.0,M11.1.0/100:30:15";
+    auto result = PosixTimeZone::ParsePosixSpec(spec);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->dst_end.time.offset, 100 * 3600 + 30 * 60 + 15);
+  }
+
+  // Test 8: Extended hours on both transitions
+  {
+    string_view spec = "EST5EDT,M3.2.0/-50:00:00,M11.1.0/150:00:00";
+    auto result = PosixTimeZone::ParsePosixSpec(spec);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->dst_start.time.offset, -50 * 3600);
+    EXPECT_EQ(result->dst_end.time.offset, 150 * 3600);
+  }
+
+  // Test 9: Julian day notation with extended hours
+  {
+    string_view spec = "EST5EDT,J100/167:00:00,J300/-167:00:00";
+    auto result = PosixTimeZone::ParsePosixSpec(spec);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->dst_start.time.offset, 167 * 3600);
+    EXPECT_EQ(result->dst_end.time.offset, -167 * 3600);
+  }
+
+  // Test 10: Zero-based day notation with extended hours
+  {
+    string_view spec = "EST5EDT,100/167:59:59,300/-167:59:59";
+    auto result = PosixTimeZone::ParsePosixSpec(spec);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->dst_start.time.offset, 167 * 3600 + 59 * 60 + 59);
+    EXPECT_EQ(result->dst_end.time.offset, -167 * 3600 - 59 * 60 - 59);
+  }
+
+  // Test 11: Positive extended hours without explicit plus sign
+  {
+    string_view spec = "EST5EDT,M3.2.0/100,M11.1.0";
+    auto result = PosixTimeZone::ParsePosixSpec(spec);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->dst_start.time.offset, 100 * 3600);
+  }
+
+  // Test 12: Edge case - exactly at boundaries (167 and -167)
+  {
+    string_view spec = "EST5EDT,M3.2.0/167,M11.1.0/-167";
+    auto result = PosixTimeZone::ParsePosixSpec(spec);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->dst_start.time.offset, 167 * 3600);
+    EXPECT_EQ(result->dst_end.time.offset, -167 * 3600);
+  }
+}
