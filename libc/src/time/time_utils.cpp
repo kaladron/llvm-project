@@ -12,6 +12,12 @@
 #include "src/__support/common.h"
 #include "src/__support/macros/config.h"
 #include "src/time/time_constants.h"
+#include "src/time/time_zone_posix.h"
+
+// Forward declaration of system getenv (thread-safe on POSIX systems)
+extern "C" {
+char *getenv(const char *name);
+}
 
 namespace LIBC_NAMESPACE_DECL {
 namespace time_utils {
@@ -99,13 +105,49 @@ cpp::optional<time_t> mktime_internal(const tm *tm_out) {
     }
   }
 
-  // TODO: https://github.com/llvm/llvm-project/issues/121962
-  // Need to handle timezone and update of tm_isdst.
-  time_t seconds = static_cast<time_t>(
+  // Calculate time_t treating the input struct tm as if it were in local time
+  time_t local_seconds = static_cast<time_t>(
       tm_out->tm_sec + tm_out->tm_min * time_constants::SECONDS_PER_MIN +
       tm_out->tm_hour * time_constants::SECONDS_PER_HOUR +
       total_days * time_constants::SECONDS_PER_DAY);
-  return seconds;
+
+  // Get TZ environment variable
+  // Use system getenv (declared at top of file)
+  const char *tz_env = ::getenv("TZ");
+  cpp::string_view tz_spec = tz_env ? cpp::string_view(tz_env) : "";
+
+  // Convert from local time to UTC by subtracting the timezone adjustment.
+  //
+  // Challenge: GetTimezoneAdjustment() needs a time_t parameter to determine
+  // if DST is active, but we're trying to *calculate* that time_t. This is a
+  // chicken-and-egg problem that requires iteration to solve.
+  //
+  // Solution: Two-pass algorithm
+  // 1. First pass: Treat local_seconds as if it were UTC to get an initial
+  //    adjustment. This gives us a rough approximation of the actual UTC time.
+  // 2. Second pass: Use the approximation from step 1 to get the correct
+  //    adjustment for the actual UTC time, then recalculate.
+  //
+  // This converges because the DST boundary won't shift more than a few hours
+  // between iterations, so the second iteration gives us the correct answer.
+
+  // First approximation: pretend local_seconds is UTC to get initial offset
+  int32_t adjustment = time_zone_posix::PosixTimeZone::GetTimezoneAdjustment(
+      tz_spec, local_seconds);
+  time_t utc_seconds = local_seconds - adjustment;
+
+  // Second iteration: use our approximation to get the correct offset
+  // This handles cases where the first approximation crossed a DST boundary
+  adjustment = time_zone_posix::PosixTimeZone::GetTimezoneAdjustment(
+      tz_spec, utc_seconds);
+  utc_seconds = local_seconds - adjustment;
+
+  // TODO: Update tm_isdst based on whether DST is active
+  // The time_t conversion is correct, but tm_isdst update needs more work.
+  // For now, leave tm_isdst as provided by the caller.
+  // See https://github.com/llvm/llvm-project/issues/121962
+
+  return utc_seconds;
 }
 
 static int64_t computeRemainingYears(int64_t daysPerYears,

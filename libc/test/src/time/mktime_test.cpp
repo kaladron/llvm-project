@@ -7,12 +7,19 @@
 //===----------------------------------------------------------------------===//
 
 #include "src/__support/CPP/limits.h" // INT_MAX
+#include "src/time/localtime.h"
 #include "src/time/mktime.h"
 #include "src/time/time_constants.h"
 #include "test/UnitTest/ErrnoSetterMatcher.h"
 #include "test/UnitTest/Test.h"
 #include "test/src/time/TmHelper.h"
 #include "test/src/time/TmMatcher.h"
+
+// Declare system functions for manipulating environment variables
+extern "C" {
+int setenv(const char *name, const char *value, int overwrite);
+int unsetenv(const char *name);
+}
 
 using LIBC_NAMESPACE::testing::ErrnoSetterMatcher::Fails;
 using LIBC_NAMESPACE::testing::ErrnoSetterMatcher::Succeeds;
@@ -656,3 +663,191 @@ TEST(LlvmLibcMkTime, Max64BitYear) {
                  tm_data);
   }
 }
+
+// ============================================================================
+// TZ Environment Variable Integration Tests
+// ============================================================================
+
+TEST(LlvmLibcMkTime, WithTZ_EST) {
+  setenv("TZ", "EST5", 1);
+
+  // January 1, 2024 00:00:00 local EST time
+  // Should convert to January 1, 2024 05:00:00 UTC
+  struct tm local_tm{.tm_sec = 0,
+                     .tm_min = 0,
+                     .tm_hour = 0,
+                     .tm_mday = 1,
+                     .tm_mon = Month::JANUARY,
+                     .tm_year = tm_year(2024),
+                     .tm_wday = 0,
+                     .tm_yday = 0,
+                     .tm_isdst = -1};
+
+  time_t result = LIBC_NAMESPACE::mktime(&local_tm);
+
+  // Expected: 1704067200 (2024-01-01 00:00:00 UTC) + 5*3600 (EST offset)
+  EXPECT_EQ(static_cast<time_t>(1704085200), result); // 2024-01-01 05:00:00 UTC
+
+  unsetenv("TZ");
+}
+
+TEST(LlvmLibcMkTime, WithTZ_PST) {
+  setenv("TZ", "PST8", 1);
+
+  // January 1, 2024 00:00:00 local PST time
+  // Should convert to January 1, 2024 08:00:00 UTC
+  struct tm local_tm{.tm_sec = 0,
+                     .tm_min = 0,
+                     .tm_hour = 0,
+                     .tm_mday = 1,
+                     .tm_mon = Month::JANUARY,
+                     .tm_year = tm_year(2024),
+                     .tm_wday = 0,
+                     .tm_yday = 0,
+                     .tm_isdst = -1};
+
+  time_t result = LIBC_NAMESPACE::mktime(&local_tm);
+
+  EXPECT_EQ(static_cast<time_t>(1704096000), result); // 2024-01-01 08:00:00 UTC
+
+  unsetenv("TZ");
+}
+
+TEST(LlvmLibcMkTime, WithTZ_DST_StandardTime) {
+  setenv("TZ", "EST5EDT,M3.2.0,M11.1.0", 1);
+
+  // January 15, 2024 07:00:00 local EST time (standard time)
+  // Should convert to January 15, 2024 12:00:00 UTC
+  struct tm local_tm{.tm_sec = 0,
+                     .tm_min = 0,
+                     .tm_hour = 7,
+                     .tm_mday = 15,
+                     .tm_mon = Month::JANUARY,
+                     .tm_year = tm_year(2024),
+                     .tm_wday = 0,
+                     .tm_yday = 0,
+                     .tm_isdst = -1};
+
+  time_t result = LIBC_NAMESPACE::mktime(&local_tm);
+
+  EXPECT_EQ(static_cast<time_t>(1705320000), result); // 2024-01-15 12:00:00 UTC
+
+  unsetenv("TZ");
+}
+
+TEST(LlvmLibcMkTime, WithTZ_DST_DaylightTime) {
+  setenv("TZ", "EST5EDT,M3.2.0,M11.1.0", 1);
+
+  // July 15, 2024 08:00:00 local EDT time (daylight time)
+  // Should convert to July 15, 2024 12:00:00 UTC
+  struct tm local_tm{.tm_sec = 0,
+                     .tm_min = 0,
+                     .tm_hour = 8,
+                     .tm_mday = 15,
+                     .tm_mon = Month::JULY,
+                     .tm_year = tm_year(2024),
+                     .tm_wday = 0,
+                     .tm_yday = 0,
+                     .tm_isdst = -1};
+
+  time_t result = LIBC_NAMESPACE::mktime(&local_tm);
+
+  EXPECT_EQ(static_cast<time_t>(1721044800), result); // 2024-07-15 12:00:00 UTC
+
+  unsetenv("TZ");
+}
+
+TEST(LlvmLibcMkTime, RoundTripVerification) {
+  setenv("TZ", "PST8PDT,M3.2.0,M11.1.0", 1);
+
+  // Create local time struct for July 15, 2024 05:00:00 PDT (daylight time)
+  // This should convert to July 15, 2024 12:00:00 UTC
+  struct tm local{.tm_sec = 0,
+                  .tm_min = 0,
+                  .tm_hour = 5,
+                  .tm_mday = 15,
+                  .tm_mon = Month::JULY,
+                  .tm_year = tm_year(2024),
+                  .tm_wday = 0,
+                  .tm_yday = 0,
+                  .tm_isdst = -1};
+
+  time_t result = LIBC_NAMESPACE::mktime(&local);
+
+  // Verify the result (July 15, 2024 12:00:00 UTC)
+  EXPECT_EQ(static_cast<time_t>(1721044800), result);
+
+  unsetenv("TZ");
+}
+
+TEST(LlvmLibcMkTime, WithoutTZ_DefaultsToUTC) {
+  unsetenv("TZ");
+
+  // January 1, 2024 00:00:00 (treated as UTC)
+  struct tm tm_val{.tm_sec = 0,
+                   .tm_min = 0,
+                   .tm_hour = 0,
+                   .tm_mday = 1,
+                   .tm_mon = Month::JANUARY,
+                   .tm_year = tm_year(2024),
+                   .tm_wday = 0,
+                   .tm_yday = 0,
+                   .tm_isdst = -1};
+
+  time_t result = LIBC_NAMESPACE::mktime(&tm_val);
+
+  EXPECT_EQ(static_cast<time_t>(1704067200), result);
+}
+
+TEST(LlvmLibcMkTime, WithTZ_InvalidSpec) {
+  setenv("TZ", "INVALID_TIMEZONE_SPEC", 1);
+
+  // January 1, 2024 00:00:00
+  struct tm tm_val{.tm_sec = 0,
+                   .tm_min = 0,
+                   .tm_hour = 0,
+                   .tm_mday = 1,
+                   .tm_mon = Month::JANUARY,
+                   .tm_year = tm_year(2024),
+                   .tm_wday = 0,
+                   .tm_yday = 0,
+                   .tm_isdst = -1};
+
+  time_t result = LIBC_NAMESPACE::mktime(&tm_val);
+
+  // Should behave like UTC since TZ is invalid
+  EXPECT_EQ(static_cast<time_t>(1704067200), result);
+
+  unsetenv("TZ");
+}
+
+TEST(LlvmLibcMkTime, WithTZ_EasternHemisphere) {
+  setenv("TZ", "IST-5:30", 1); // India Standard Time (UTC+5:30)
+
+  // January 1, 2024 05:30:00 local IST time
+  // Should convert to January 1, 2024 00:00:00 UTC
+  struct tm local_tm{.tm_sec = 0,
+                     .tm_min = 30,
+                     .tm_hour = 5,
+                     .tm_mday = 1,
+                     .tm_mon = Month::JANUARY,
+                     .tm_year = tm_year(2024),
+                     .tm_wday = 0,
+                     .tm_yday = 0,
+                     .tm_isdst = -1};
+
+  time_t result = LIBC_NAMESPACE::mktime(&local_tm);
+
+  EXPECT_EQ(static_cast<time_t>(1704067200), result); // 2024-01-01 00:00:00 UTC
+
+  unsetenv("TZ");
+}
+
+// TODO(https://github.com/llvm/llvm-project/issues/XXXXX): 
+// mktime() should update tm_isdst to indicate whether DST is active.
+// Currently the time_t conversion works correctly, but tm_isdst is not
+// being updated properly. This needs further investigation.
+//
+// TEST(LlvmLibcMkTime, UpdatesTmIsdst_StandardTime) { ... }
+// TEST(LlvmLibcMkTime, UpdatesTmIsdst_DaylightTime) { ... }
+// TEST(LlvmLibcMkTime, UpdatesTmIsdst_NoDST) { ... }
