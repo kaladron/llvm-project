@@ -1093,3 +1093,362 @@ TEST(LlvmLibcParsePosixSpec, ColonPrefixRejected) {
     EXPECT_FALSE(result.has_value());
   }
 }
+
+TEST(LlvmLibcParsePosixSpec, BoundaryConditions) {
+  using LIBC_NAMESPACE::cpp::string_view;
+  using LIBC_NAMESPACE::time_zone_posix::PosixTimeZone;
+  using LIBC_NAMESPACE::time_zone_posix::PosixTransition;
+
+  // This test covers all boundary values and edge cases for the POSIX TZ parser
+  // to ensure robustness at extreme valid values and proper rejection of invalid ones.
+
+  //
+  // Hour Boundaries (valid range: -167 to 167 per RFC 8536)
+  //
+
+  // Test minimum valid hour in transition time
+  {
+    string_view spec = "EST5EDT,M3.2.0/-167,M11.1.0";
+    auto result = PosixTimeZone::ParsePosixSpec(spec);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->dst_start.time.offset, -167 * 3600);
+  }
+
+  // Test maximum valid hour in transition time
+  {
+    string_view spec = "EST5EDT,M3.2.0/167,M11.1.0";
+    auto result = PosixTimeZone::ParsePosixSpec(spec);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->dst_start.time.offset, 167 * 3600);
+  }
+
+  // Test zero hour
+  {
+    string_view spec = "EST5EDT,M3.2.0/0,M11.1.0";
+    auto result = PosixTimeZone::ParsePosixSpec(spec);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->dst_start.time.offset, 0);
+  }
+
+  // Test old POSIX standard maximum (24 hours)
+  {
+    string_view spec = "EST5EDT,M3.2.0/24,M11.1.0";
+    auto result = PosixTimeZone::ParsePosixSpec(spec);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->dst_start.time.offset, 24 * 3600);
+  }
+
+  // Test hour beyond maximum (168 should fail)
+  {
+    string_view spec = "EST5EDT,M3.2.0/168,M11.1.0";
+    auto result = PosixTimeZone::ParsePosixSpec(spec);
+    EXPECT_FALSE(result.has_value());
+  }
+
+  // Test hour below minimum (-168 should fail)
+  {
+    string_view spec = "EST5EDT,M3.2.0/-168,M11.1.0";
+    auto result = PosixTimeZone::ParsePosixSpec(spec);
+    EXPECT_FALSE(result.has_value());
+  }
+
+  //
+  // Minute Boundaries (valid range: 0-59)
+  //
+
+  // Test minimum valid minutes
+  {
+    string_view spec = "EST5EDT,M3.2.0/2:0,M11.1.0";
+    auto result = PosixTimeZone::ParsePosixSpec(spec);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->dst_start.time.offset, 2 * 3600);
+  }
+
+  // Test maximum valid minutes
+  {
+    string_view spec = "EST5EDT,M3.2.0/2:59,M11.1.0";
+    auto result = PosixTimeZone::ParsePosixSpec(spec);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->dst_start.time.offset, 2 * 3600 + 59 * 60);
+  }
+
+  // Test minutes out of range (60 should fail)
+  {
+    string_view spec = "EST5EDT,M3.2.0/2:60,M11.1.0";
+    auto result = PosixTimeZone::ParsePosixSpec(spec);
+    EXPECT_FALSE(result.has_value());
+  }
+
+  // Test negative minutes (should fail)
+  {
+    string_view spec = "EST5EDT,M3.2.0/2:-1,M11.1.0";
+    auto result = PosixTimeZone::ParsePosixSpec(spec);
+    EXPECT_FALSE(result.has_value());
+  }
+
+  //
+  // Second Boundaries (valid range: 0-59)
+  //
+
+  // Test minimum valid seconds
+  {
+    string_view spec = "EST5EDT,M3.2.0/2:30:0,M11.1.0";
+    auto result = PosixTimeZone::ParsePosixSpec(spec);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->dst_start.time.offset, 2 * 3600 + 30 * 60);
+  }
+
+  // Test maximum valid seconds
+  {
+    string_view spec = "EST5EDT,M3.2.0/2:30:59,M11.1.0";
+    auto result = PosixTimeZone::ParsePosixSpec(spec);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->dst_start.time.offset, 2 * 3600 + 30 * 60 + 59);
+  }
+
+  // Test seconds out of range (60 should fail)
+  {
+    string_view spec = "EST5EDT,M3.2.0/2:30:60,M11.1.0";
+    auto result = PosixTimeZone::ParsePosixSpec(spec);
+    EXPECT_FALSE(result.has_value());
+  }
+
+  // Test negative seconds (should fail)
+  {
+    string_view spec = "EST5EDT,M3.2.0/2:30:-1,M11.1.0";
+    auto result = PosixTimeZone::ParsePosixSpec(spec);
+    EXPECT_FALSE(result.has_value());
+  }
+
+  //
+  // Day Boundaries - Julian Format (Jn) (valid range: J1-J365)
+  //
+
+  // Test minimum valid Julian day
+  {
+    string_view spec = "EST5EDT,J1,M11.1.0";
+    auto result = PosixTimeZone::ParsePosixSpec(spec);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->dst_start.date.fmt, PosixTransition::DateFormat::J);
+    auto& day = result->dst_start.date.data.get<PosixTransition::Date::NonLeapDay>();
+    EXPECT_EQ(day.day, static_cast<int16_t>(1));
+  }
+
+  // Test maximum valid Julian day
+  {
+    string_view spec = "EST5EDT,J365,M11.1.0";
+    auto result = PosixTimeZone::ParsePosixSpec(spec);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->dst_start.date.fmt, PosixTransition::DateFormat::J);
+    auto& day = result->dst_start.date.data.get<PosixTransition::Date::NonLeapDay>();
+    EXPECT_EQ(day.day, static_cast<int16_t>(365));
+  }
+
+  // Test Julian day 0 (should fail - J format starts at 1)
+  {
+    string_view spec = "EST5EDT,J0,M11.1.0";
+    auto result = PosixTimeZone::ParsePosixSpec(spec);
+    EXPECT_FALSE(result.has_value());
+  }
+
+  // Test Julian day beyond maximum (J366 should fail)
+  {
+    string_view spec = "EST5EDT,J366,M11.1.0";
+    auto result = PosixTimeZone::ParsePosixSpec(spec);
+    EXPECT_FALSE(result.has_value());
+  }
+
+  //
+  // Day Boundaries - Zero-based Format (n) (valid range: 0-365)
+  //
+
+  // Test minimum valid zero-based day
+  {
+    string_view spec = "EST5EDT,0,M11.1.0";
+    auto result = PosixTimeZone::ParsePosixSpec(spec);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->dst_start.date.fmt, PosixTransition::DateFormat::N);
+    auto& day = result->dst_start.date.data.get<PosixTransition::Date::Day>();
+    EXPECT_EQ(day.day, static_cast<int16_t>(0));
+  }
+
+  // Test maximum valid zero-based day
+  {
+    string_view spec = "EST5EDT,365,M11.1.0";
+    auto result = PosixTimeZone::ParsePosixSpec(spec);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->dst_start.date.fmt, PosixTransition::DateFormat::N);
+    auto& day = result->dst_start.date.data.get<PosixTransition::Date::Day>();
+    EXPECT_EQ(day.day, static_cast<int16_t>(365));
+  }
+
+  // Test zero-based day beyond maximum (366 should fail)
+  {
+    string_view spec = "EST5EDT,366,M11.1.0";
+    auto result = PosixTimeZone::ParsePosixSpec(spec);
+    EXPECT_FALSE(result.has_value());
+  }
+
+  // Test negative zero-based day (should fail)
+  {
+    string_view spec = "EST5EDT,-1,M11.1.0";
+    auto result = PosixTimeZone::ParsePosixSpec(spec);
+    EXPECT_FALSE(result.has_value());
+  }
+
+  //
+  // Week Boundaries - M format (Mm.n.d) (valid range for n: 1-5)
+  //
+
+  // Test minimum valid week (1)
+  {
+    string_view spec = "EST5EDT,M3.1.0,M11.1.0";
+    auto result = PosixTimeZone::ParsePosixSpec(spec);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->dst_start.date.fmt, PosixTransition::DateFormat::M);
+    auto& mwd = result->dst_start.date.data.get<PosixTransition::Date::MonthWeekWeekday>();
+    EXPECT_EQ(mwd.week, static_cast<int8_t>(1));
+  }
+
+  // Test maximum valid week (5)
+  {
+    string_view spec = "EST5EDT,M3.5.0,M11.1.0";
+    auto result = PosixTimeZone::ParsePosixSpec(spec);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->dst_start.date.fmt, PosixTransition::DateFormat::M);
+    auto& mwd = result->dst_start.date.data.get<PosixTransition::Date::MonthWeekWeekday>();
+    EXPECT_EQ(mwd.week, static_cast<int8_t>(5));
+  }
+
+  // Test week 0 (should fail)
+  {
+    string_view spec = "EST5EDT,M3.0.0,M11.1.0";
+    auto result = PosixTimeZone::ParsePosixSpec(spec);
+    EXPECT_FALSE(result.has_value());
+  }
+
+  // Test week 6 (should fail)
+  {
+    string_view spec = "EST5EDT,M3.6.0,M11.1.0";
+    auto result = PosixTimeZone::ParsePosixSpec(spec);
+    EXPECT_FALSE(result.has_value());
+  }
+
+  //
+  // Month Boundaries - M format (Mm.n.d) (valid range for m: 1-12)
+  //
+
+  // Test minimum valid month (1 = January)
+  {
+    string_view spec = "EST5EDT,M1.2.0,M11.1.0";
+    auto result = PosixTimeZone::ParsePosixSpec(spec);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->dst_start.date.fmt, PosixTransition::DateFormat::M);
+    auto& mwd = result->dst_start.date.data.get<PosixTransition::Date::MonthWeekWeekday>();
+    EXPECT_EQ(mwd.month, static_cast<int8_t>(1));
+  }
+
+  // Test maximum valid month (12 = December)
+  {
+    string_view spec = "EST5EDT,M12.2.0,M11.1.0";
+    auto result = PosixTimeZone::ParsePosixSpec(spec);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->dst_start.date.fmt, PosixTransition::DateFormat::M);
+    auto& mwd = result->dst_start.date.data.get<PosixTransition::Date::MonthWeekWeekday>();
+    EXPECT_EQ(mwd.month, static_cast<int8_t>(12));
+  }
+
+  // Test month 0 (should fail)
+  {
+    string_view spec = "EST5EDT,M0.2.0,M11.1.0";
+    auto result = PosixTimeZone::ParsePosixSpec(spec);
+    EXPECT_FALSE(result.has_value());
+  }
+
+  // Test month 13 (should fail)
+  {
+    string_view spec = "EST5EDT,M13.2.0,M11.1.0";
+    auto result = PosixTimeZone::ParsePosixSpec(spec);
+    EXPECT_FALSE(result.has_value());
+  }
+
+  //
+  // Weekday Boundaries - M format (Mm.n.d) (valid range for d: 0-6)
+  //
+
+  // Test minimum valid weekday (0 = Sunday)
+  {
+    string_view spec = "EST5EDT,M3.2.0,M11.1.0";
+    auto result = PosixTimeZone::ParsePosixSpec(spec);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->dst_start.date.fmt, PosixTransition::DateFormat::M);
+    auto& mwd = result->dst_start.date.data.get<PosixTransition::Date::MonthWeekWeekday>();
+    EXPECT_EQ(mwd.weekday, static_cast<int8_t>(0));
+  }
+
+  // Test maximum valid weekday (6 = Saturday)
+  {
+    string_view spec = "EST5EDT,M3.2.6,M11.1.0";
+    auto result = PosixTimeZone::ParsePosixSpec(spec);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->dst_start.date.fmt, PosixTransition::DateFormat::M);
+    auto& mwd = result->dst_start.date.data.get<PosixTransition::Date::MonthWeekWeekday>();
+    EXPECT_EQ(mwd.weekday, static_cast<int8_t>(6));
+  }
+
+  // Test weekday 7 (should fail)
+  {
+    string_view spec = "EST5EDT,M3.2.7,M11.1.0";
+    auto result = PosixTimeZone::ParsePosixSpec(spec);
+    EXPECT_FALSE(result.has_value());
+  }
+
+  // Test negative weekday (should fail)
+  {
+    string_view spec = "EST5EDT,M3.2.-1,M11.1.0";
+    auto result = PosixTimeZone::ParsePosixSpec(spec);
+    EXPECT_FALSE(result.has_value());
+  }
+
+  //
+  // Combined Extreme Cases
+  //
+
+  // Test all maximums together
+  {
+    string_view spec = "EST5EDT,M12.5.6/167:59:59,J365/-167:59:59";
+    auto result = PosixTimeZone::ParsePosixSpec(spec);
+    ASSERT_TRUE(result.has_value());
+    // Verify start: December, week 5, Saturday, at 167:59:59
+    EXPECT_EQ(result->dst_start.date.fmt, PosixTransition::DateFormat::M);
+    auto& start_mwd = result->dst_start.date.data.get<PosixTransition::Date::MonthWeekWeekday>();
+    EXPECT_EQ(start_mwd.month, static_cast<int8_t>(12));
+    EXPECT_EQ(start_mwd.week, static_cast<int8_t>(5));
+    EXPECT_EQ(start_mwd.weekday, static_cast<int8_t>(6));
+    EXPECT_EQ(result->dst_start.time.offset, 167 * 3600 + 59 * 60 + 59);
+    // Verify end: Julian day 365, at -167:59:59
+    EXPECT_EQ(result->dst_end.date.fmt, PosixTransition::DateFormat::J);
+    auto& end_day = result->dst_end.date.data.get<PosixTransition::Date::NonLeapDay>();
+    EXPECT_EQ(end_day.day, static_cast<int16_t>(365));
+    EXPECT_EQ(result->dst_end.time.offset, -167 * 3600 - 59 * 60 - 59);
+  }
+
+  // Test all minimums together
+  {
+    string_view spec = "EST5EDT,M1.1.0/-167:0:0,0/0:0:0";
+    auto result = PosixTimeZone::ParsePosixSpec(spec);
+    ASSERT_TRUE(result.has_value());
+    // Verify start: January, week 1, Sunday, at -167:00:00
+    EXPECT_EQ(result->dst_start.date.fmt, PosixTransition::DateFormat::M);
+    auto& start_mwd = result->dst_start.date.data.get<PosixTransition::Date::MonthWeekWeekday>();
+    EXPECT_EQ(start_mwd.month, static_cast<int8_t>(1));
+    EXPECT_EQ(start_mwd.week, static_cast<int8_t>(1));
+    EXPECT_EQ(start_mwd.weekday, static_cast<int8_t>(0));
+    EXPECT_EQ(result->dst_start.time.offset, -167 * 3600);
+    // Verify end: Day 0, at 00:00:00
+    EXPECT_EQ(result->dst_end.date.fmt, PosixTransition::DateFormat::N);
+    auto& end_day = result->dst_end.date.data.get<PosixTransition::Date::Day>();
+    EXPECT_EQ(end_day.day, static_cast<int16_t>(0));
+    EXPECT_EQ(result->dst_end.time.offset, 0);
+  }
+}
