@@ -18,7 +18,11 @@
 #include "src/__support/common.h"
 #include "src/__support/libc_errno.h"
 #include "src/__support/macros/config.h"
+#include "src/time/time_zone_posix.h"
 #include "time_constants.h"
+
+// Forward declare system getenv for accessing environment variables
+extern "C" char *getenv(const char *);
 
 namespace LIBC_NAMESPACE_DECL {
 namespace time_utils {
@@ -157,14 +161,32 @@ LIBC_INLINE tm *gmtime_internal(const time_t *timer, tm *result) {
 }
 
 LIBC_INLINE tm *localtime_internal(const time_t *timer, tm *result) {
-  time_t seconds = *timer;
-  // Update the tm structure's year, month, day, etc. from seconds.
-  if (update_from_seconds(seconds, result) < 0) {
+  // Get TZ environment variable
+  // Use system getenv (declared at top of file)
+  const char *tz_env = ::getenv("TZ");
+  cpp::string_view tz_spec = tz_env ? cpp::string_view(tz_env) : "";
+
+  // Get timezone adjustment (offset from UTC to local time)
+  int32_t adjustment =
+      time_zone_posix::PosixTimeZone::GetTimezoneAdjustment(tz_spec, *timer);
+
+  // Apply timezone adjustment to convert UTC to local time
+  time_t local_seconds = *timer + adjustment;
+
+  // Update the tm structure's year, month, day, etc. from adjusted seconds.
+  if (update_from_seconds(local_seconds, result) < 0) {
     out_of_range();
     return nullptr;
   }
 
-  // TODO(zimirza): implement timezone database
+  // Set tm_isdst based on whether DST is active
+  // Parse the TZ spec to check DST status
+  auto tz_parsed = time_zone_posix::PosixTimeZone::ParsePosixSpec(tz_spec);
+  if (tz_parsed.has_value() && tz_parsed->IsDSTActive(*timer)) {
+    result->tm_isdst = 1;
+  } else {
+    result->tm_isdst = 0;
+  }
 
   return result;
 }
