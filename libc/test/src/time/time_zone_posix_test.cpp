@@ -1452,3 +1452,224 @@ TEST(LlvmLibcParsePosixSpec, BoundaryConditions) {
     EXPECT_EQ(result->dst_end.time.offset, 0);
   }
 }
+
+TEST(LlvmLibcParsePosixSpec, MemoryLifetimeSafety) {
+  using LIBC_NAMESPACE::cpp::string_view;
+  using LIBC_NAMESPACE::time_zone_posix::PosixTimeZone;
+
+  // This test verifies that parsed timezone results remain valid after the
+  // original input string is destroyed. This is critical to ensure that the
+  // Phase 1 memory safety refactoring works correctly.
+  //
+  // The old implementation stored string_view references to the input string,
+  // which would cause use-after-free bugs if the original string was destroyed.
+  // The refactored implementation copies timezone abbreviations into internal
+  // storage, making them independent of the original input lifetime.
+
+  // Test 1: Basic timezone with standard offset only
+  {
+    PosixTimeZone tz;
+    {
+      char temp[] = "EST5";
+      auto result = PosixTimeZone::ParsePosixSpec(string_view(temp));
+      ASSERT_TRUE(result.has_value());
+      tz = *result;
+      // Verify while temp is still valid
+      EXPECT_EQ(tz.std_abbr, string_view("EST"));
+      EXPECT_EQ(tz.std_offset, -5 * 3600);
+    }
+    // temp is now destroyed, but tz should still be valid
+    // This would SEGFAULT with the old implementation
+    EXPECT_EQ(tz.std_abbr, string_view("EST"));
+    EXPECT_EQ(tz.std_offset, -5 * 3600);
+    EXPECT_TRUE(tz.dst_abbr.empty());
+  }
+
+  // Test 2: Timezone with DST
+  {
+    PosixTimeZone tz;
+    {
+      char temp[] = "PST8PDT,M3.2.0,M11.1.0";
+      auto result = PosixTimeZone::ParsePosixSpec(string_view(temp));
+      ASSERT_TRUE(result.has_value());
+      tz = *result;
+      // Verify while temp is still valid
+      EXPECT_EQ(tz.std_abbr, string_view("PST"));
+      EXPECT_EQ(tz.dst_abbr, string_view("PDT"));
+    }
+    // temp is destroyed, but tz should still be valid
+    EXPECT_EQ(tz.std_abbr, string_view("PST"));
+    EXPECT_EQ(tz.std_offset, -8 * 3600);
+    EXPECT_EQ(tz.dst_abbr, string_view("PDT"));
+    EXPECT_EQ(tz.dst_offset, -7 * 3600);
+  }
+
+  // Test 3: Quoted timezone names with special characters
+  {
+    PosixTimeZone tz;
+    {
+      char temp[] = "<UTC+5>-5<UTC+4>-4,M3.2.0,M11.1.0";
+      auto result = PosixTimeZone::ParsePosixSpec(string_view(temp));
+      ASSERT_TRUE(result.has_value());
+      tz = *result;
+      // Verify while temp is still valid
+      EXPECT_EQ(tz.std_abbr, string_view("UTC+5"));
+      EXPECT_EQ(tz.dst_abbr, string_view("UTC+4"));
+    }
+    // temp is destroyed, but tz should still be valid
+    EXPECT_EQ(tz.std_abbr, string_view("UTC+5"));
+    EXPECT_EQ(tz.std_offset, 5 * 3600);
+    EXPECT_EQ(tz.dst_abbr, string_view("UTC+4"));
+    EXPECT_EQ(tz.dst_offset, 4 * 3600);
+  }
+
+  // Test 4: Long timezone names (near maximum length)
+  {
+    PosixTimeZone tz;
+    {
+      char temp[] = "VERYLONGTZ5VERYLONGDST,M3.2.0,M11.1.0";
+      auto result = PosixTimeZone::ParsePosixSpec(string_view(temp));
+      ASSERT_TRUE(result.has_value());
+      tz = *result;
+      // Verify while temp is still valid
+      EXPECT_EQ(tz.std_abbr, string_view("VERYLONGTZ"));
+      EXPECT_EQ(tz.dst_abbr, string_view("VERYLONGDST"));
+    }
+    // temp is destroyed, but tz should still be valid
+    EXPECT_EQ(tz.std_abbr, string_view("VERYLONGTZ"));
+    EXPECT_EQ(tz.dst_abbr, string_view("VERYLONGDST"));
+  }
+
+  // Test 5: Complex timezone with all components
+  {
+    PosixTimeZone tz;
+    {
+      char temp[] = "CET-1CEST,M3.5.0/2,M10.5.0/3";
+      auto result = PosixTimeZone::ParsePosixSpec(string_view(temp));
+      ASSERT_TRUE(result.has_value());
+      tz = *result;
+      // Verify transition dates are captured correctly
+      EXPECT_EQ(tz.dst_start.date.fmt, 
+                LIBC_NAMESPACE::time_zone_posix::PosixTransition::DateFormat::M);
+      EXPECT_EQ(tz.dst_end.date.fmt, 
+                LIBC_NAMESPACE::time_zone_posix::PosixTransition::DateFormat::M);
+    }
+    // temp is destroyed, verify all fields still work
+    EXPECT_EQ(tz.std_abbr, string_view("CET"));
+    EXPECT_EQ(tz.std_offset, 1 * 3600);
+    EXPECT_EQ(tz.dst_abbr, string_view("CEST"));
+    EXPECT_EQ(tz.dst_offset, 2 * 3600);
+    
+    // Verify transition details are still accessible
+    auto& start_mwd = tz.dst_start.date.data.get<
+        LIBC_NAMESPACE::time_zone_posix::PosixTransition::Date::MonthWeekWeekday>();
+    EXPECT_EQ(start_mwd.month, static_cast<int8_t>(3));
+    EXPECT_EQ(start_mwd.week, static_cast<int8_t>(5));
+    EXPECT_EQ(start_mwd.weekday, static_cast<int8_t>(0));
+    EXPECT_EQ(tz.dst_start.time.offset, 2 * 3600);
+    
+    auto& end_mwd = tz.dst_end.date.data.get<
+        LIBC_NAMESPACE::time_zone_posix::PosixTransition::Date::MonthWeekWeekday>();
+    EXPECT_EQ(end_mwd.month, static_cast<int8_t>(10));
+    EXPECT_EQ(end_mwd.week, static_cast<int8_t>(5));
+    EXPECT_EQ(end_mwd.weekday, static_cast<int8_t>(0));
+    EXPECT_EQ(tz.dst_end.time.offset, 3 * 3600);
+  }
+
+  // Test 6: Multiple allocations and destructions
+  // This tests that internal storage is properly managed through multiple operations
+  {
+    PosixTimeZone tz1, tz2, tz3;
+    
+    {
+      char temp1[] = "EST5EDT,M3.2.0,M11.1.0";
+      auto result = PosixTimeZone::ParsePosixSpec(string_view(temp1));
+      ASSERT_TRUE(result.has_value());
+      tz1 = *result;
+    }
+    
+    {
+      char temp2[] = "PST8PDT,M3.2.0,M11.1.0";
+      auto result = PosixTimeZone::ParsePosixSpec(string_view(temp2));
+      ASSERT_TRUE(result.has_value());
+      tz2 = *result;
+    }
+    
+    {
+      char temp3[] = "CST6CDT,M3.2.0,M11.1.0";
+      auto result = PosixTimeZone::ParsePosixSpec(string_view(temp3));
+      ASSERT_TRUE(result.has_value());
+      tz3 = *result;
+    }
+    
+    // All original strings are destroyed, verify all three timezones are still valid
+    EXPECT_EQ(tz1.std_abbr, string_view("EST"));
+    EXPECT_EQ(tz1.dst_abbr, string_view("EDT"));
+    EXPECT_EQ(tz1.std_offset, -5 * 3600);
+    
+    EXPECT_EQ(tz2.std_abbr, string_view("PST"));
+    EXPECT_EQ(tz2.dst_abbr, string_view("PDT"));
+    EXPECT_EQ(tz2.std_offset, -8 * 3600);
+    
+    EXPECT_EQ(tz3.std_abbr, string_view("CST"));
+    EXPECT_EQ(tz3.dst_abbr, string_view("CDT"));
+    EXPECT_EQ(tz3.std_offset, -6 * 3600);
+  }
+
+  // Test 7: Copy assignment safety
+  // Verify that copying a timezone doesn't create dangling references
+  {
+    PosixTimeZone tz1, tz2;
+    
+    {
+      char temp[] = "MST7MDT,M3.2.0,M11.1.0";
+      auto result = PosixTimeZone::ParsePosixSpec(string_view(temp));
+      ASSERT_TRUE(result.has_value());
+      tz1 = *result;
+    }
+    
+    // Copy tz1 to tz2
+    tz2 = tz1;
+    
+    // Both should be valid and independent
+    EXPECT_EQ(tz1.std_abbr, string_view("MST"));
+    EXPECT_EQ(tz1.dst_abbr, string_view("MDT"));
+    EXPECT_EQ(tz2.std_abbr, string_view("MST"));
+    EXPECT_EQ(tz2.dst_abbr, string_view("MDT"));
+    
+    // Modify tz1's data through reassignment
+    {
+      char temp2[] = "EST5EDT,M3.2.0,M11.1.0";
+      auto result = PosixTimeZone::ParsePosixSpec(string_view(temp2));
+      ASSERT_TRUE(result.has_value());
+      tz1 = *result;
+    }
+    
+    // tz1 should change, tz2 should remain unchanged
+    EXPECT_EQ(tz1.std_abbr, string_view("EST"));
+    EXPECT_EQ(tz1.dst_abbr, string_view("EDT"));
+    EXPECT_EQ(tz2.std_abbr, string_view("MST"));
+    EXPECT_EQ(tz2.dst_abbr, string_view("MDT"));
+  }
+
+  // Test 8: Move semantics (if applicable)
+  // Verify that moving a timezone doesn't leave dangling references
+  {
+    PosixTimeZone tz1;
+    
+    {
+      char temp[] = "HST10";
+      auto result = PosixTimeZone::ParsePosixSpec(string_view(temp));
+      ASSERT_TRUE(result.has_value());
+      tz1 = *result;
+    }
+    
+    // Move tz1 to tz2
+    PosixTimeZone tz2 = static_cast<PosixTimeZone&&>(tz1);
+    
+    // tz2 should be valid with the moved data
+    EXPECT_EQ(tz2.std_abbr, string_view("HST"));
+    EXPECT_EQ(tz2.std_offset, -10 * 3600);
+    EXPECT_TRUE(tz2.dst_abbr.empty());
+  }
+}
