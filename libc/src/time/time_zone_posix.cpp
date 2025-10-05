@@ -381,5 +381,175 @@ PosixTimeZone::ParsePosixSpec(const cpp::string_view spec_input) {
   return res;
 }
 
+// Helper function to calculate the day of year for a transition date
+static int calculate_transition_day(const PosixTransition &transition,
+                                    int year) {
+  using LIBC_NAMESPACE::time_utils::is_leap_year;
+
+  const auto &date = transition.date;
+
+  if (date.fmt == PosixTransition::DateFormat::J) {
+    // Julian day (1-365), excluding leap days
+    const auto &non_leap =
+        cpp::get<PosixTransition::Date::NonLeapDay>(date.data);
+    return non_leap.day - 1; // Convert to 0-indexed
+  }
+
+  if (date.fmt == PosixTransition::DateFormat::N) {
+    // Zero-based day of year (0-365), including leap days
+    const auto &day = cpp::get<PosixTransition::Date::Day>(date.data);
+    return day.day;
+  }
+
+  // DateFormat::M - Mm.w.d format (month/week/weekday)
+  const auto &mwd =
+      cpp::get<PosixTransition::Date::MonthWeekWeekday>(date.data);
+
+  // Days in each month (non-leap year)
+  static constexpr int days_in_month[12] = {31, 28, 31, 30, 31, 30,
+                                            31, 31, 30, 31, 30, 31};
+
+  // Calculate day of year for the 1st day of the target month
+  int day_of_year = 0;
+  for (int m = 0; m < mwd.month - 1; ++m) {
+    day_of_year += days_in_month[m];
+    // Add leap day if we're past February in a leap year
+    if (m == 1 && is_leap_year(year))
+      day_of_year++;
+  }
+
+  // Find the first occurrence of the target weekday in the month
+  // We need to know what day of the week the 1st of the month is
+  // For simplicity, we'll calculate it using the epoch
+
+  // Calculate days since epoch for Jan 1 of this year
+  int days_since_epoch = 0;
+  for (int y = 1970; y < year; ++y) {
+    days_since_epoch += is_leap_year(y) ? 366 : 365;
+  }
+  days_since_epoch += day_of_year;
+
+  // Jan 1, 1970 was a Thursday (day 4)
+  int first_weekday = (4 + days_since_epoch) % 7;
+
+  // Find the first occurrence of target weekday
+  int days_until_target = (mwd.weekday - first_weekday + 7) % 7;
+  int first_occurrence = days_until_target;
+
+  // Add weeks to get to the desired week
+  // Week 1 = first occurrence, Week 2 = second occurrence, etc.
+  // Week 5 = last occurrence (might be week 4 if not present)
+  int target_day = first_occurrence + (mwd.week - 1) * 7;
+
+  // Get the number of days in this month
+  int month_days = days_in_month[mwd.month - 1];
+  if (mwd.month == 2 && is_leap_year(year))
+    month_days = 29;
+
+  // If week 5 and we've gone past the end of month, use last occurrence
+  if (mwd.week == 5 && target_day >= month_days) {
+    target_day -= 7;
+  }
+
+  return day_of_year + target_day;
+}
+
+// Helper function to calculate time_t for a specific transition
+static time_t calculate_transition_time(const PosixTransition &transition,
+                                        int year) {
+  using LIBC_NAMESPACE::time_utils::is_leap_year;
+
+  int day_of_year = calculate_transition_day(transition, year);
+
+  // Calculate days since epoch
+  int days_since_epoch = 0;
+  for (int y = 1970; y < year; ++y) {
+    days_since_epoch += is_leap_year(y) ? 366 : 365;
+  }
+  days_since_epoch += day_of_year;
+
+  // Convert to seconds and add the transition time offset
+  return static_cast<time_t>(days_since_epoch) *
+             TimeConstants::SECONDS_PER_DAY +
+         transition.time.offset;
+}
+
+bool PosixTimeZone::IsDSTActive(time_t time) const {
+  // If no DST rules, DST is never active
+  if (dst_abbr.empty())
+    return false;
+
+  // Handle edge cases: very old or very far future times
+  // DST rules didn't exist before 1900 and won't be meaningful after 3000
+  if (time < -2208988800LL || time > 32503680000LL) {
+    // Before 1900 or after 3000 - assume standard time
+    return false;
+  }
+
+  // Convert time_t to year to calculate transition times for that year
+  // This is a simplified calculation - we just need the year
+  int64_t days_since_epoch = time / TimeConstants::SECONDS_PER_DAY;
+
+  // Handle negative time_t (before 1970)
+  int year = 1970;
+  if (days_since_epoch < 0) {
+    // Count backwards from 1970
+    while (days_since_epoch < 0) {
+      year--;
+      int days_in_year =
+          LIBC_NAMESPACE::time_utils::is_leap_year(year) ? 366 : 365;
+      days_since_epoch += days_in_year;
+    }
+  } else {
+    // Count forward from 1970
+    while (true) {
+      int days_in_year =
+          LIBC_NAMESPACE::time_utils::is_leap_year(year) ? 366 : 365;
+      if (days_since_epoch < days_in_year)
+        break;
+      days_since_epoch -= days_in_year;
+      year++;
+      // Safety check to prevent infinite loops
+      if (year > 3000)
+        return false;
+    }
+  }
+
+  // Calculate the transition times for this year
+  time_t dst_start_time = calculate_transition_time(dst_start, year);
+  time_t dst_end_time = calculate_transition_time(dst_end, year);
+
+  // Check if DST is active
+  // Note: In southern hemisphere, dst_start > dst_end (DST starts in fall, ends
+  // in spring)
+  if (dst_start_time < dst_end_time) {
+    // Northern hemisphere: DST is active between start and end
+    return time >= dst_start_time && time < dst_end_time;
+  } else {
+    // Southern hemisphere: DST is active outside the end-to-start period
+    return time >= dst_start_time || time < dst_end_time;
+  }
+}
+
+int32_t PosixTimeZone::GetTimezoneAdjustment(cpp::string_view tz_spec,
+                                             time_t time) {
+  // If TZ spec is empty, return 0 (use UTC)
+  if (tz_spec.empty())
+    return 0;
+
+  // Parse the TZ specification
+  auto parsed = ParsePosixSpec(tz_spec);
+  if (!parsed)
+    return 0; // Invalid TZ spec, fall back to UTC
+
+  const auto &tz = *parsed;
+
+  // Determine if DST is active and return appropriate offset
+  if (tz.IsDSTActive(time))
+    return tz.dst_offset;
+  else
+    return tz.std_offset;
+}
+
 } // namespace time_zone_posix
 } // namespace LLVM_NAMESPACE

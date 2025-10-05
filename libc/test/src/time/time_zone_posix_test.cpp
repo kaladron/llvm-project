@@ -1873,3 +1873,126 @@ TEST(LlvmLibcParsePosixSpec, MemoryLifetimeSafety) {
     EXPECT_TRUE(tz2.dst_abbr.empty());
   }
 }
+
+// Test Suite for GetTimezoneAdjustment function
+TEST(LlvmLibcParsePosixSpec, GetTimezoneAdjustmentEmptySpec) {
+  using PosixTimeZone = LIBC_NAMESPACE::time_zone_posix::PosixTimeZone;
+
+  // Empty TZ spec should return 0 (UTC)
+  int32_t adj = PosixTimeZone::GetTimezoneAdjustment("", 0);
+  EXPECT_EQ(adj, 0);
+}
+
+TEST(LlvmLibcParsePosixSpec, GetTimezoneAdjustmentInvalidSpec) {
+  using PosixTimeZone = LIBC_NAMESPACE::time_zone_posix::PosixTimeZone;
+
+  // Invalid TZ specs should return 0 (fall back to UTC)
+  EXPECT_EQ(PosixTimeZone::GetTimezoneAdjustment("INVALID", 0), 0);
+  EXPECT_EQ(PosixTimeZone::GetTimezoneAdjustment("X", 0), 0);
+  EXPECT_EQ(PosixTimeZone::GetTimezoneAdjustment("123", 0), 0);
+  EXPECT_EQ(PosixTimeZone::GetTimezoneAdjustment(":America/New_York", 0), 0);
+}
+
+TEST(LlvmLibcParsePosixSpec, GetTimezoneAdjustmentStandardTimeOnly) {
+  using PosixTimeZone = LIBC_NAMESPACE::time_zone_posix::PosixTimeZone;
+
+  // January 1, 2024 00:00:00 UTC
+  time_t jan_1_2024 = 1704067200;
+
+  // EST5 = UTC-5 hours = -18000 seconds
+  EXPECT_EQ(PosixTimeZone::GetTimezoneAdjustment("EST5", jan_1_2024), -18000);
+
+  // PST8 = UTC-8 hours = -28800 seconds
+  EXPECT_EQ(PosixTimeZone::GetTimezoneAdjustment("PST8", jan_1_2024), -28800);
+
+  // CST6 = UTC-6 hours = -21600 seconds
+  EXPECT_EQ(PosixTimeZone::GetTimezoneAdjustment("CST6", jan_1_2024), -21600);
+
+  // MST7 = UTC-7 hours = -25200 seconds
+  EXPECT_EQ(PosixTimeZone::GetTimezoneAdjustment("MST7", jan_1_2024), -25200);
+}
+
+TEST(LlvmLibcParsePosixSpec, GetTimezoneAdjustmentPositiveOffset) {
+  using PosixTimeZone = LIBC_NAMESPACE::time_zone_posix::PosixTimeZone;
+
+  time_t jan_1_2024 = 1704067200;
+
+  // IST-5:30 = UTC+5:30 = +19800 seconds (India Standard Time)
+  EXPECT_EQ(PosixTimeZone::GetTimezoneAdjustment("IST-5:30", jan_1_2024),
+            19800);
+
+  // JST-9 = UTC+9 = +32400 seconds (Japan Standard Time)
+  EXPECT_EQ(PosixTimeZone::GetTimezoneAdjustment("JST-9", jan_1_2024), 32400);
+
+  // AEST-10 = UTC+10 = +36000 seconds (Australian Eastern Standard Time)
+  EXPECT_EQ(PosixTimeZone::GetTimezoneAdjustment("AEST-10", jan_1_2024), 36000);
+}
+
+TEST(LlvmLibcParsePosixSpec, GetTimezoneAdjustmentWithDSTWinter) {
+  using PosixTimeZone = LIBC_NAMESPACE::time_zone_posix::PosixTimeZone;
+
+  // January 1, 2024 00:00:00 UTC (winter, no DST)
+  time_t jan_1_2024 = 1704067200;
+
+  // EST5EDT,M3.2.0,M11.1.0 in winter should return EST offset
+  // EST = UTC-5 hours = -18000 seconds
+  EXPECT_EQ(PosixTimeZone::GetTimezoneAdjustment("EST5EDT,M3.2.0,M11.1.0",
+                                                 jan_1_2024),
+            -18000);
+
+  // PST8PDT,M3.2.0,M11.1.0 in winter should return PST offset
+  // PST = UTC-8 hours = -28800 seconds
+  EXPECT_EQ(PosixTimeZone::GetTimezoneAdjustment("PST8PDT,M3.2.0,M11.1.0",
+                                                 jan_1_2024),
+            -28800);
+}
+
+TEST(LlvmLibcParsePosixSpec, GetTimezoneAdjustmentWithDSTSummer) {
+  using PosixTimeZone = LIBC_NAMESPACE::time_zone_posix::PosixTimeZone;
+
+  // July 1, 2024 00:00:00 UTC (summer, DST active)
+  time_t july_1_2024 = 1719792000;
+
+  // EST5EDT,M3.2.0,M11.1.0 in summer should return EDT offset
+  // EDT = EST + 1 hour = UTC-4 hours = -14400 seconds
+  EXPECT_EQ(PosixTimeZone::GetTimezoneAdjustment("EST5EDT,M3.2.0,M11.1.0",
+                                                 july_1_2024),
+            -14400);
+
+  // PST8PDT,M3.2.0,M11.1.0 in summer should return PDT offset
+  // PDT = PST + 1 hour = UTC-7 hours = -25200 seconds
+  EXPECT_EQ(PosixTimeZone::GetTimezoneAdjustment("PST8PDT,M3.2.0,M11.1.0",
+                                                 july_1_2024),
+            -25200);
+}
+
+TEST(LlvmLibcParsePosixSpec, GetTimezoneAdjustmentMultipleTimes) {
+  using PosixTimeZone = LIBC_NAMESPACE::time_zone_posix::PosixTimeZone;
+
+  // Test various times throughout 2024
+  const char *tz_spec = "EST5EDT,M3.2.0,M11.1.0";
+
+  // January (winter) - EST
+  time_t jan_15 = 1705276800; // Jan 15, 2024
+  EXPECT_EQ(PosixTimeZone::GetTimezoneAdjustment(tz_spec, jan_15), -18000);
+
+  // February (winter) - EST
+  time_t feb_15 = 1707955200; // Feb 15, 2024
+  EXPECT_EQ(PosixTimeZone::GetTimezoneAdjustment(tz_spec, feb_15), -18000);
+
+  // April (summer) - EDT
+  time_t apr_15 = 1713139200; // Apr 15, 2024
+  EXPECT_EQ(PosixTimeZone::GetTimezoneAdjustment(tz_spec, apr_15), -14400);
+
+  // July (summer) - EDT
+  time_t july_15 = 1721001600; // July 15, 2024
+  EXPECT_EQ(PosixTimeZone::GetTimezoneAdjustment(tz_spec, july_15), -14400);
+
+  // October (summer) - EDT
+  time_t oct_15 = 1728950400; // Oct 15, 2024
+  EXPECT_EQ(PosixTimeZone::GetTimezoneAdjustment(tz_spec, oct_15), -14400);
+
+  // December (winter) - EST
+  time_t dec_15 = 1734220800; // Dec 15, 2024
+  EXPECT_EQ(PosixTimeZone::GetTimezoneAdjustment(tz_spec, dec_15), -18000);
+}

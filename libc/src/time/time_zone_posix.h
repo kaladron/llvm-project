@@ -11,6 +11,7 @@
 
 #include <stdint.h> // int8_t, int16_t and int32_t
 
+#include "hdr/types/time_t.h"
 #include "src/__support/CPP/optional.h"
 #include "src/__support/CPP/string_view.h"
 #include "src/__support/CPP/variant.h"
@@ -249,6 +250,43 @@ public:
   ///       only supports POSIX TZ rules. Use "EST5EDT,M3.2.0,M11.1.0" instead.
   static cpp::optional<PosixTimeZone>
   ParsePosixSpec(const cpp::string_view spec);
+
+  /// Get the timezone offset adjustment for a given time.
+  ///
+  /// This function parses the POSIX TZ specification and calculates the
+  /// offset from UTC for the given time_t value. Time functions should
+  /// call this to adjust their results based on the TZ environment variable.
+  ///
+  /// \param tz_spec The TZ environment variable value (e.g.,
+  /// "EST5EDT,M3.2.0,M11.1.0")
+  /// \param time The time_t value to calculate the offset for
+  /// \return The adjustment in seconds to add to UTC time, or 0 if tz_spec is
+  /// invalid/empty
+  ///
+  /// Examples:
+  ///   - TZ="EST5" with time in winter → returns -18000 (UTC-5 hours)
+  ///   - TZ="PST8PDT,M3.2.0,M11.1.0" with time in summer → returns -25200
+  ///   (UTC-7 hours)
+  ///   - TZ="" or nullptr → returns 0 (no adjustment, use UTC)
+  ///
+  /// Thread-safe: Yes (stateless, no global state)
+  ///
+  /// \note This function is designed to be called by time functions like
+  ///       localtime() and mktime() on each invocation. It does not cache
+  ///       results or maintain global state.
+  static int32_t GetTimezoneAdjustment(cpp::string_view tz_spec, time_t time);
+
+  /// Check if DST is active at the given time.
+  ///
+  /// Determines whether daylight saving time is in effect for this timezone
+  /// at the specified time_t value.
+  ///
+  /// \param time The time_t to check (seconds since epoch, UTC)
+  /// \return true if DST is active, false otherwise or if no DST rules defined
+  ///
+  /// \note This method requires that the PosixTimeZone has been successfully
+  ///       parsed and contains valid DST transition rules.
+  bool IsDSTActive(time_t time) const;
 
   cpp::string_view spec; ///< Mutable parse position (modified during parsing)
   cpp::string_view
