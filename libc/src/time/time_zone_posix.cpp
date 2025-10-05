@@ -82,7 +82,7 @@ PosixTimeZone::Parser::parse_abbr(cpp::string_view &str) {
   // Handle [^-+,\d<>]{3,}
   // Unquoted abbreviations must not contain: -, +, comma, digits, < or >
   for (const auto &p : str) {
-    if (strchr("-+,<>", p))
+    if (p == '-' || p == '+' || p == ',' || p == '<' || p == '>')
       break;
     if (isdigit(p))
       break;
