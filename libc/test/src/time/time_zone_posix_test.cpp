@@ -425,10 +425,9 @@ TEST(LlvmLibcParsePosixSpec, InvalidTest) {
     const auto posix_result =
         LIBC_NAMESPACE::time_zone_posix::PosixTimeZone::ParsePosixSpec(
             timezone_spec);
-    // TODO(rtenneti): Use a special matcher to verify the data.
     if (posix_result.has_value()) {
       __builtin_printf(
-          "Testing failed for: %s - expected to faile but succeed.\n",
+          "Testing failed for: %s - expected to fail but succeed.\n",
           timezone);
     }
     ASSERT_FALSE(posix_result.has_value());
@@ -1020,7 +1019,6 @@ TEST(LlvmLibcParsePosixSpec, ValidTest) {
 
 TEST(LlvmLibcParsePosixSpec, ValidTestAndVerify) {
   LIBC_NAMESPACE::cpp::string_view timezone_spec("PST8PDT,M3.2.0,M11.1.0");
-  // TODO(rtenneti): Use a special matcher to verify the data.
   LIBC_NAMESPACE::cpp::optional<LIBC_NAMESPACE::time_zone_posix::PosixTimeZone>
       posix_result =
           LIBC_NAMESPACE::time_zone_posix::PosixTimeZone::ParsePosixSpec(
