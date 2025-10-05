@@ -162,12 +162,47 @@ public:
 
 /// Represents a POSIX-format timezone specification.
 ///
-/// The entirety of a POSIX-string specified time-zone rule. The standard
-/// abbreviation and offset are always given. If the time zone includes
-/// daylight saving, then the daylight abbreviation is non-empty and the
-/// remaining fields are also valid. Note that the start/end transitions
+/// Parses and stores timezone information according to the POSIX TZ
+/// environment variable format (IEEE Std 1003.1) and RFC 8536 extensions.
+///
+/// The standard abbreviation and offset are always given. If the time zone
+/// includes daylight saving, then the daylight abbreviation is non-empty and
+/// the remaining fields are also valid. Note that the start/end transitions
 /// are not ordered---in the southern hemisphere the transition to end
 /// daylight time occurs first in any particular year.
+///
+/// Format: std offset [dst [offset] [,start[/time],end[/time]]]
+///
+/// Examples of valid TZ strings:
+///   - "EST5EDT,M3.2.0,M11.1.0" - US Eastern time with DST
+///   - "PST8PDT,M3.2.0/2:00:00,M11.1.0/2:00:00" - US Pacific with explicit times
+///   - "UTC0" - UTC with no DST
+///   - "GMT0BST,M3.5.0/1,M10.5.0" - UK time (BST = British Summer Time)
+///   - "<+05>-5" - UTC+5 with quoted name containing special characters
+///   - "CST-8" - China Standard Time (8 hours east of UTC)
+///   - "NZST-12NZDT,M9.5.0,M4.1.0/3" - New Zealand (southern hemisphere)
+///
+/// Edge cases and limitations:
+///   - Colon-prefixed strings (":America/New_York") are rejected (not yet implemented)
+///   - Timezone abbreviations must be 3+ characters
+///   - Hour offsets support RFC 8536 extended range: -167 to +167 hours
+///   - Invalid input returns cpp::nullopt (no exceptions thrown)
+///   - Parser is non-destructive; original spec preserved in original_spec
+///
+/// Usage example:
+///   \code
+///   auto result = PosixTimeZone::ParsePosixSpec("PST8PDT,M3.2.0,M11.1.0");
+///   if (result.has_value()) {
+///     const auto& tz = result.value();
+///     // tz.std_abbr == "PST"
+///     // tz.std_offset == -28800 (8 hours west of UTC in seconds)
+///     // tz.dst_abbr == "PDT"
+///     // tz.dst_offset == -25200 (7 hours west of UTC)
+///   }
+///   \endcode
+///
+/// \see https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap08.html
+/// \see https://datatracker.ietf.org/doc/html/rfc8536
 class PosixTimeZone {
 public:
   /// Default constructor for testing.
@@ -197,6 +232,16 @@ public:
   /// \param spec The POSIX TZ specification string to parse.
   /// \return cpp::optional<PosixTimeZone> containing the parsed timezone on
   ///         success, or cpp::nullopt if parsing fails.
+  ///
+  /// Parsing behavior and edge cases:
+  ///   - Returns nullopt for invalid input (no exceptions thrown)
+  ///   - Stops at first invalid character and rejects if incomplete
+  ///   - DST offset defaults to std_offset + 1 hour if not specified
+  ///   - DST transition times default to 02:00:00 if not specified
+  ///   - Supports RFC 8536 extended hour range: -167 to +167 hours
+  ///   - Supports quoted timezone names with <...> for special characters
+  ///   - Accepts three date formats: Jn (Julian day), n (zero-based day),
+  ///     or Mm.w.d (month/week/weekday)
   ///
   /// \note Colon-prefixed strings (e.g., ":America/New_York") are rejected.
   ///       These are implementation-defined per POSIX and typically used to
