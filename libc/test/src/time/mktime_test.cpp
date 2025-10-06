@@ -843,11 +843,108 @@ TEST(LlvmLibcMkTime, WithTZ_EasternHemisphere) {
   unsetenv("TZ");
 }
 
-// TODO(https://github.com/llvm/llvm-project/issues/XXXXX): 
-// mktime() should update tm_isdst to indicate whether DST is active.
-// Currently the time_t conversion works correctly, but tm_isdst is not
-// being updated properly. This needs further investigation.
-//
-// TEST(LlvmLibcMkTime, UpdatesTmIsdst_StandardTime) { ... }
-// TEST(LlvmLibcMkTime, UpdatesTmIsdst_DaylightTime) { ... }
-// TEST(LlvmLibcMkTime, UpdatesTmIsdst_NoDST) { ... }
+// Tests for tm_isdst field update
+TEST(LlvmLibcMkTime, UpdatesTmIsdst_StandardTime) {
+  setenv("TZ", "EST5EDT,M3.2.0,M11.1.0", 1);
+
+  // January 15, 2024 07:00:00 EST (standard time)
+  struct tm local_tm{.tm_sec = 0,
+                     .tm_min = 0,
+                     .tm_hour = 7,
+                     .tm_mday = 15,
+                     .tm_mon = Month::JANUARY,
+                     .tm_year = tm_year(2024),
+                     .tm_wday = 0,
+                     .tm_yday = 0,
+                     .tm_isdst = -1}; // Unknown, should be set by mktime
+
+  time_t result = LIBC_NAMESPACE::mktime(&local_tm);
+
+  // Verify the time_t conversion is correct
+  // 2024-01-15 07:00:00 EST = 2024-01-15 12:00:00 UTC = 1705320000
+  EXPECT_EQ(static_cast<time_t>(1705320000), result);
+
+  // Verify tm_isdst was updated to 0 (standard time)
+  EXPECT_EQ(0, local_tm.tm_isdst);
+
+  unsetenv("TZ");
+}
+
+TEST(LlvmLibcMkTime, UpdatesTmIsdst_DaylightTime) {
+  setenv("TZ", "EST5EDT,M3.2.0,M11.1.0", 1);
+
+  // July 15, 2024 08:00:00 EDT (daylight time)
+  struct tm local_tm{.tm_sec = 0,
+                     .tm_min = 0,
+                     .tm_hour = 8,
+                     .tm_mday = 15,
+                     .tm_mon = Month::JULY,
+                     .tm_year = tm_year(2024),
+                     .tm_wday = 0,
+                     .tm_yday = 0,
+                     .tm_isdst = -1}; // Unknown, should be set by mktime
+
+  time_t result = LIBC_NAMESPACE::mktime(&local_tm);
+
+  // Verify the time_t conversion is correct
+  // 2024-07-15 08:00:00 EDT = 2024-07-15 12:00:00 UTC = 1721044800
+  EXPECT_EQ(static_cast<time_t>(1721044800), result);
+
+  // Verify tm_isdst was updated to 1 (daylight time)
+  EXPECT_EQ(1, local_tm.tm_isdst);
+
+  unsetenv("TZ");
+}
+
+TEST(LlvmLibcMkTime, UpdatesTmIsdst_NoDST) {
+  setenv("TZ", "EST5", 1); // No DST rules
+
+  // July 15, 2024 07:00:00 EST (no DST, always standard time)
+  struct tm local_tm{.tm_sec = 0,
+                     .tm_min = 0,
+                     .tm_hour = 7,
+                     .tm_mday = 15,
+                     .tm_mon = Month::JULY,
+                     .tm_year = tm_year(2024),
+                     .tm_wday = 0,
+                     .tm_yday = 0,
+                     .tm_isdst = -1}; // Unknown, should be set by mktime
+
+  time_t result = LIBC_NAMESPACE::mktime(&local_tm);
+
+  // Verify the time_t conversion is correct
+  // 2024-07-15 07:00:00 EST = 2024-07-15 12:00:00 UTC = 1721044800
+  EXPECT_EQ(static_cast<time_t>(1721044800), result);
+
+  // Verify tm_isdst was updated to 0 (no DST)
+  EXPECT_EQ(0, local_tm.tm_isdst);
+
+  unsetenv("TZ");
+}
+
+TEST(LlvmLibcMkTime, UpdatesTmIsdst_PreserveUserValue) {
+  setenv("TZ", "EST5EDT,M3.2.0,M11.1.0", 1);
+
+  // January 15, 2024 07:00:00 EST
+  // User explicitly sets tm_isdst = 1 (claiming DST is active)
+  // mktime() should normalize this based on actual DST rules
+  struct tm local_tm{.tm_sec = 0,
+                     .tm_min = 0,
+                     .tm_hour = 7,
+                     .tm_mday = 15,
+                     .tm_mon = Month::JANUARY,
+                     .tm_year = tm_year(2024),
+                     .tm_wday = 0,
+                     .tm_yday = 0,
+                     .tm_isdst = 1}; // User claims DST is active (wrong)
+
+  time_t result = LIBC_NAMESPACE::mktime(&local_tm);
+
+  // Verify the time_t conversion is correct
+  EXPECT_EQ(static_cast<time_t>(1705320000), result);
+
+  // Verify tm_isdst was corrected to 0 (actual DST status)
+  EXPECT_EQ(0, local_tm.tm_isdst);
+
+  unsetenv("TZ");
+}

@@ -142,10 +142,18 @@ cpp::optional<time_t> mktime_internal(const tm *tm_out) {
       tz_spec, utc_seconds);
   utc_seconds = local_seconds - adjustment;
 
-  // TODO: Update tm_isdst based on whether DST is active
-  // The time_t conversion is correct, but tm_isdst update needs more work.
-  // For now, leave tm_isdst as provided by the caller.
-  // See https://github.com/llvm/llvm-project/issues/121962
+  // Update tm_isdst to indicate whether DST is active for this time
+  // We determine this by checking if DST rules exist and calling IsDSTActive
+  if (!tz_spec.empty()) {
+    auto tz_parsed = time_zone_posix::PosixTimeZone::ParsePosixSpec(tz_spec);
+    if (tz_parsed.has_value()) {
+      // Check if DST is active for the final UTC time
+      bool is_dst = tz_parsed->IsDSTActive(utc_seconds);
+      // Need to cast away const to update tm_isdst
+      // This is allowed per POSIX: mktime() normalizes all tm fields
+      const_cast<tm *>(tm_out)->tm_isdst = is_dst ? 1 : 0;
+    }
+  }
 
   return utc_seconds;
 }
@@ -277,8 +285,22 @@ int64_t update_from_seconds(time_t total_seconds, tm *tm) {
                        time_constants::SECONDS_PER_MIN);
   tm->tm_sec =
       static_cast<int>(remainingSeconds % time_constants::SECONDS_PER_MIN);
-  // TODO(rtenneti): Need to handle timezone and update of tm_isdst.
-  tm->tm_isdst = 0;
+  
+  // Update tm_isdst based on TZ environment variable
+  const char *tz_env = ::getenv("TZ");
+  cpp::string_view tz_spec = tz_env ? cpp::string_view(tz_env) : "";
+  
+  if (!tz_spec.empty()) {
+    auto tz_parsed = time_zone_posix::PosixTimeZone::ParsePosixSpec(tz_spec);
+    if (tz_parsed.has_value()) {
+      bool is_dst = tz_parsed->IsDSTActive(total_seconds);
+      tm->tm_isdst = is_dst ? 1 : 0;
+    } else {
+      tm->tm_isdst = 0;
+    }
+  } else {
+    tm->tm_isdst = 0;
+  }
 
   return 0;
 }

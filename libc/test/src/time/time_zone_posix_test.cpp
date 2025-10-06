@@ -1996,3 +1996,142 @@ TEST(LlvmLibcParsePosixSpec, GetTimezoneAdjustmentMultipleTimes) {
   time_t dec_15 = 1734220800; // Dec 15, 2024
   EXPECT_EQ(PosixTimeZone::GetTimezoneAdjustment(tz_spec, dec_15), -18000);
 }
+
+// Tests for IsDSTActive method
+TEST(LlvmLibcParsePosixSpec, IsDSTActive_NoDSTRules) {
+  using PosixTimeZone = LIBC_NAMESPACE::time_zone_posix::PosixTimeZone;
+
+  // Parse a timezone without DST rules (EST5 has no DST)
+  auto tz = PosixTimeZone::ParsePosixSpec("EST5");
+  ASSERT_TRUE(tz.has_value());
+
+  // Any time should return false when there are no DST rules
+  time_t winter = 1705320000; // January 15, 2024
+  time_t summer = 1721044800; // July 15, 2024
+
+  EXPECT_FALSE(tz->IsDSTActive(winter));
+  EXPECT_FALSE(tz->IsDSTActive(summer));
+}
+
+TEST(LlvmLibcParsePosixSpec, IsDSTActive_WithDST_Winter) {
+  using PosixTimeZone = LIBC_NAMESPACE::time_zone_posix::PosixTimeZone;
+
+  // Parse EST5EDT,M3.2.0,M11.1.0
+  // DST starts: March, 2nd week, Sunday at 02:00:00
+  // DST ends: November, 1st week, Sunday at 02:00:00
+  auto tz = PosixTimeZone::ParsePosixSpec("EST5EDT,M3.2.0,M11.1.0");
+  ASSERT_TRUE(tz.has_value());
+
+  // January 15, 2024 12:00:00 UTC = 1705320000
+  // This is January 15, 2024 07:00:00 EST (winter, DST not active)
+  EXPECT_FALSE(tz->IsDSTActive(1705320000));
+
+  // December 15, 2024 12:00:00 UTC = 1734264000
+  // This is December 15, 2024 07:00:00 EST (winter, DST not active)
+  EXPECT_FALSE(tz->IsDSTActive(1734264000));
+
+  // February 1, 2024 00:00:00 UTC = 1706745600
+  // DST not active
+  EXPECT_FALSE(tz->IsDSTActive(1706745600));
+}
+
+TEST(LlvmLibcParsePosixSpec, IsDSTActive_WithDST_Summer) {
+  using PosixTimeZone = LIBC_NAMESPACE::time_zone_posix::PosixTimeZone;
+
+  // Parse EST5EDT,M3.2.0,M11.1.0
+  auto tz = PosixTimeZone::ParsePosixSpec("EST5EDT,M3.2.0,M11.1.0");
+  ASSERT_TRUE(tz.has_value());
+
+  // July 15, 2024 12:00:00 UTC = 1721044800
+  // This is July 15, 2024 08:00:00 EDT (summer, DST active)
+  EXPECT_TRUE(tz->IsDSTActive(1721044800));
+
+  // August 1, 2024 00:00:00 UTC = 1722470400
+  // DST active
+  EXPECT_TRUE(tz->IsDSTActive(1722470400));
+
+  // June 1, 2024 00:00:00 UTC = 1717200000
+  // DST active
+  EXPECT_TRUE(tz->IsDSTActive(1717200000));
+}
+
+TEST(LlvmLibcParsePosixSpec, IsDSTActive_DSTTransition) {
+  using PosixTimeZone = LIBC_NAMESPACE::time_zone_posix::PosixTimeZone;
+
+  // Parse EST5EDT,M3.2.0,M11.1.0
+  // In 2024:
+  // - DST starts: March, 2nd Sunday (March 10) at 02:00:00 local time
+  // - DST ends: November, 1st Sunday (November 3) at 02:00:00 local time
+  auto tz = PosixTimeZone::ParsePosixSpec("EST5EDT,M3.2.0,M11.1.0");
+  ASSERT_TRUE(tz.has_value());
+
+  // March 9, 2024 12:00:00 UTC - day before DST starts (definitely winter)
+  time_t before_spring = 1709985600;
+  EXPECT_FALSE(tz->IsDSTActive(before_spring));
+
+  // March 15, 2024 12:00:00 UTC - week after DST starts (definitely summer)
+  time_t after_spring = 1710504000;
+  EXPECT_TRUE(tz->IsDSTActive(after_spring));
+
+  // November 2, 2024 12:00:00 UTC - day before DST ends (definitely summer)
+  time_t before_fall = 1730548800;
+  EXPECT_TRUE(tz->IsDSTActive(before_fall));
+
+  // November 10, 2024 12:00:00 UTC - week after DST ends (definitely winter)
+  time_t after_fall = 1731240000;
+  EXPECT_FALSE(tz->IsDSTActive(after_fall));
+}
+
+TEST(LlvmLibcParsePosixSpec, IsDSTActive_SouthernHemisphere) {
+  using PosixTimeZone = LIBC_NAMESPACE::time_zone_posix::PosixTimeZone;
+
+  // New Zealand: NZST-12NZDT,M9.5.0,M4.1.0/3
+  // DST starts: September (month 9), last (5th) Sunday (week 0), at default 02:00:00
+  // DST ends: April (month 4), first (1st) Sunday (week 0), at 03:00:00
+  // In southern hemisphere, DST is active from September to April
+  auto tz = PosixTimeZone::ParsePosixSpec("NZST-12NZDT,M9.5.0,M4.1.0/3");
+  ASSERT_TRUE(tz.has_value());
+
+  // January 15, 2024 00:00:00 UTC = 1705276800
+  // Southern hemisphere summer - DST should be active
+  EXPECT_TRUE(tz->IsDSTActive(1705276800));
+
+  // July 15, 2024 00:00:00 UTC = 1721001600
+  // Southern hemisphere winter - DST should NOT be active
+  EXPECT_FALSE(tz->IsDSTActive(1721001600));
+}
+
+// Test the exact scenario from the failing mktime test
+TEST(LlvmLibcParsePosixSpec, IsDSTActive_ExactMktimeScenario) {
+  using PosixTimeZone = LIBC_NAMESPACE::time_zone_posix::PosixTimeZone;
+
+  // Parse the same TZ string used in mktime test
+  const char *tz_string = "EST5EDT,M3.2.0,M11.1.0";
+  auto tz = PosixTimeZone::ParsePosixSpec(tz_string);
+  ASSERT_TRUE(tz.has_value());
+
+  // July 15, 2024 12:00:00 UTC = 1721044800
+  // This is the UTC time that mktime should calculate for July 15, 2024 08:00:00 EDT
+  time_t utc_time = 1721044800;
+  
+  // Verify IsDSTActive returns true for this time
+  bool is_dst = tz->IsDSTActive(utc_time);
+  EXPECT_TRUE(is_dst);
+  
+  // Also verify GetTimezoneAdjustment returns the DST offset
+  int32_t adjustment = PosixTimeZone::GetTimezoneAdjustment(tz_string, utc_time);
+  EXPECT_EQ(adjustment, -14400); // EDT is UTC-4 hours = -14400 seconds
+  
+  // The DST offset should match what we get from the parsed timezone
+  EXPECT_EQ(adjustment, tz->dst_offset);
+  
+  // Verify standard time scenario for comparison
+  // January 15, 2024 12:00:00 UTC = 1705320000
+  time_t winter_utc_time = 1705320000;
+  bool winter_is_dst = tz->IsDSTActive(winter_utc_time);
+  EXPECT_FALSE(winter_is_dst);
+  
+  int32_t winter_adjustment = PosixTimeZone::GetTimezoneAdjustment(tz_string, winter_utc_time);
+  EXPECT_EQ(winter_adjustment, -18000); // EST is UTC-5 hours = -18000 seconds
+  EXPECT_EQ(winter_adjustment, tz->std_offset);
+}
