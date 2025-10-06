@@ -13,11 +13,7 @@
 #include "src/__support/macros/config.h"
 #include "src/time/time_constants.h"
 #include "src/time/time_zone_posix.h"
-
-// Forward declaration of system getenv (thread-safe on POSIX systems)
-extern "C" {
-char *getenv(const char *name);
-}
+#include "src/time/tz_env_access.h"
 
 namespace LIBC_NAMESPACE_DECL {
 namespace time_utils {
@@ -111,9 +107,8 @@ cpp::optional<time_t> mktime_internal(const tm *tm_out) {
       tm_out->tm_hour * time_constants::SECONDS_PER_HOUR +
       total_days * time_constants::SECONDS_PER_DAY);
 
-  // Get TZ environment variable
-  // Use system getenv (declared at top of file)
-  const char *tz_env = ::getenv("TZ");
+  // Get TZ environment variable using abstraction layer
+  const char *tz_env = time_internal::get_tz_env();
   cpp::string_view tz_spec = tz_env ? cpp::string_view(tz_env) : "";
 
   // Convert from local time to UTC by subtracting the timezone adjustment.
@@ -285,9 +280,9 @@ int64_t update_from_seconds(time_t total_seconds, tm *tm) {
                        time_constants::SECONDS_PER_MIN);
   tm->tm_sec =
       static_cast<int>(remainingSeconds % time_constants::SECONDS_PER_MIN);
-  
-  // Update tm_isdst based on TZ environment variable
-  const char *tz_env = ::getenv("TZ");
+
+  // Update tm_isdst based on TZ environment variable using abstraction layer
+  const char *tz_env = time_internal::get_tz_env();
   cpp::string_view tz_spec = tz_env ? cpp::string_view(tz_env) : "";
   
   if (!tz_spec.empty()) {

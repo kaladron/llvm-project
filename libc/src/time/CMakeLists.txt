@@ -15,6 +15,14 @@ add_header_library(
 )
 
 add_object_library(
+  tz_env_access
+  SRCS
+    tz_env_access.cpp
+  HDRS
+    tz_env_access.h
+)
+
+add_object_library(
   time_utils
   SRCS
     time_utils.cpp
@@ -27,6 +35,7 @@ add_object_library(
     libc.src.__support.CPP.optional
     libc.src.errno.errno
     .time_zone_posix
+    .tz_env_access
 )
 
 add_object_library(

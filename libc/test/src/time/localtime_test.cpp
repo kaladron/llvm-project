@@ -70,6 +70,9 @@ TEST(LlvmLibcLocaltime, ValidUnixTimestampNegative) {
 }
 
 // Tests for TZ environment variable integration
+// NOTE: These tests use setenv/unsetenv from system libc. They will fail to
+// link in hermetic test mode. See plan.md Step 6.9 for future work to
+// implement setenv/unsetenv in LLVM libc.
 
 TEST(LlvmLibcLocaltime, WithTZ_UTC) {
   // Set TZ to UTC
