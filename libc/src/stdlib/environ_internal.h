@@ -19,11 +19,27 @@
 namespace LIBC_NAMESPACE_DECL {
 namespace internal {
 
+// Ownership information for environment strings
+struct EnvStringOwnership {
+  bool allocated_by_us;  // True if we malloc'd this string (must free)
+                         // False for startup environ or putenv strings (don't free)
+  
+  // Default: not owned by us (startup or putenv - don't free)
+  EnvStringOwnership() : allocated_by_us(false) {}
+  
+  // Can we free this string?
+  bool can_free() const { return allocated_by_us; }
+};
+
 // Global mutex protecting all environ modifications
 extern Mutex environ_mutex;
 
 // Our allocated environ array (nullptr if using startup environ)
 extern char **environ_storage;
+
+// Parallel array tracking ownership of each environ string
+// Same size/capacity as environ_storage
+extern EnvStringOwnership *environ_ownership;
 
 // Allocated capacity of environ_storage
 extern size_t environ_capacity;

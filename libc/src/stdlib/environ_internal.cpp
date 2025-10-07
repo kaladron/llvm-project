@@ -28,6 +28,7 @@ constexpr size_t ENVIRON_GROWTH_FACTOR = 2;
 // Global state for environment management
 Mutex environ_mutex(false, false, false, false);
 char **environ_storage = nullptr;
+EnvStringOwnership *environ_ownership = nullptr;
 size_t environ_capacity = 0;
 size_t environ_size = 0;
 bool environ_is_ours = false;
@@ -86,14 +87,26 @@ bool ensure_capacity(size_t needed) {
     if (!new_storage)
       return false;
 
+    // Allocate ownership tracking array
+    EnvStringOwnership *new_ownership = reinterpret_cast<EnvStringOwnership *>(
+        LIBC_NAMESPACE::malloc(sizeof(EnvStringOwnership) * (new_capacity + 1)));
+    if (!new_ownership) {
+      LIBC_NAMESPACE::free(new_storage);
+      return false;
+    }
+
     // Copy existing pointers (we don't own the strings yet, so just copy pointers)
     if (old_env) {
-      for (size_t i = 0; i < environ_size; i++)
+      for (size_t i = 0; i < environ_size; i++) {
         new_storage[i] = old_env[i];
+        // Initialize ownership: startup strings are not owned by us
+        new_ownership[i] = EnvStringOwnership();
+      }
     }
     new_storage[environ_size] = nullptr;
 
     environ_storage = new_storage;
+    environ_ownership = new_ownership;
     environ_capacity = new_capacity;
     environ_is_ours = true;
 
@@ -115,15 +128,27 @@ bool ensure_capacity(size_t needed) {
   if (!new_storage)
     return false;
 
-  // Copy old pointers
-  for (size_t i = 0; i < environ_size; i++)
+  // Allocate new ownership array
+  EnvStringOwnership *new_ownership = reinterpret_cast<EnvStringOwnership *>(
+      LIBC_NAMESPACE::malloc(sizeof(EnvStringOwnership) * (new_capacity + 1)));
+  if (!new_ownership) {
+    LIBC_NAMESPACE::free(new_storage);
+    return false;
+  }
+
+  // Copy old pointers and ownership info
+  for (size_t i = 0; i < environ_size; i++) {
     new_storage[i] = environ_storage[i];
+    new_ownership[i] = environ_ownership[i];
+  }
   new_storage[environ_size] = nullptr;
 
-  // Free old array (not the strings, just the array)
+  // Free old arrays (not the strings, just the arrays)
   LIBC_NAMESPACE::free(environ_storage);
+  LIBC_NAMESPACE::free(environ_ownership);
 
   environ_storage = new_storage;
+  environ_ownership = new_ownership;
   environ_capacity = new_capacity;
 
   // Update app.env_ptr to point to our new storage

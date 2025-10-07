@@ -13,6 +13,7 @@
 #include "src/__support/libc_errno.h"
 #include "src/__support/macros/config.h"
 #include "src/__support/threads/mutex.h"
+#include "src/stdlib/free.h"
 #include "src/stdlib/malloc.h"
 #include "src/string/memcpy.h"
 #include "src/string/strlen.h"
@@ -78,9 +79,15 @@ LLVM_LIBC_FUNCTION(int, setenv,
 
     // Replace in environ array
     char **env_array = internal::get_environ_array();
-    // TODO: Free old string if we allocated it
-    // For now, we'll leak the old string to be safe since we can't track ownership yet
+    
+    // Free old string if we allocated it
+    if (internal::environ_ownership[index].can_free()) {
+      LIBC_NAMESPACE::free(env_array[index]);
+    }
+    
     env_array[index] = new_string;
+    // Mark this string as allocated by us
+    internal::environ_ownership[index].allocated_by_us = true;
 
     internal::environ_mutex.unlock();
     return 0;
@@ -116,6 +123,10 @@ LLVM_LIBC_FUNCTION(int, setenv,
   // Add to environ array
   char **env_array = internal::get_environ_array();
   env_array[internal::environ_size] = new_string;
+  
+  // Mark this string as allocated by us
+  internal::environ_ownership[internal::environ_size].allocated_by_us = true;
+  
   internal::environ_size++;
   env_array[internal::environ_size] = nullptr; // Maintain null terminator
 

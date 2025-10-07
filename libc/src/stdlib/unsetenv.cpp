@@ -13,6 +13,7 @@
 #include "src/__support/libc_errno.h"
 #include "src/__support/macros/config.h"
 #include "src/__support/threads/mutex.h"
+#include "src/stdlib/free.h"
 #include "src/stdlib/malloc.h"
 
 namespace LIBC_NAMESPACE_DECL {
@@ -62,11 +63,6 @@ LLVM_LIBC_FUNCTION(int, unsetenv, (const char *name)) {
           current[name_view.size()] == '=') {
         matches = true;
         found_any = true;
-
-        // Free the string if we allocated it
-        // TODO: Track which strings we own vs from startup
-        // For now, we'll leak to be safe
-        // LIBC_NAMESPACE::free(env_array[read_pos]);
       }
     }
 
@@ -74,8 +70,14 @@ LLVM_LIBC_FUNCTION(int, unsetenv, (const char *name)) {
       // Keep this entry
       if (write_pos != read_pos) {
         env_array[write_pos] = env_array[read_pos];
+        internal::environ_ownership[write_pos] = internal::environ_ownership[read_pos];
       }
       write_pos++;
+    } else {
+      // Removing this entry - free the string if we allocated it
+      if (internal::environ_ownership[read_pos].can_free()) {
+        LIBC_NAMESPACE::free(env_array[read_pos]);
+      }
     }
   }
 
