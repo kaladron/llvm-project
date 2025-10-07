@@ -114,6 +114,20 @@ add_entrypoint_object(
 )
 
 add_entrypoint_object(
+  putenv
+  SRCS
+    putenv.cpp
+  HDRS
+    putenv.h
+  DEPENDS
+    .environ_internal
+    libc.src.__support.CPP.string_view
+    libc.src.__support.libc_errno
+    libc.src.__support.threads.mutex
+    libc.src.stdlib.free
+)
+
+add_entrypoint_object(
   strfromf
   SRCS
     strfromf.cpp
