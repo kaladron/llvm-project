@@ -461,6 +461,7 @@ if(LLVM_LIBC_FULL_BUILD)
   )
 
   # Only baremetal and GPU has an in-tree 'malloc' implementation.
+  # setenv/unsetenv/putenv also require malloc/free, so they share this condition.
   if((LIBC_TARGET_OS_IS_BAREMETAL OR LIBC_TARGET_OS_IS_GPU) AND
       NOT LIBC_TARGET_ARCHITECTURE_IS_NVPTX)
     add_libc_test(
@@ -474,6 +475,51 @@ if(LLVM_LIBC_FULL_BUILD)
         libc.include.stdlib
         libc.src.stdlib.malloc
         libc.src.stdlib.free
+    )
+
+    add_libc_test(
+      setenv_test
+      HERMETIC_TEST_ONLY
+      SUITE
+        libc-stdlib-tests
+      SRCS
+        setenv_test.cpp
+      DEPENDS
+        libc.src.stdlib.getenv
+        libc.src.stdlib.setenv
+        libc.src.stdlib.unsetenv
+        libc.test.UnitTest.ErrnoCheckingTest
+    )
+
+    add_libc_test(
+      unsetenv_test
+      HERMETIC_TEST_ONLY
+      SUITE
+        libc-stdlib-tests
+      SRCS
+        unsetenv_test.cpp
+      DEPENDS
+        libc.src.stdlib.getenv
+        libc.src.stdlib.setenv
+        libc.src.stdlib.unsetenv
+        libc.test.UnitTest.ErrnoCheckingTest
+    )
+
+    add_libc_test(
+      putenv_test
+      HERMETIC_TEST_ONLY
+      SUITE
+        libc-stdlib-tests
+      SRCS
+        putenv_test.cpp
+      DEPENDS
+        libc.src.stdlib.getenv
+        libc.src.stdlib.putenv
+        libc.src.stdlib.setenv
+        libc.src.stdlib.unsetenv
+        libc.src.string.memcpy
+        libc.src.string.strcpy
+        libc.test.UnitTest.ErrnoCheckingTest
     )
   endif()
 endif()
