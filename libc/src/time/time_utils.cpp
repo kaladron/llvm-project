@@ -113,7 +113,7 @@ cpp::optional<time_t> mktime_internal(const tm *tm_out) {
 
   // Convert from local time to UTC by subtracting the timezone adjustment.
   //
-  // Challenge: GetTimezoneAdjustment() needs a time_t parameter to determine
+  // Challenge: get_timezone_adjustment() needs a time_t parameter to determine
   // if DST is active, but we're trying to *calculate* that time_t. This is a
   // chicken-and-egg problem that requires iteration to solve.
   //
@@ -127,23 +127,23 @@ cpp::optional<time_t> mktime_internal(const tm *tm_out) {
   // between iterations, so the second iteration gives us the correct answer.
 
   // First approximation: pretend local_seconds is UTC to get initial offset
-  int32_t adjustment = time_zone_posix::PosixTimeZone::GetTimezoneAdjustment(
+  int32_t adjustment = time_zone_posix::PosixTimeZone::get_timezone_adjustment(
       tz_spec, local_seconds);
   time_t utc_seconds = local_seconds - adjustment;
 
   // Second iteration: use our approximation to get the correct offset
   // This handles cases where the first approximation crossed a DST boundary
-  adjustment = time_zone_posix::PosixTimeZone::GetTimezoneAdjustment(
+  adjustment = time_zone_posix::PosixTimeZone::get_timezone_adjustment(
       tz_spec, utc_seconds);
   utc_seconds = local_seconds - adjustment;
 
   // Update tm_isdst to indicate whether DST is active for this time
-  // We determine this by checking if DST rules exist and calling IsDSTActive
+  // We determine this by checking if DST rules exist and calling is_dst_active
   if (!tz_spec.empty()) {
-    auto tz_parsed = time_zone_posix::PosixTimeZone::ParsePosixSpec(tz_spec);
+    auto tz_parsed = time_zone_posix::PosixTimeZone::parse_posix_spec(tz_spec);
     if (tz_parsed.has_value()) {
       // Check if DST is active for the final UTC time
-      bool is_dst = tz_parsed->IsDSTActive(utc_seconds);
+      bool is_dst = tz_parsed->is_dst_active(utc_seconds);
       // Need to cast away const to update tm_isdst
       // This is allowed per POSIX: mktime() normalizes all tm fields
       const_cast<tm *>(tm_out)->tm_isdst = is_dst ? 1 : 0;
@@ -284,11 +284,11 @@ int64_t update_from_seconds(time_t total_seconds, tm *tm) {
   // Update tm_isdst based on TZ environment variable using abstraction layer
   const char *tz_env = time_internal::get_tz_env();
   cpp::string_view tz_spec = tz_env ? cpp::string_view(tz_env) : "";
-  
+
   if (!tz_spec.empty()) {
-    auto tz_parsed = time_zone_posix::PosixTimeZone::ParsePosixSpec(tz_spec);
+    auto tz_parsed = time_zone_posix::PosixTimeZone::parse_posix_spec(tz_spec);
     if (tz_parsed.has_value()) {
-      bool is_dst = tz_parsed->IsDSTActive(total_seconds);
+      bool is_dst = tz_parsed->is_dst_active(total_seconds);
       tm->tm_isdst = is_dst ? 1 : 0;
     } else {
       tm->tm_isdst = 0;

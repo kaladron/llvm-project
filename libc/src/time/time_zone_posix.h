@@ -176,7 +176,8 @@ public:
 ///
 /// Examples of valid TZ strings:
 ///   - "EST5EDT,M3.2.0,M11.1.0" - US Eastern time with DST
-///   - "PST8PDT,M3.2.0/2:00:00,M11.1.0/2:00:00" - US Pacific with explicit times
+///   - "PST8PDT,M3.2.0/2:00:00,M11.1.0/2:00:00" - US Pacific with explicit
+///   times
 ///   - "UTC0" - UTC with no DST
 ///   - "GMT0BST,M3.5.0/1,M10.5.0" - UK time (BST = British Summer Time)
 ///   - "<+05>-5" - UTC+5 with quoted name containing special characters
@@ -184,7 +185,8 @@ public:
 ///   - "NZST-12NZDT,M9.5.0,M4.1.0/3" - New Zealand (southern hemisphere)
 ///
 /// Edge cases and limitations:
-///   - Colon-prefixed strings (":America/New_York") are rejected (not yet implemented)
+///   - Colon-prefixed strings (":America/New_York") are rejected (not yet
+///   implemented)
 ///   - Timezone abbreviations must be 3+ characters
 ///   - Hour offsets support RFC 8536 extended range: -167 to +167 hours
 ///   - Invalid input returns cpp::nullopt (no exceptions thrown)
@@ -192,7 +194,7 @@ public:
 ///
 /// Usage example:
 ///   \code
-///   auto result = PosixTimeZone::ParsePosixSpec("PST8PDT,M3.2.0,M11.1.0");
+///   auto result = PosixTimeZone::parse_posix_spec("PST8PDT,M3.2.0,M11.1.0");
 ///   if (result.has_value()) {
 ///     const auto& tz = result.value();
 ///     // tz.std_abbr == "PST"
@@ -202,7 +204,8 @@ public:
 ///   }
 ///   \endcode
 ///
-/// \see https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap08.html
+/// \see
+/// https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap08.html
 /// \see https://datatracker.ietf.org/doc/html/rfc8536
 class PosixTimeZone {
 public:
@@ -249,7 +252,7 @@ public:
   ///       load IANA timezone database files. This implementation currently
   ///       only supports POSIX TZ rules. Use "EST5EDT,M3.2.0,M11.1.0" instead.
   static cpp::optional<PosixTimeZone>
-  ParsePosixSpec(const cpp::string_view spec);
+  parse_posix_spec(const cpp::string_view spec);
 
   /// Get the timezone offset adjustment for a given time.
   ///
@@ -274,7 +277,7 @@ public:
   /// \note This function is designed to be called by time functions like
   ///       localtime() and mktime() on each invocation. It does not cache
   ///       results or maintain global state.
-  static int32_t GetTimezoneAdjustment(cpp::string_view tz_spec, time_t time);
+  static int32_t get_timezone_adjustment(cpp::string_view tz_spec, time_t time);
 
   /// Check if DST is active at the given time.
   ///
@@ -286,7 +289,7 @@ public:
   ///
   /// \note This method requires that the PosixTimeZone has been successfully
   ///       parsed and contains valid DST transition rules.
-  bool IsDSTActive(time_t time) const;
+  bool is_dst_active(time_t time) const;
 
   cpp::string_view spec; ///< Mutable parse position (modified during parsing)
   cpp::string_view
@@ -295,8 +298,9 @@ public:
   cpp::string_view std_abbr; ///< Standard time abbreviation (e.g., "PST")
   int32_t std_offset;        ///< Standard time offset from UTC in seconds
 
-  cpp::string_view dst_abbr; ///< DST abbreviation (e.g., "PDT"), empty if no DST
-  int32_t dst_offset;        ///< DST offset from UTC in seconds
+  cpp::string_view
+      dst_abbr;       ///< DST abbreviation (e.g., "PDT"), empty if no DST
+  int32_t dst_offset; ///< DST offset from UTC in seconds
 
   PosixTransition dst_start; ///< When DST begins
   PosixTransition dst_end;   ///< When DST ends
@@ -306,29 +310,29 @@ public:
   /// Maintains parse position without modifying the original spec string.
   class Parser {
   private:
-    cpp::string_view remaining; // Current position in parse (mutable)
+    cpp::string_view remaining;      // Current position in parse (mutable)
     const cpp::string_view original; // Full original spec (immutable)
-    size_t position; // Current offset into original string
-    
+    size_t position;                 // Current offset into original string
+
   public:
     explicit Parser(cpp::string_view spec)
         : remaining(spec), original(spec), position(0) {}
-    
+
     /// Advance the parse position by n characters.
     void advance(size_t n) {
       remaining.remove_prefix(n);
       position += n;
     }
-    
+
     /// Check if there's more data to parse.
     bool has_more() const { return !remaining.empty(); }
-    
+
     /// Get the current parse position (offset into original string).
     size_t current_position() const { return position; }
-    
+
     /// Get the remaining unparsed string.
     cpp::string_view get_remaining() const { return remaining; }
-    
+
     /// Get the original full spec string.
     cpp::string_view get_original() const { return original; }
 
@@ -339,21 +343,21 @@ public:
     /// \return Parsed integer or nullopt if out of range or invalid.
     static cpp::optional<int> parse_int(cpp::string_view &str, int min,
                                         int max);
-    
+
     /// Parse timezone abbreviation from string.
     /// \param str String to parse from (updated on success).
     /// \return Parsed abbreviation or nullopt if invalid.
     static cpp::optional<cpp::string_view> parse_abbr(cpp::string_view &str);
-    
+
     /// Parse timezone offset in format [+|-]hh[:mm[:ss]].
     /// \param str String to parse from (updated on success).
     /// \param min_hour Minimum valid hour value.
     /// \param max_hour Maximum valid hour value.
     /// \param default_sign_for_offset Default sign if not specified.
     /// \return Offset in seconds or nullopt if invalid.
-    static cpp::optional<int32_t> parse_offset(cpp::string_view &str,
-                                                int min_hour, int max_hour,
-                                                TZOffset default_sign_for_offset);
+    static cpp::optional<int32_t>
+    parse_offset(cpp::string_view &str, int min_hour, int max_hour,
+                 TZOffset default_sign_for_offset);
 
     /// Parse Mm.w.d format (Nth occurrence of weekday in month).
     /// \param str String to parse from (updated on success).

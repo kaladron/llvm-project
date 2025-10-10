@@ -15,8 +15,7 @@
 namespace LIBC_NAMESPACE {
 namespace testing {
 
-class PosixTimeZoneMatcher
-    : public Matcher<time_zone_posix::PosixTimeZone> {
+class PosixTimeZoneMatcher : public Matcher<time_zone_posix::PosixTimeZone> {
   time_zone_posix::PosixTimeZone expected;
   time_zone_posix::PosixTimeZone actual;
 
@@ -30,49 +29,81 @@ public:
     case time_zone_posix::PosixTransition::DateFormat::J:
       return (expectedValue.date.fmt == actualValue.date.fmt &&
               expectedValue.time.offset == actualValue.time.offset &&
-              expectedValue.date.data.get<time_zone_posix::PosixTransition::Date::NonLeapDay>().day == 
-              actualValue.date.data.get<time_zone_posix::PosixTransition::Date::NonLeapDay>().day);
+              expectedValue.date.data
+                      .get<time_zone_posix::PosixTransition::Date::NonLeapDay>()
+                      .day ==
+                  actualValue.date.data
+                      .get<time_zone_posix::PosixTransition::Date::NonLeapDay>()
+                      .day);
     case time_zone_posix::PosixTransition::DateFormat::N:
       return (expectedValue.date.fmt == actualValue.date.fmt &&
               expectedValue.time.offset == actualValue.time.offset &&
-              expectedValue.date.data.get<time_zone_posix::PosixTransition::Date::Day>().day == 
-              actualValue.date.data.get<time_zone_posix::PosixTransition::Date::Day>().day);
+              expectedValue.date.data
+                      .get<time_zone_posix::PosixTransition::Date::Day>()
+                      .day ==
+                  actualValue.date.data
+                      .get<time_zone_posix::PosixTransition::Date::Day>()
+                      .day);
     case time_zone_posix::PosixTransition::DateFormat::M:
       return (expectedValue.date.fmt == actualValue.date.fmt &&
               expectedValue.time.offset == actualValue.time.offset &&
-              expectedValue.date.data.get<time_zone_posix::PosixTransition::Date::MonthWeekWeekday>().month == 
-              actualValue.date.data.get<time_zone_posix::PosixTransition::Date::MonthWeekWeekday>().month &&
-              expectedValue.date.data.get<time_zone_posix::PosixTransition::Date::MonthWeekWeekday>().week == 
-              actualValue.date.data.get<time_zone_posix::PosixTransition::Date::MonthWeekWeekday>().week &&
-              expectedValue.date.data.get<time_zone_posix::PosixTransition::Date::MonthWeekWeekday>().weekday == 
-              actualValue.date.data.get<time_zone_posix::PosixTransition::Date::MonthWeekWeekday>().weekday);
+              expectedValue.date.data
+                      .get<time_zone_posix::PosixTransition::Date::
+                               MonthWeekWeekday>()
+                      .month == actualValue.date.data
+                                    .get<time_zone_posix::PosixTransition::
+                                             Date::MonthWeekWeekday>()
+                                    .month &&
+              expectedValue.date.data
+                      .get<time_zone_posix::PosixTransition::Date::
+                               MonthWeekWeekday>()
+                      .week == actualValue.date.data
+                                   .get<time_zone_posix::PosixTransition::Date::
+                                            MonthWeekWeekday>()
+                                   .week &&
+              expectedValue.date.data
+                      .get<time_zone_posix::PosixTransition::Date::
+                               MonthWeekWeekday>()
+                      .weekday == actualValue.date.data
+                                      .get<time_zone_posix::PosixTransition::
+                                               Date::MonthWeekWeekday>()
+                                      .weekday);
     }
   }
 
-  void posix_transition_describe_value(
-      const char *label, time_zone_posix::PosixTransition value) {
+  void posix_transition_describe_value(const char *label,
+                                       time_zone_posix::PosixTransition value) {
     switch (value.date.fmt) {
     case time_zone_posix::PosixTransition::DateFormat::J:
       tlog << label << ".date.fmt: J ";
-      tlog << label << ".date.j.day: " << 
-        value.date.data.get<time_zone_posix::PosixTransition::Date::NonLeapDay>().day;
+      tlog << label << ".date.j.day: "
+           << value.date.data
+                  .get<time_zone_posix::PosixTransition::Date::NonLeapDay>()
+                  .day;
       break;
     case time_zone_posix::PosixTransition::DateFormat::N:
       tlog << label << ".date.fmt: N ";
-      tlog << label << ".date.n.day: " << 
-        value.date.data.get<time_zone_posix::PosixTransition::Date::Day>().day;
+      tlog << label << ".date.n.day: "
+           << value.date.data.get<time_zone_posix::PosixTransition::Date::Day>()
+                  .day;
       break;
     case time_zone_posix::PosixTransition::DateFormat::M:
       tlog << label << ".date.fmt: M ";
-      tlog << label
-             << ".date.m.month: " << static_cast<int>(
-               value.date.data.get<time_zone_posix::PosixTransition::Date::MonthWeekWeekday>().month);
-      tlog << label
-             << ".date.m.week: " << static_cast<int>(
-               value.date.data.get<time_zone_posix::PosixTransition::Date::MonthWeekWeekday>().week);
-      tlog << label
-             << ".date.m.weekday: " << static_cast<int>(
-               value.date.data.get<time_zone_posix::PosixTransition::Date::MonthWeekWeekday>().weekday);
+      tlog << label << ".date.m.month: "
+           << static_cast<int>(value.date.data
+                                   .get<time_zone_posix::PosixTransition::Date::
+                                            MonthWeekWeekday>()
+                                   .month);
+      tlog << label << ".date.m.week: "
+           << static_cast<int>(value.date.data
+                                   .get<time_zone_posix::PosixTransition::Date::
+                                            MonthWeekWeekday>()
+                                   .week);
+      tlog << label << ".date.m.weekday: "
+           << static_cast<int>(value.date.data
+                                   .get<time_zone_posix::PosixTransition::Date::
+                                            MonthWeekWeekday>()
+                                   .weekday);
       break;
     }
     tlog << label << ".time.offset: " << value.time.offset;
@@ -169,12 +200,11 @@ public:
 } // namespace LIBC_NAMESPACE
 
 #define EXPECT_POSIX_TIME_ZONE_EQ(expected, actual)                            \
-  EXPECT_THAT((actual), LIBC_NAMESPACE::testing::PosixTimeZoneMatcher( \
-                            (expected)))
+  EXPECT_THAT((actual),                                                        \
+              LIBC_NAMESPACE::testing::PosixTimeZoneMatcher((expected)))
 
 #define EXPECT_POSIX_TIME_ZONE_TEST_DATA_EQ(expected, actual)                  \
-  EXPECT_THAT((actual),                                                        \
-              LIBC_NAMESPACE::testing::PosixTimeZoneTestDataMatcher(   \
-                  (expected)))
+  EXPECT_THAT((actual), LIBC_NAMESPACE::testing::PosixTimeZoneTestDataMatcher( \
+                            (expected)))
 
 #endif // LLVM_LIBC_TEST_SRC_TIME_TZ_MATCHER_H

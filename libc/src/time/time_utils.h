@@ -168,7 +168,7 @@ LIBC_INLINE tm *localtime_internal(const time_t *timer, tm *result) {
 
   // Get timezone adjustment (offset from UTC to local time)
   int32_t adjustment =
-      time_zone_posix::PosixTimeZone::GetTimezoneAdjustment(tz_spec, *timer);
+      time_zone_posix::PosixTimeZone::get_timezone_adjustment(tz_spec, *timer);
 
   // Apply timezone adjustment to convert UTC to local time
   time_t local_seconds = *timer + adjustment;
@@ -181,8 +181,8 @@ LIBC_INLINE tm *localtime_internal(const time_t *timer, tm *result) {
 
   // Set tm_isdst based on whether DST is active
   // Parse the TZ spec to check DST status
-  auto tz_parsed = time_zone_posix::PosixTimeZone::ParsePosixSpec(tz_spec);
-  if (tz_parsed.has_value() && tz_parsed->IsDSTActive(*timer)) {
+  auto tz_parsed = time_zone_posix::PosixTimeZone::parse_posix_spec(tz_spec);
+  if (tz_parsed.has_value() && tz_parsed->is_dst_active(*timer)) {
     result->tm_isdst = 1;
   } else {
     result->tm_isdst = 0;

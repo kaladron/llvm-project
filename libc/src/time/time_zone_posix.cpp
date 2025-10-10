@@ -25,8 +25,8 @@ using LIBC_NAMESPACE::time_utils::TimeConstants;
 // required unsigned values from 0 through 24.
 static constexpr int MAX_HOURS_IN_TRANSITION_TIMES = 167;
 
-// TOOD(rtenneti): Make ParseInt be a template and return int8_t,
-// unit16_t, etc? That way the static_casts below wouldn't be needed.
+// TODO(rtenneti): Make ParseInt be a template and return int8_t,
+// uint16_t, etc? That way the static_casts below wouldn't be needed.
 //
 // Parses int value from the string. It returns nullopt if the value
 // is less than min or greater than max.
@@ -200,10 +200,8 @@ PosixTimeZone::Parser::parse_month_week_weekday(cpp::string_view &str) {
   PosixTransition posixTransition;
   posixTransition.date.fmt = PosixTransition::DateFormat::M;
   posixTransition.date.data = PosixTransition::Date::MonthWeekWeekday{
-    static_cast<int8_t>(month),
-    static_cast<int8_t>(week), 
-    static_cast<int8_t>(weekday)
-  };
+      static_cast<int8_t>(month), static_cast<int8_t>(week),
+      static_cast<int8_t>(weekday)};
   return posixTransition;
 }
 
@@ -217,7 +215,8 @@ PosixTimeZone::Parser::parse_non_leap_day(cpp::string_view &str) {
     return cpp::nullopt;
   PosixTransition posixTransition;
   posixTransition.date.fmt = PosixTransition::DateFormat::J;
-  posixTransition.date.data = PosixTransition::Date::NonLeapDay{static_cast<int16_t>(result.value())};
+  posixTransition.date.data =
+      PosixTransition::Date::NonLeapDay{static_cast<int16_t>(result.value())};
   return posixTransition;
 }
 
@@ -231,7 +230,8 @@ PosixTimeZone::Parser::parse_leap_day(cpp::string_view &str) {
     return cpp::nullopt;
   PosixTransition posixTransition;
   posixTransition.date.fmt = PosixTransition::DateFormat::N;
-  posixTransition.date.data = PosixTransition::Date::Day{static_cast<int16_t>(result.value())};
+  posixTransition.date.data =
+      PosixTransition::Date::Day{static_cast<int16_t>(result.value())};
   return posixTransition;
 }
 
@@ -301,7 +301,7 @@ PosixTimeZone::Parser::parse_date_time(cpp::string_view &str) {
 
 // spec = std offset [ dst [ offset ] , datetime , datetime ]
 cpp::optional<PosixTimeZone>
-PosixTimeZone::ParsePosixSpec(const cpp::string_view spec_input) {
+PosixTimeZone::parse_posix_spec(const cpp::string_view spec_input) {
   // Reject colon-prefix (implementation-defined per POSIX).
   // Most Unix systems use ":America/New_York" to load IANA timezone database
   // files (tzfile format). This implementation currently only supports POSIX
@@ -474,7 +474,7 @@ static time_t calculate_transition_time(const PosixTransition &transition,
          transition.time.offset;
 }
 
-bool PosixTimeZone::IsDSTActive(time_t time) const {
+bool PosixTimeZone::is_dst_active(time_t time) const {
   // If no DST rules, DST is never active
   if (dst_abbr.empty())
     return false;
@@ -531,25 +531,25 @@ bool PosixTimeZone::IsDSTActive(time_t time) const {
   }
 }
 
-int32_t PosixTimeZone::GetTimezoneAdjustment(cpp::string_view tz_spec,
+int32_t PosixTimeZone::get_timezone_adjustment(cpp::string_view tz_spec,
                                              time_t time) {
   // If TZ spec is empty, return 0 (use UTC)
   if (tz_spec.empty())
     return 0;
 
   // Parse the TZ specification
-  auto parsed = ParsePosixSpec(tz_spec);
+  auto parsed = parse_posix_spec(tz_spec);
   if (!parsed)
     return 0; // Invalid TZ spec, fall back to UTC
 
   const auto &tz = *parsed;
 
   // Determine if DST is active and return appropriate offset
-  if (tz.IsDSTActive(time))
+  if (tz.is_dst_active(time))
     return tz.dst_offset;
   else
     return tz.std_offset;
 }
 
 } // namespace time_zone_posix
-} // namespace LLVM_NAMESPACE
+} // namespace LIBC_NAMESPACE
