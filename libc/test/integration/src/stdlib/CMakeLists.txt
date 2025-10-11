@@ -26,5 +26,19 @@ add_integration_test(
   DEPENDS
     libc.src.stdlib.getenv
     libc.src.stdlib.setenv
+    libc.src.stdlib.unsetenv
+    libc.src.string.strcmp
+)
+
+add_integration_test(
+  unsetenv_test
+  SUITE
+    stdlib-integration-tests
+  SRCS
+    unsetenv_test.cpp
+  DEPENDS
+    libc.src.stdlib.getenv
+    libc.src.stdlib.setenv
+    libc.src.stdlib.unsetenv
     libc.src.string.strcmp
 )
