@@ -64,6 +64,8 @@ std::string Linux::getMultiarchTriple(const Driver &D,
         TargetEnvironment == llvm::Triple::MuslEABIHF ||
         TargetEnvironment == llvm::Triple::EABIHF)
       return "arm-linux-gnueabihf";
+    if (TargetEnvironment == llvm::Triple::LLVM)
+      return "arm-linux-llvm";
     return "arm-linux-gnueabi";
   case llvm::Triple::armeb:
   case llvm::Triple::thumbeb:
@@ -71,16 +73,22 @@ std::string Linux::getMultiarchTriple(const Driver &D,
         TargetEnvironment == llvm::Triple::MuslEABIHF ||
         TargetEnvironment == llvm::Triple::EABIHF)
       return "armeb-linux-gnueabihf";
+    if (TargetEnvironment == llvm::Triple::LLVM)
+      return "armeb-linux-llvm";
     return "armeb-linux-gnueabi";
   case llvm::Triple::x86:
     if (IsAndroid)
       return "i686-linux-android";
+    if (TargetEnvironment == llvm::Triple::LLVM)
+      return "i386-linux-llvm";
     return "i386-linux-gnu";
   case llvm::Triple::x86_64:
     if (IsAndroid)
       return "x86_64-linux-android";
     if (TargetEnvironment == llvm::Triple::GNUX32)
       return "x86_64-linux-gnux32";
+    if (TargetEnvironment == llvm::Triple::LLVM)
+      return "x86_64-linux-llvm";
     return "x86_64-linux-gnu";
   case llvm::Triple::aarch64:
     if (IsAndroid)
@@ -88,6 +96,8 @@ std::string Linux::getMultiarchTriple(const Driver &D,
     if (hasEffectiveTriple() &&
         getEffectiveTriple().getEnvironment() == llvm::Triple::PAuthTest)
       return "aarch64-linux-pauthtest";
+    if (TargetEnvironment == llvm::Triple::LLVM)
+      return "aarch64-linux-llvm";
     return "aarch64-linux-gnu";
   case llvm::Triple::aarch64_be:
     return "aarch64_be-linux-gnu";
@@ -166,6 +176,8 @@ std::string Linux::getMultiarchTriple(const Driver &D,
   case llvm::Triple::riscv64:
     if (IsAndroid)
       return "riscv64-linux-android";
+    if (TargetEnvironment == llvm::Triple::LLVM)
+      return "riscv64-linux-llvm";
     return "riscv64-linux-gnu";
   case llvm::Triple::sparc:
     return "sparc-linux-gnu";
@@ -376,6 +388,8 @@ Linux::Linux(const Driver &D, const llvm::Triple &Triple, const ArgList &Args)
 
 ToolChain::RuntimeLibType Linux::GetDefaultRuntimeLibType() const {
   if (getTriple().isAndroid())
+    return ToolChain::RLT_CompilerRT;
+  if (getTriple().getEnvironment() == llvm::Triple::LLVM)
     return ToolChain::RLT_CompilerRT;
   return Generic_ELF::GetDefaultRuntimeLibType();
 }
