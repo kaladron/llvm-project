@@ -224,6 +224,17 @@ static bool getStatic(const ArgList &Args) {
       !Args.hasArg(options::OPT_static_pie);
 }
 
+static bool shouldDefaultToStatic(const ToolChain &TC, const ArgList &Args) {
+  // LLVM libc doesn't provide a dynamic linker yet, so default to static
+  if (TC.getTriple().getEnvironment() == llvm::Triple::LLVM &&
+      !Args.hasArg(options::OPT_shared) &&
+      !Args.hasArg(options::OPT_rdynamic) && !Args.hasArg(options::OPT_pie) &&
+      !Args.hasArg(options::OPT_no_pie)) {
+    return true;
+  }
+  return false;
+}
+
 void tools::gnutools::StaticLibTool::ConstructJob(
     Compilation &C, const JobAction &JA, const InputInfo &Output,
     const InputInfoList &Inputs, const ArgList &Args,
@@ -285,10 +296,14 @@ void tools::gnutools::Linker::ConstructJob(Compilation &C, const JobAction &JA,
   const llvm::Triple::ArchType Arch = ToolChain.getArch();
   const bool isOHOSFamily = ToolChain.getTriple().isOHOSFamily();
   const bool isAndroid = ToolChain.getTriple().isAndroid();
+  const bool isLLVMLibc =
+      ToolChain.getTriple().getEnvironment() == llvm::Triple::LLVM;
   const bool IsIAMCU = ToolChain.getTriple().isOSIAMCU();
   const bool IsVE = ToolChain.getTriple().isVE();
   const bool IsStaticPIE = getStaticPIE(Args, ToolChain);
-  const bool IsStatic = getStatic(Args);
+  const bool IsStatic = getStatic(Args) || 
+                        (!Args.hasArg(options::OPT_dynamic) && 
+                         shouldDefaultToStatic(ToolChain, Args));
   const bool HasCRTBeginEndFiles =
       ToolChain.getTriple().hasEnvironment() ||
       (ToolChain.getTriple().getVendor() != llvm::Triple::MipsTechnologies);
@@ -380,7 +395,10 @@ void tools::gnutools::Linker::ConstructJob(Compilation &C, const JobAction &JA,
     if (!isAndroid && !IsIAMCU) {
       const char *crt1 = nullptr;
       if (!Args.hasArg(options::OPT_shared)) {
-        if (Args.hasArg(options::OPT_pg))
+        // LLVM libc only provides a single crt1.o, not variants
+        if (isLLVMLibc)
+          crt1 = "crt1.o";
+        else if (Args.hasArg(options::OPT_pg))
           crt1 = "gcrt1.o";
         else if (IsPIE)
           crt1 = "Scrt1.o";
