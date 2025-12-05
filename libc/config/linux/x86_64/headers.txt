@@ -22,6 +22,7 @@ set(TARGET_PUBLIC_HEADERS
     libc.include.nl_types
     libc.include.poll
     libc.include.pthread
+    libc.include.regex
     libc.include.sched
     libc.include.search
     libc.include.setjmp

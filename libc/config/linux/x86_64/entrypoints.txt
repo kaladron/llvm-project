@@ -1286,6 +1286,12 @@ if(LLVM_LIBC_FULL_BUILD)
     libc.src.spawn.posix_spawn_file_actions_destroy
     libc.src.spawn.posix_spawn_file_actions_init
 
+    # regex.h entrypoints
+    libc.src.regex.regcomp
+    libc.src.regex.regexec
+    libc.src.regex.regerror
+    libc.src.regex.regfree
+
     # search.h entrypoints
     libc.src.search.hcreate
     libc.src.search.hcreate_r

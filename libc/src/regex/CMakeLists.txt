@@ -1,0 +1,47 @@
+add_entrypoint_object(
+  regcomp
+  SRCS
+    regcomp.cpp
+  HDRS
+    regcomp.h
+  DEPENDS
+    libc.include.regex
+    libc.src.__support.common
+)
+
+add_entrypoint_object(
+  regexec
+  SRCS
+    regexec.cpp
+  HDRS
+    regexec.h
+  DEPENDS
+    libc.include.regex
+    libc.src.__support.common
+)
+
+add_entrypoint_object(
+  regerror
+  SRCS
+    regerror.cpp
+  HDRS
+    regerror.h
+  DEPENDS
+    libc.include.regex
+    libc.src.__support.common
+    libc.src.__support.CPP.array
+    libc.src.__support.CPP.string_view
+    libc.src.string.memory_utils.inline_memcpy
+)
+
+add_entrypoint_object(
+  regfree
+  SRCS
+    regfree.cpp
+  HDRS
+    regfree.h
+  DEPENDS
+    libc.include.regex
+    libc.hdr.func.free
+    libc.src.__support.common
+)
