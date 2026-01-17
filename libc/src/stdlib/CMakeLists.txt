@@ -681,7 +681,6 @@ add_entrypoint_object(
     20 # For constinit
   DEPENDS
     .exit_handler
-    .atexit
 )
 
 list(APPEND exit_deps
