@@ -52,7 +52,6 @@ add_entrypoint_object(
     libc.src.__support.OSUtil.osutil
     .exit_handler
     .at_quick_exit
-    .atexit
 )
 
 add_entrypoint_object(
