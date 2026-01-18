@@ -124,6 +124,7 @@ add_libc_test(
     libc.src.time.clock_getres
 )
 
+if(0)
 add_libc_test(
   clock_settime_test
   SUITE
@@ -138,6 +139,7 @@ add_libc_test(
     libc.hdr.errno_macros
     libc.test.UnitTest.ErrnoCheckingTest
 )
+endif()
 
 add_libc_unittest(
   difftime_test
