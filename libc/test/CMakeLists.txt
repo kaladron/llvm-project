@@ -1,7 +1,32 @@
-add_custom_target(check-libc)
+#===============================================================================
+# Lit Test Infrastructure Setup
+#===============================================================================
+if(LIBC_ENABLE_LIT_TESTS)
+  # Configure lit site config file
+  configure_libc_lit_site_cfg()
+  
+  # Create the umbrella lit test target
+  add_custom_target(check-libc-lit
+    COMMENT "Running all libc lit tests"
+  )
+  
+  message(STATUS "libc: Lit test infrastructure enabled")
+endif()
+
+#===============================================================================
+# Legacy Test Infrastructure Setup  
+#===============================================================================
+if(NOT LIBC_ENABLE_LEGACY_TESTS)
+  # Skip legacy test setup - return early
+  # But still process lit tests if enabled above
+  return()
+endif()
+
+# --- Existing test setup code follows ---
+
+# Legacy test targets
 add_custom_target(libc-unit-tests)
 add_custom_target(libc-hermetic-tests)
-add_dependencies(check-libc libc-unit-tests libc-hermetic-tests)
 
 add_custom_target(exhaustive-check-libc)
 add_custom_target(libc-long-running-tests)
@@ -36,3 +61,25 @@ endif()
 
 add_subdirectory(IntegrationTest)
 add_subdirectory(integration)
+
+#===============================================================================
+# Unified check-libc Target
+#===============================================================================
+# Create the main check-libc target that runs the appropriate tests
+if(NOT TARGET check-libc)
+  add_custom_target(check-libc)
+endif()
+
+if(LIBC_ENABLE_LIT_TESTS AND TARGET check-libc-lit)
+  add_dependencies(check-libc check-libc-lit)
+endif()
+
+if(LIBC_ENABLE_LEGACY_TESTS AND TARGET libc-unit-tests)
+  add_dependencies(check-libc libc-unit-tests)
+endif()
+
+if(LIBC_ENABLE_LEGACY_TESTS AND TARGET libc-hermetic-tests)
+  add_dependencies(check-libc libc-hermetic-tests)
+endif()
+
+
