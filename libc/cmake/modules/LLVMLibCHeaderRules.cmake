@@ -102,14 +102,19 @@ function(add_gen_header target_name)
   endif()
   set(dep_file "${out_file}.d")
   set(yaml_file ${CMAKE_SOURCE_DIR}/${ADD_GEN_HDR_YAML_FILE})
-  
-  if(LLVM_LIBC_ALL_HEADERS)
-    set(entry_points "")
-  else()
-    set(entry_points "${TARGET_ENTRYPOINT_NAME_LIST}")
-  endif()
 
-  list(TRANSFORM entry_points PREPEND "--entry-point=")
+  # Write entry points to a file to avoid huge command lines in build.ninja.
+  # This significantly reduces build.ninja file size when there are many entry points.
+  if(LLVM_LIBC_ALL_HEADERS)
+    set(entry_points_file_arg "")
+    set(entry_points_file_dep "")
+  else()
+    set(entry_points_file "${out_file}.entrypoints")
+    list(JOIN TARGET_ENTRYPOINT_NAME_LIST "\n" entry_points_content)
+    file(WRITE ${entry_points_file} "${entry_points_content}")
+    set(entry_points_file_arg "--entry-points-file=${entry_points_file}")
+    set(entry_points_file_dep ${entry_points_file})
+  endif()
 
   add_custom_command(
     OUTPUT ${out_file}
@@ -119,9 +124,9 @@ function(add_gen_header target_name)
             --depfile ${dep_file}
             --write-if-changed
             ${proxy_arg}
-            ${entry_points}
+            ${entry_points_file_arg}
             ${yaml_file}
-    DEPENDS ${yaml_file}
+    DEPENDS ${yaml_file} ${entry_points_file_dep}
     DEPFILE ${dep_file}
     COMMENT "Generating header ${ADD_GEN_HDR_GEN_HDR} from ${yaml_file}"
   )
