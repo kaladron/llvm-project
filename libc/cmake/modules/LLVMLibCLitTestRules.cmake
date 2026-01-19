@@ -30,7 +30,7 @@ include(AddLLVM)
 function(configure_libc_lit_site_cfg)
   # Set variables for the template
   set(LIBC_SOURCE_DIR "${LIBC_SOURCE_DIR}")
-  set(LIBC_BINARY_DIR "${LIBC_BINARY_DIR}")
+  set(LIBC_BINARY_DIR "${LIBC_BUILD_DIR}")
   
   # Handle LLVM_LIBC_FULL_BUILD as Python boolean
   if(LLVM_LIBC_FULL_BUILD)
@@ -45,7 +45,7 @@ function(configure_libc_lit_site_cfg)
   # Configure the site config file
   configure_lit_site_cfg(
     ${LIBC_SOURCE_DIR}/test/lit.site.cfg.py.in
-    ${LIBC_BINARY_DIR}/test/lit.site.cfg.py
+    ${LIBC_BUILD_DIR}/test/lit.site.cfg.py
     MAIN_CONFIG
     ${LIBC_SOURCE_DIR}/test/lit.cfg.py
     PATHS

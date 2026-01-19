@@ -2,6 +2,9 @@
 # Lit Test Infrastructure Setup
 #===============================================================================
 if(LIBC_ENABLE_LIT_TESTS)
+  # Include lit test rules and functions
+  include(LLVMLibCLitTestRules)
+  
   # Configure lit site config file
   configure_libc_lit_site_cfg()
   
@@ -14,11 +17,31 @@ if(LIBC_ENABLE_LIT_TESTS)
 endif()
 
 #===============================================================================
+# Create unified check-libc target early
+#===============================================================================
+# This must be created before subdirectories that may add dependencies to it
+if(NOT TARGET check-libc)
+  add_custom_target(check-libc)
+endif()
+
+if(LIBC_ENABLE_LIT_TESTS AND TARGET check-libc-lit)
+  add_dependencies(check-libc check-libc-lit)
+endif()
+
+#===============================================================================
+# Process test subdirectories (needed for both lit and legacy)
+#===============================================================================
+# UnitTest framework is needed for both systems (provides LibcTest.unit)
+add_subdirectory(UnitTest)
+add_subdirectory(src)
+add_subdirectory(utils)
+add_subdirectory(shared)
+
+#===============================================================================
 # Legacy Test Infrastructure Setup  
 #===============================================================================
 if(NOT LIBC_ENABLE_LEGACY_TESTS)
-  # Skip legacy test setup - return early
-  # But still process lit tests if enabled above
+  # Skip legacy test setup - all remaining setup is legacy-specific
   return()
 endif()
 
@@ -31,8 +54,6 @@ add_custom_target(libc-hermetic-tests)
 add_custom_target(exhaustive-check-libc)
 add_custom_target(libc-long-running-tests)
 
-add_subdirectory(UnitTest)
-
 if(LIBC_TARGET_OS_IS_GPU)
   if(NOT TARGET libc.utils.gpu.loader)
     message(WARNING "Cannot build libc GPU tests, missing loader.")
@@ -42,10 +63,6 @@ if(LIBC_TARGET_OS_IS_GPU)
     return()
   endif()
 endif()
-
-add_subdirectory(src)
-add_subdirectory(utils)
-add_subdirectory(shared)
 
 if(NOT LLVM_LIBC_FULL_BUILD)
   return()
@@ -63,17 +80,8 @@ add_subdirectory(IntegrationTest)
 add_subdirectory(integration)
 
 #===============================================================================
-# Unified check-libc Target
+# Add legacy test targets to check-libc
 #===============================================================================
-# Create the main check-libc target that runs the appropriate tests
-if(NOT TARGET check-libc)
-  add_custom_target(check-libc)
-endif()
-
-if(LIBC_ENABLE_LIT_TESTS AND TARGET check-libc-lit)
-  add_dependencies(check-libc check-libc-lit)
-endif()
-
 if(LIBC_ENABLE_LEGACY_TESTS AND TARGET libc-unit-tests)
   add_dependencies(check-libc libc-unit-tests)
 endif()
@@ -81,5 +89,6 @@ endif()
 if(LIBC_ENABLE_LEGACY_TESTS AND TARGET libc-hermetic-tests)
   add_dependencies(check-libc libc-hermetic-tests)
 endif()
+
 
 

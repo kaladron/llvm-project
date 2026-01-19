@@ -204,6 +204,9 @@ function(create_libc_unittest fq_target_name)
   if(NOT LLVM_INCLUDE_TESTS)
     return()
   endif()
+  if(NOT LIBC_ENABLE_LEGACY_TESTS)
+    return()
+  endif()
 
   cmake_parse_arguments(
     "LIBC_UNITTEST"
@@ -667,6 +670,9 @@ endfunction(add_integration_test)
 #     LOADER_ARGS <list of special args to loaders (like the GPU loader)>
 #   )
 function(add_libc_hermetic test_name)
+  if(NOT LIBC_ENABLE_LEGACY_TESTS)
+    return()
+  endif()
   if(NOT TARGET libc.startup.${LIBC_TARGET_OS}.crt1)
     message(VERBOSE "Skipping ${fq_target_name} as it is not available on ${LIBC_TARGET_OS}.")
     return()
