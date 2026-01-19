@@ -149,6 +149,34 @@ if(LIBC_TARGET_OS_IS_LINUX)
 endif()
 set(LIBC_KERNEL_HEADERS "${kernel_headers}" CACHE STRING "Path to Linux kernel headers")
 
+#===============================================================================
+# Lit Test Infrastructure Options (Experimental Migration)
+#===============================================================================
+option(LIBC_ENABLE_LIT_TESTS 
+  "Enable lit-based test infrastructure for libc (experimental)" 
+  OFF)
+
+option(LIBC_ENABLE_LEGACY_TESTS 
+  "Enable legacy CMake-based test infrastructure for libc" 
+  ON)
+
+# Validate configuration
+if(NOT LIBC_ENABLE_LIT_TESTS AND NOT LIBC_ENABLE_LEGACY_TESTS)
+  message(WARNING "libc: Both test infrastructures disabled. No tests will be available.")
+endif()
+
+# Migration status messages
+if(LIBC_ENABLE_LIT_TESTS AND LIBC_ENABLE_LEGACY_TESTS)
+  message(STATUS "libc: Running both lit and legacy tests during migration")
+elseif(LIBC_ENABLE_LIT_TESTS)
+  message(STATUS "libc: Using lit test infrastructure (experimental)")
+elseif(LIBC_ENABLE_LEGACY_TESTS)
+  message(STATUS "libc: Using legacy test infrastructure")
+endif()
+
+#===============================================================================
+# Legacy Test Options (existing)
+#===============================================================================
 set(LIBC_ENABLE_UNITTESTS ON)
 set(LIBC_ENABLE_HERMETIC_TESTS ${LLVM_LIBC_FULL_BUILD})
 
