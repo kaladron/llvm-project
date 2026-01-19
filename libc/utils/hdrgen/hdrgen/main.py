@@ -62,7 +62,26 @@ def main():
         metavar="SYMBOL",
         action="append",
     )
+    parser.add_argument(
+        "--entry-points-file",
+        help="File containing entry points (one per line)",
+        metavar="FILE",
+        type=Path,
+    )
     args = parser.parse_args()
+
+    # Merge entry points from --entry-point and --entry-points-file
+    if args.entry_points_file:
+        if args.entry_points_file.exists():
+            file_entry_points = [
+                line.strip()
+                for line in args.entry_points_file.read_text().splitlines()
+                if line.strip()
+            ]
+            if args.entry_point:
+                args.entry_point.extend(file_entry_points)
+            else:
+                args.entry_point = file_entry_points
 
     if not args.json and len(args.yaml_file) != 1:
         print("Only one YAML file at a time without --json", file=sys.stderr)

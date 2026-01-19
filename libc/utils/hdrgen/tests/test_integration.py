@@ -12,7 +12,7 @@ class TestHeaderGenIntegration(unittest.TestCase):
         self.main_script = self.source_dir.parent / "main.py"
         self.maxDiff = 80 * 100
 
-    def run_script(self, yaml_file, output_file, entry_points=[], switches=[]):
+    def run_script(self, yaml_file, output_file, entry_points=[], switches=[], entry_points_file=None):
         command = [
             "python3",
             str(self.main_script),
@@ -23,6 +23,9 @@ class TestHeaderGenIntegration(unittest.TestCase):
 
         for entry_point in entry_points:
             command.extend(["--entry-point", entry_point])
+
+        if entry_points_file:
+            command.extend(["--entry-points-file", str(entry_points_file)])
 
         result = subprocess.run(
             command,
@@ -87,6 +90,21 @@ class TestHeaderGenIntegration(unittest.TestCase):
         expected_output_file = self.source_dir / "expected_output/test_small_proxy.h"
         output_file = self.output_dir / "test_small.h"
         self.run_script(yaml_file, output_file, switches=["--proxy"])
+        self.compare_files(output_file, expected_output_file)
+
+    def test_entry_points_file(self):
+        """Test using --entry-points-file to specify entry points from a file."""
+        yaml_file = self.source_dir / "input/test_small.yaml"
+        expected_output_file = self.source_dir / "expected_output/test_header.h"
+        output_file = self.output_dir / "test_small_from_file.h"
+        entry_points_file = self.output_dir / "entry_points.txt"
+
+        # Write entry points to a file
+        entry_points_file.parent.mkdir(parents=True, exist_ok=True)
+        entry_points = ["func_b", "func_a", "func_c", "func_d", "func_e"]
+        entry_points_file.write_text("\n".join(entry_points))
+
+        self.run_script(yaml_file, output_file, entry_points_file=entry_points_file)
         self.compare_files(output_file, expected_output_file)
 
 def main():
