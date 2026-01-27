@@ -171,6 +171,16 @@ add_libc_test(
   libc.src.__support.CPP.type_traits
 )
 
+add_libc_test(
+  variant_test
+  SUITE
+    libc-cpp-utils-tests
+  SRCS
+    variant_test.cpp
+  DEPENDS
+    libc.src.__support.CPP.variant
+)
+
 if(LIBC_COMPILER_HAS_EXT_VECTOR_TYPE)
   add_libc_test(
     simd_test
