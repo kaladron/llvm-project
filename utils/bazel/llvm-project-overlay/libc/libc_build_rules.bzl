@@ -18,6 +18,7 @@ def libc_common_copts():
         "-I" + libc_include_path,
         "-I" + paths.join(libc_include_path, "include"),
         "-DLIBC_NAMESPACE=" + LIBC_NAMESPACE,
+        "-DLIBC_FULL_BUILD",
     ]
 
 def libc_release_copts():
@@ -50,13 +51,15 @@ def _libc_library(name, **kwargs):
       **kwargs: All other attributes relevant for the cc_library rule.
     """
 
-    for attr in ["copts", "local_defines"]:
-        if attr in kwargs:
-            fail("disallowed attribute: '{}' in rule: '{}'".format(attr, name))
+    copts = libc_common_copts() + kwargs.pop("copts", [])
+    includes = ["."] + kwargs.pop("includes", [])
+    local_defines = LIBC_CONFIGURE_OPTIONS + kwargs.pop("local_defines", [])
+
     cc_library(
         name = name,
-        copts = libc_common_copts(),
-        local_defines = LIBC_CONFIGURE_OPTIONS,
+        copts = copts,
+        includes = includes,
+        local_defines = local_defines,
         linkstatic = 1,
         **kwargs
     )
@@ -266,10 +269,12 @@ def libc_generated_header(name, hdr, yaml_template, other_srcs = [], proxy = Fal
       proxy: Whether this is a proxy header with slightly different generation results.
     """
     hdrgen = "//libc:hdrgen"
-    cmd = "$(location {hdrgen}) $(location {yaml}) -o $@".format(
+    proxy_arg = " --proxy" if proxy else ""
+    cmd = "$(location {hdrgen}) $(location {yaml}) -o $@ {proxy_arg}".format(
         hdrgen = hdrgen,
         yaml = yaml_template,
-    ) + (" --proxy" if proxy else "")
+        proxy_arg = proxy_arg,
+    )
 
     if not hdr.startswith("staging/"):
         fail(
@@ -331,4 +336,20 @@ def libc_math_function(
             ":__support_macros_config",
             ":__support_macros_properties_types",
         ] + OLD_FPUTIL_DEPS + additional_deps,
+    )
+
+def libc_relocatable_object(name, deps, **kwargs):
+    """Rule to merge multiple object files/libraries into a single relocatable object.
+
+    Args:
+      name: Target name.
+      deps: List of targets to merge.
+      **kwargs: Other attributes.
+    """
+    native.genrule(
+        name = name,
+        srcs = deps,
+        outs = [name + ".o"],
+        cmd = "ld -r --whole-archive $(SRCS) -o $@",
+        **kwargs
     )

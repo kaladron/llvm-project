@@ -437,3 +437,24 @@ filegroup(
         ),
     ),
 )
+
+cc_library(
+    name = "crtbegin",
+    srcs = ["lib/builtins/crtbegin.c"],
+    copts = [
+        "-fno-stack-protector",
+        "-ffreestanding",
+    ],
+    linkstatic = True,
+)
+
+cc_library(
+    name = "crtend",
+    srcs = ["lib/builtins/crtend.c"],
+    copts = [
+        "-fno-stack-protector",
+        "-ffreestanding",
+    ],
+    linkstatic = True,
+)
+

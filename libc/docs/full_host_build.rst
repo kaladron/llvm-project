@@ -230,3 +230,18 @@ Compile and run the example:
    llvm-libc-clang hello.c
    ./a.out
 
+Building a Sysroot via Bazel (Experimental)
+===========================================
+
+In addition to the standard CMake build, LLVM-libc provides an experimental, standalone Bazel workflow to create a packaged sysroot archive. This is particularly useful for projects dynamically managing their toolchains via Bzlmod.
+
+To build the sysroot archive, navigate to the `utils/bazel` directory and execute the following:
+
+.. code-block:: sh
+
+   cd utils/bazel
+   USE_BAZEL_VERSION=9.0.1 bazel build --config=generic_clang \
+     --linkopt=-fuse-ld=gold --host_linkopt=-fuse-ld=gold \
+     @llvm-project//libc:libc_sysroot
+
+This command compiles the libc framework, mathematical libraries, generated proxy headers, and `crt1` startup objects into a fully packaged tarball (e.g., `libc_sysroot.tar` located within your `bazel-bin/` architecture paths). You can extract this archive directly to use as a lightweight `--sysroot` directory for downstream cross-compilation or containerized builds.
