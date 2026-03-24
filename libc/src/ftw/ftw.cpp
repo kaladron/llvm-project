@@ -11,6 +11,7 @@
 #include "src/ftw/ftw_impl.h"
 
 #include "src/__support/common.h"
+#include "src/__support/libc_errno.h"
 
 namespace LIBC_NAMESPACE_DECL {
 
@@ -19,7 +20,12 @@ LLVM_LIBC_FUNCTION(int, ftw,
   ftw_impl::CallbackWrapper wrapper;
   wrapper.is_nftw = false;
   wrapper.ftw_fn = fn;
-  return ftw_impl::doMergedFtw(dirPath, wrapper, fdLimit, 0, 0);
+  auto result = ftw_impl::doMergedFtw(dirPath, wrapper, fdLimit, 0, 0, 0);
+  if (!result) {
+    libc_errno = result.error();
+    return -1;
+  }
+  return result.value();
 }
 
 } // namespace LIBC_NAMESPACE_DECL

@@ -9,6 +9,7 @@
 #ifndef LLVM_LIBC_SRC_FTW_FTW_IMPL_H
 #define LLVM_LIBC_SRC_FTW_FTW_IMPL_H
 
+#include "src/__support/CPP/expected.h"
 #include "src/__support/CPP/string.h"
 #include "src/__support/macros/config.h"
 
@@ -44,8 +45,11 @@ struct CallbackWrapper {
 };
 
 // Main implementation function - defined in ftw_impl.cpp
-int doMergedFtw(const cpp::string &dirPath, const CallbackWrapper &fn,
-                int fdLimit, int flags, int level);
+// Returns the callback return value on success (which might be non-zero),
+// or an unexpected errno on failure.
+cpp::expected<int, int> doMergedFtw(const cpp::string &dirPath,
+                                    const CallbackWrapper &fn, int fdLimit,
+                                    int flags, int level, unsigned long startDevice);
 
 } // namespace ftw_impl
 } // namespace LIBC_NAMESPACE_DECL

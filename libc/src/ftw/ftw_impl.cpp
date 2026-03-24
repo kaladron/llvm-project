@@ -26,8 +26,10 @@
 namespace LIBC_NAMESPACE_DECL {
 namespace ftw_impl {
 
-int doMergedFtw(const cpp::string &dirPath, const CallbackWrapper &fn,
-                int fdLimit, int flags, int level) {
+cpp::expected<int, int> doMergedFtw(const cpp::string &dirPath,
+                                    const CallbackWrapper &fn, int fdLimit,
+                                    int flags, int level,
+                                    unsigned long startDevice) {
   // fdLimit specifies the maximum number of directories that ftw()
   // will hold open simultaneously. When a directory is opened, fdLimit is
   // decreased and if it becomes 0 or less, we won't open any more directories.
@@ -39,15 +41,16 @@ int doMergedFtw(const cpp::string &dirPath, const CallbackWrapper &fn,
   int typeFlag = FTW_F; // Default to regular file
   struct stat statBuf;
   if (flags & FTW_PHYS) {
-    if (LIBC_NAMESPACE::lstat(dirPath.c_str(), &statBuf) < 0)
-      return -1;
+    if (LIBC_NAMESPACE::lstat(dirPath.c_str(), &statBuf) < 0) {
+      return cpp::unexpected(libc_errno);
+    }
   } else {
     if (LIBC_NAMESPACE::stat(dirPath.c_str(), &statBuf) < 0) {
       if (LIBC_NAMESPACE::lstat(dirPath.c_str(), &statBuf) == 0) {
         typeFlag = FTW_SLN; /* Symbolic link pointing to a nonexistent file. */
       } else if (libc_errno != EACCES) {
         /* stat failed with an error that is not Permission denied */
-        return -1;
+        return cpp::unexpected(libc_errno);
       } else {
         /* The probable cause for the failure is that the caller had read
          * permission on the parent directory, so that the filename fpath could
@@ -55,6 +58,14 @@ int doMergedFtw(const cpp::string &dirPath, const CallbackWrapper &fn,
          */
         typeFlag = FTW_NS;
       }
+    }
+  }
+
+  if (flags & FTW_MOUNT) {
+    if (level == 0) {
+      startDevice = statBuf.st_dev;
+    } else if (statBuf.st_dev != startDevice) {
+      return 0;
     }
   }
 
@@ -75,6 +86,11 @@ int doMergedFtw(const cpp::string &dirPath, const CallbackWrapper &fn,
     } else {
       typeFlag = FTW_F; /* Regular file.  */
     }
+  }
+
+  // Map FTW_SLN to FTW_SL for legacy ftw to maintain compatibility.
+  if (!fn.is_nftw && typeFlag == FTW_SLN) {
+    typeFlag = FTW_SL;
   }
 
   struct FTW ftwBuf;
@@ -103,11 +119,12 @@ int doMergedFtw(const cpp::string &dirPath, const CallbackWrapper &fn,
     if (directory_fd < 0 && libc_errno == EACCES) {
       typeFlag = FTW_DNR; /* Directory can't be read. */
     }
-    if (directory_fd >= 0)
+    if (directory_fd >= 0) {
       close(directory_fd);
+    }
 
     int returnValue = fn.call(dirPath.c_str(), &statBuf, typeFlag, &ftwBuf);
-    if (returnValue) {
+    if (returnValue != 0) {
       return returnValue;
     }
   }
@@ -116,9 +133,9 @@ int doMergedFtw(const cpp::string &dirPath, const CallbackWrapper &fn,
   auto dir_result = Dir::open(dirPath.c_str());
   if (!dir_result) {
     // Could not open directory - this might be FTW_DNR case, already handled
-    // above
-    libc_errno = dir_result.error();
-    return -1;
+    // above. We only return error if it's not EACCES or if we haven't reported
+    // it yet.
+    return cpp::unexpected(dir_result.error());
   }
   ScopedDir dir(dir_result.value());
 
@@ -127,8 +144,7 @@ int doMergedFtw(const cpp::string &dirPath, const CallbackWrapper &fn,
     auto entry = dir->read();
     if (!entry) {
       // Error reading directory
-      libc_errno = entry.error();
-      return -1;
+      return cpp::unexpected(entry.error());
     }
 
     struct ::dirent *dirent_ptr = entry.value();
@@ -139,22 +155,28 @@ int doMergedFtw(const cpp::string &dirPath, const CallbackWrapper &fn,
 
     // Skip "." and ".." entries
     if (dirent_ptr->d_name[0] == '.') {
-      if (dirent_ptr->d_name[1] == '\0')
+      if (dirent_ptr->d_name[1] == '\0') {
         continue;
-      if (dirent_ptr->d_name[1] == '.' && dirent_ptr->d_name[2] == '\0')
+      }
+      if (dirent_ptr->d_name[1] == '.' && dirent_ptr->d_name[2] == '\0') {
         continue;
+      }
     }
 
     // Build the full path for the entry
     cpp::string entry_path = dirPath;
-    if (!entry_path.empty() && entry_path[entry_path.size() - 1] != '/')
+    if (!entry_path.empty() && entry_path[entry_path.size() - 1] != '/') {
       entry_path += "/";
+    }
     entry_path += dirent_ptr->d_name;
 
-    int return_value =
-        doMergedFtw(entry_path, fn, fdLimit - 1, flags, ftwBuf.level + 1);
-    if (return_value) {
-      return return_value;
+    auto res = doMergedFtw(entry_path, fn, fdLimit - 1, flags, ftwBuf.level + 1,
+                           startDevice);
+    if (!res) {
+      return res;
+    }
+    if (res.value() != 0) {
+      return res.value();
     }
   }
 
