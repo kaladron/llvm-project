@@ -211,3 +211,42 @@ TEST_F(LlvmLibcNftwTest, ChdirFlag) {
   // Verify that the original CWD was restored
   ASSERT_STREQ(original_cwd, final_cwd);
 }
+
+TEST_F(LlvmLibcFtwTest, DanglingSymlinkMapping) {
+  // Create a dangling symlink: link -> nonexistent
+  const char *linkName = "testdata/dangling_link";
+  LIBC_NAMESPACE::unlink(linkName);
+  ASSERT_EQ(LIBC_NAMESPACE::symlink("nonexistent_target", linkName), 0);
+
+  auto checkFtw = [](const char *fpath, const struct stat *, int typeflag) -> int {
+    if (string_view(fpath).ends_with("dangling_link")) {
+      // For legacy ftw, FTW_SLN must be mapped to FTW_SL
+      if (typeflag == FTW_SL)
+        return 0;
+      return -1;
+    }
+    return 0;
+  };
+
+  LIBC_NAMESPACE::libc_errno = 0;
+  int result = LIBC_NAMESPACE::ftw(linkName, checkFtw, 10);
+  EXPECT_EQ(result, 0);
+
+  auto checkNftw = [](const char *fpath, const struct stat *, int typeflag,
+                      struct FTW *) -> int {
+    if (string_view(fpath).ends_with("dangling_link")) {
+      // For nftw, FTW_SLN should be reported as is
+      if (typeflag == FTW_SLN)
+        return 0;
+      return -1;
+    }
+    return 0;
+  };
+
+  LIBC_NAMESPACE::libc_errno = 0;
+  result = LIBC_NAMESPACE::nftw(linkName, checkNftw, 10, 0);
+  EXPECT_EQ(result, 0);
+
+  LIBC_NAMESPACE::unlink(linkName);
+  LIBC_NAMESPACE::libc_errno = 0;
+}
