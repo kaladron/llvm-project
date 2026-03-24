@@ -14,7 +14,7 @@
 
 namespace LIBC_NAMESPACE_DECL {
 
-int ftw(const char *dirpath, __ftw_func_t fn, int noopenfd);
+int ftw(const char *DirPath, __ftw_func_t Fn, int FdLimit);
 
 } // namespace LIBC_NAMESPACE_DECL
 

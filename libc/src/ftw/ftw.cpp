@@ -16,16 +16,17 @@
 namespace LIBC_NAMESPACE_DECL {
 
 LLVM_LIBC_FUNCTION(int, ftw,
-                   (const char *dirPath, __ftw_func_t fn, int fdLimit)) {
-  ftw_impl::CallbackWrapper wrapper;
-  wrapper.isNftw = false;
-  wrapper.ftwFn = fn;
-  auto result = ftw_impl::doMergedFtw(dirPath, wrapper, fdLimit, 0, 0, 0, nullptr);
-  if (!result) {
-    libc_errno = result.error();
+                   (const char *DirPath, __ftw_func_t Fn, int FdLimit)) {
+  ftw_impl::CallbackWrapper Wrapper;
+  Wrapper.IsNftw = false;
+  Wrapper.FtwFnVal = Fn;
+  auto Result =
+      ftw_impl::doMergedFtw(DirPath, Wrapper, FdLimit, 0, 0, 0, nullptr);
+  if (!Result) {
+    libc_errno = Result.error();
     return -1;
   }
-  return result.value();
+  return Result.value();
 }
 
 } // namespace LIBC_NAMESPACE_DECL

@@ -11,6 +11,8 @@
 #include "src/dirent/opendir.h"
 #include "src/dirent/readdir.h"
 #include "src/fcntl/open.h"
+#include "hdr/ftw_macros.h"
+#include "include/llvm-libc-types/struct_FTW.h"
 #include "src/ftw/ftw.h"
 #include "src/ftw/nftw.h"
 #include "src/sys/stat/chmod.h"
@@ -24,12 +26,6 @@
 #include "test/UnitTest/ErrnoSetterMatcher.h"
 #include "test/UnitTest/Test.h"
 
-#include <dirent.h>
-#include <errno.h>
-#include <fcntl.h>
-#include <ftw.h>
-#include <sys/stat.h>
- 
 namespace LIBC_NAMESPACE_DECL {
 
 using LlvmLibcFtwTest = LIBC_NAMESPACE::testing::ErrnoCheckingTest;
@@ -46,17 +42,17 @@ struct VisitedFiles {
 
   void reset() { count = 0; }
 
-  void add(const char *path, int type, int level) {
+  void add(const char *Path, int Type, int Level) {
     if (count < MAX_FILES) {
       // Copy path manually.
-      int i = 0;
-      while (path[i] && i < 255) {
-        paths[count][i] = path[i];
-        i++;
+      int I = 0;
+      while (Path[I] && I < 255) {
+        paths[count][I] = Path[I];
+        I++;
       }
-      paths[count][i] = '\0';
-      types[count] = type;
-      levels[count] = level;
+      paths[count][I] = '\0';
+      types[count] = Type;
+      levels[count] = Level;
       count++;
     }
   }
@@ -102,29 +98,27 @@ struct VisitedFiles {
 static VisitedFiles gVisited;
 
 // Callback for nftw that records visited files
-static int recordVisit(const char *fpath, const struct stat *sb, int typeflag,
-                       struct FTW *ftwbuf) {
-  (void)sb; // unused
-  gVisited.add(fpath, typeflag, ftwbuf->level);
+static int recordVisit(const char *Fpath, const struct stat *Sb, int Typeflag,
+                       struct FTW *Ftwbuf) {
+  (void)Sb; // unused
+  gVisited.add(Fpath, Typeflag, Ftwbuf->level);
   return 0; // continue traversal
 }
 
 // Callback for ftw that records visited files
-static int recordVisitFtw(const char *fpath, const struct stat *sb,
-                          int typeflag) {
-  (void)sb; // unused
-  gVisited.add(fpath, typeflag, 0);
+static int recordVisitFtw(const char *Fpath, const struct stat *Sb,
+                          int Typeflag) {
+  (void)Sb; // unused
+  gVisited.add(Fpath, Typeflag, 0);
   return 0; // continue traversal
 }
 
-
-
 // Simplest callback that does nothing
-static int simpleCallback(const char *fpath, const struct stat *sb,
-                          int typeflag) {
-  (void)fpath;
-  (void)sb;
-  (void)typeflag;
+static int simpleCallback(const char *Fpath, const struct stat *Sb,
+                          int Typeflag) {
+  (void)Fpath;
+  (void)Sb;
+  (void)Typeflag;
   return 0;
 }
 
@@ -221,10 +215,10 @@ TEST_F(LlvmLibcFtwTest, DanglingSymlinkMapping) {
   LIBC_NAMESPACE::unlink(linkName);
   ASSERT_EQ(LIBC_NAMESPACE::symlink("nonexistent_target", linkName), 0);
 
-  auto checkFtw = [](const char *fpath, const struct stat *, int typeflag) -> int {
-    if (string_view(fpath).ends_with("dangling_link")) {
+  auto checkFtw = [](const char *Fpath, const struct stat *, int Typeflag) -> int {
+    if (string_view(Fpath).ends_with("dangling_link")) {
       // For legacy ftw, FTW_SLN must be mapped to FTW_SL
-      if (typeflag == FTW_SL)
+      if (Typeflag == FTW_SL)
         return 0;
       return -1;
     }
@@ -235,11 +229,11 @@ TEST_F(LlvmLibcFtwTest, DanglingSymlinkMapping) {
   int result = LIBC_NAMESPACE::ftw(linkName, checkFtw, 10);
   EXPECT_EQ(result, 0);
 
-  auto checkNftw = [](const char *fpath, const struct stat *, int typeflag,
+  auto checkNftw = [](const char *Fpath, const struct stat *, int Typeflag,
                       struct FTW *) -> int {
-    if (string_view(fpath).ends_with("dangling_link")) {
+    if (string_view(Fpath).ends_with("dangling_link")) {
       // For nftw, FTW_SLN should be reported as is
-      if (typeflag == FTW_SLN)
+      if (Typeflag == FTW_SLN)
         return 0;
       return -1;
     }

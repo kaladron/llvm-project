@@ -18,31 +18,31 @@ namespace LIBC_NAMESPACE_DECL {
 namespace ftw_impl {
 
 struct AncestorDir {
-  dev_t dev;
-  ino_t ino;
-  AncestorDir *parent;
+  dev_t Dev;
+  ino_t Ino;
+  AncestorDir *Parent;
 };
 
-using NftwFn = int (*)(const char *filePath, const struct stat *statBuf,
-                       int tFlag, struct FTW *ftwbuf);
+using NftwFn = int (*)(const char *FilePath, const struct stat *StatBuf,
+                       int TFlag, struct FTW *FtwBuf);
 
-using FtwFn = int (*)(const char *filePath, const struct stat *statBuf,
-                      int tFlag);
+using FtwFn = int (*)(const char *FilePath, const struct stat *StatBuf,
+                      int TFlag);
 
 // Unified callback wrapper - uses a union to avoid virtual functions
 struct CallbackWrapper {
-  bool isNftw;
+  bool IsNftw;
   union {
-    NftwFn nftwFn;
-    FtwFn ftwFn;
+    NftwFn NftwFnVal;
+    FtwFn FtwFnVal;
   };
 
-  LIBC_INLINE int call(const char *path, const struct stat *sb, int type,
-                       struct FTW *ftwbuf) const {
-    if (isNftw)
-      return nftwFn(path, sb, type, ftwbuf);
+  LIBC_INLINE int call(const char *Path, const struct stat *Sb, int Type,
+                       struct FTW *Ftwbuf) const {
+    if (IsNftw)
+      return NftwFnVal(Path, Sb, Type, Ftwbuf);
     else
-      return ftwFn(path, sb, type);
+      return FtwFnVal(Path, Sb, Type);
   }
 };
 
@@ -50,9 +50,9 @@ struct CallbackWrapper {
 // Returns the callback return value on success (which might be non-zero),
 // or an unexpected errno on failure.
 cpp::expected<int, int>
-doMergedFtw(const cpp::string &dirPath, const CallbackWrapper &fn, int fdLimit,
-            int flags, int level, unsigned long startDevice,
-            AncestorDir *ancestors);
+doMergedFtw(const cpp::string &DirPath, const CallbackWrapper &Fn, int FdLimit,
+            int Flags, int Level, unsigned long StartDevice,
+            AncestorDir *Ancestors);
 
 } // namespace ftw_impl
 } // namespace LIBC_NAMESPACE_DECL

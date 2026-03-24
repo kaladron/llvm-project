@@ -30,14 +30,14 @@ namespace LIBC_NAMESPACE_DECL {
 namespace ftw_impl {
 
 class StartDirSaver {
-  int startFd;
+  int StartFd;
 
 public:
-  StartDirSaver(int fd) : startFd(fd) {}
+  StartDirSaver(int Fd) : StartFd(Fd) {}
   ~StartDirSaver() {
-    if (startFd >= 0) {
-      LIBC_NAMESPACE::fchdir(startFd);
-      LIBC_NAMESPACE::close(startFd);
+    if (StartFd >= 0) {
+      fchdir(StartFd);
+      close(StartFd);
     }
   }
 };
@@ -54,169 +54,172 @@ public:
 };
 
 cpp::expected<int, int>
-doMergedFtw(const cpp::string &dirPath, const CallbackWrapper &fn, int fdLimit,
-            int flags, int level, unsigned long startDevice,
-            AncestorDir *ancestors) {
-  int startFd = -1;
-  if (level == 0 && (flags & FTW_CHDIR)) {
-    startFd = LIBC_NAMESPACE::open(".", O_RDONLY);
-    if (startFd < 0)
+doMergedFtw(const cpp::string &DirPath, const CallbackWrapper &Fn, int FdLimit,
+            int Flags, int Level, unsigned long StartDevice,
+            AncestorDir *Ancestors) {
+  int StartFd = -1;
+  if (Level == 0 && (Flags & FTW_CHDIR)) {
+    StartFd = LIBC_NAMESPACE::open(".", O_RDONLY);
+    if (StartFd < 0)
       return cpp::unexpected<int>(libc_errno);
   }
-  StartDirSaver rootSaver(startFd);
+  StartDirSaver RootSaver(StartFd);
 
-  struct FTW ftwBuf;
-  ftwBuf.level = level;
-  cpp::string_view pathView(dirPath);
-  size_t slashFound = pathView.find_last_of('/');
-  ftwBuf.base = (slashFound != cpp::string_view::npos)
-                    ? static_cast<int>(slashFound + 1)
+  struct FTW FtwBuf;
+  FtwBuf.level = Level;
+  cpp::string_view PathView(DirPath);
+  size_t SlashFound = PathView.find_last_of('/');
+  FtwBuf.base = (SlashFound != cpp::string_view::npos)
+                    ? static_cast<int>(SlashFound + 1)
                     : 0;
 
-  const char *osPath = (level == 0 || !(flags & FTW_CHDIR))
-                           ? dirPath.c_str()
-                           : (dirPath.c_str() + ftwBuf.base);
+  const char *OsPath = (Level == 0 || !(Flags & FTW_CHDIR))
+                           ? DirPath.c_str()
+                           : (DirPath.c_str() + FtwBuf.base);
 
-  int typeFlag = FTW_F;
-  struct stat statBuf;
-  if (flags & FTW_PHYS) {
-    if (LIBC_NAMESPACE::lstat(osPath, &statBuf) < 0) {
+  int TypeFlag = FTW_F;
+  struct stat StatBuf;
+  if (Flags & FTW_PHYS) {
+    if (LIBC_NAMESPACE::lstat(OsPath, &StatBuf) < 0) {
       if (libc_errno == EACCES)
-        typeFlag = FTW_NS;
+        TypeFlag = FTW_NS;
       else
         return cpp::unexpected<int>(libc_errno);
     }
   } else {
-    if (LIBC_NAMESPACE::stat(osPath, &statBuf) < 0) {
-      if (LIBC_NAMESPACE::lstat(osPath, &statBuf) == 0)
-        typeFlag = FTW_SLN;
+    if (LIBC_NAMESPACE::stat(OsPath, &StatBuf) < 0) {
+      if (LIBC_NAMESPACE::lstat(OsPath, &StatBuf) == 0)
+        TypeFlag = FTW_SLN;
       else if (libc_errno != EACCES)
         return cpp::unexpected<int>(libc_errno);
       else
-        typeFlag = FTW_NS;
+        TypeFlag = FTW_NS;
     }
   }
 
-  if ((flags & FTW_MOUNT) && level > 0 && statBuf.st_dev != startDevice)
+  if (Level == 0)
+    StartDevice = StatBuf.st_dev;
+
+  if ((Flags & FTW_MOUNT) && Level > 0 && StatBuf.st_dev != StartDevice)
     return 0;
 
-  if (typeFlag != FTW_SLN && typeFlag != FTW_NS) {
-    if (S_ISDIR(statBuf.st_mode))
-      typeFlag = (flags & FTW_DEPTH) ? FTW_DP : FTW_D;
-    else if (S_ISLNK(statBuf.st_mode))
-      typeFlag = (flags & FTW_PHYS) ? FTW_SL : FTW_SLN;
+  if (TypeFlag != FTW_SLN && TypeFlag != FTW_NS) {
+    if (S_ISDIR(StatBuf.st_mode))
+      TypeFlag = (Flags & FTW_DEPTH) ? FTW_DP : FTW_D;
+    else if (S_ISLNK(StatBuf.st_mode))
+      TypeFlag = (Flags & FTW_PHYS) ? FTW_SL : FTW_SLN;
     else
-      typeFlag = FTW_F;
+      TypeFlag = FTW_F;
   }
 
-  if (!fn.isNftw && typeFlag == FTW_SLN)
-    typeFlag = FTW_SL;
+  if (!Fn.IsNftw && TypeFlag == FTW_SLN)
+    TypeFlag = FTW_SL;
 
-  if (typeFlag == FTW_D || typeFlag == FTW_DP || typeFlag == FTW_DNR) {
-    for (AncestorDir *a = ancestors; a != nullptr; a = a->parent) {
-      if (a->dev == statBuf.st_dev && a->ino == statBuf.st_ino)
+  if (TypeFlag == FTW_D || TypeFlag == FTW_DP || TypeFlag == FTW_DNR) {
+    for (AncestorDir *A = Ancestors; A != nullptr; A = A->Parent) {
+      if (A->Dev == StatBuf.st_dev && A->Ino == StatBuf.st_ino)
         return 0;
     }
   }
 
-  if (typeFlag != FTW_D && typeFlag != FTW_DP) {
-    int ret = fn.call(dirPath.c_str(), &statBuf, typeFlag, &ftwBuf);
-    if (ret != 0) {
-      if (flags & FTW_ACTIONRETVAL) {
-        if (ret == FTW_SKIP_SUBTREE || ret == FTW_SKIP_SIBLINGS)
-          return ret;
+  if (TypeFlag != FTW_D && TypeFlag != FTW_DP) {
+    int Ret = Fn.call(DirPath.c_str(), &StatBuf, TypeFlag, &FtwBuf);
+    if (Ret != 0) {
+      if (Flags & FTW_ACTIONRETVAL) {
+        if (Ret == FTW_SKIP_SUBTREE || Ret == FTW_SKIP_SIBLINGS)
+          return Ret;
       }
-      return ret;
+      return Ret;
     }
     return 0;
   }
 
-  bool skipSubtree = false;
-  if (!(flags & FTW_DEPTH)) {
-    if (fdLimit > 0) {
-      int dirFd = LIBC_NAMESPACE::open(osPath, O_RDONLY);
-      if (dirFd < 0 && libc_errno == EACCES)
-        typeFlag = FTW_DNR;
-      else if (dirFd >= 0)
-        LIBC_NAMESPACE::close(dirFd);
+  bool SkipSubtree = false;
+  if (!(Flags & FTW_DEPTH)) {
+    if (FdLimit > 0) {
+      int DirFd = LIBC_NAMESPACE::open(OsPath, O_RDONLY);
+      if (DirFd < 0 && libc_errno == EACCES)
+        TypeFlag = FTW_DNR;
+      else if (DirFd >= 0)
+        LIBC_NAMESPACE::close(DirFd);
     }
 
-    int ret = fn.call(dirPath.c_str(), &statBuf, typeFlag, &ftwBuf);
-    if (ret != 0) {
-      if (flags & FTW_ACTIONRETVAL) {
-        if (ret == FTW_SKIP_SUBTREE) {
-          skipSubtree = true;
-        } else if (ret == FTW_SKIP_SIBLINGS) {
-          return ret;
+    int Ret = Fn.call(DirPath.c_str(), &StatBuf, TypeFlag, &FtwBuf);
+    if (Ret != 0) {
+      if (Flags & FTW_ACTIONRETVAL) {
+        if (Ret == FTW_SKIP_SUBTREE) {
+          SkipSubtree = true;
+        } else if (Ret == FTW_SKIP_SIBLINGS) {
+          return Ret;
         } else {
-          return ret;
+          return Ret;
         }
       } else {
-        return ret;
+        return Ret;
       }
     }
   }
 
-  if (typeFlag != FTW_DNR && !skipSubtree) {
-    if (fdLimit <= 0)
+  if (TypeFlag != FTW_DNR && !SkipSubtree) {
+    if (FdLimit <= 0)
       return cpp::unexpected<int>(EMFILE);
 
-    auto dirResult = Dir::open(osPath);
-    if (!dirResult) {
-      if (dirResult.error() != EACCES)
-        return cpp::unexpected<int>(dirResult.error());
+    auto DirResult = Dir::open(OsPath);
+    if (!DirResult) {
+      if (DirResult.error() != EACCES)
+        return cpp::unexpected<int>(DirResult.error());
     } else {
-      ScopedDir dir(dirResult.value());
-      if (flags & FTW_CHDIR) {
-        if (LIBC_NAMESPACE::chdir(osPath) < 0)
+      ScopedDir Dir(DirResult.value());
+      if (Flags & FTW_CHDIR) {
+        if (chdir(OsPath) < 0)
           return cpp::unexpected<int>(libc_errno);
       }
-      LevelDirSaver levelSaver(flags & FTW_CHDIR);
-      AncestorDir currentAncestor = {statBuf.st_dev, statBuf.st_ino, ancestors};
+      LevelDirSaver LevelSaver(Flags & FTW_CHDIR);
+      AncestorDir CurrentAncestor = {StatBuf.st_dev, StatBuf.st_ino, Ancestors};
 
       while (true) {
-        auto entry = dir->read();
-        if (!entry)
-          return cpp::unexpected(entry.error());
+        auto Entry = Dir->read();
+        if (!Entry)
+          return cpp::unexpected(Entry.error());
 
-        struct ::dirent *direntPtr = entry.value();
-        if (direntPtr == nullptr)
+        struct ::dirent *DirentPtr = Entry.value();
+        if (DirentPtr == nullptr)
           break;
 
-        if (direntPtr->d_name[0] == '.') {
-          if (direntPtr->d_name[1] == '\0' ||
-              (direntPtr->d_name[1] == '.' && direntPtr->d_name[2] == '\0'))
+        if (DirentPtr->d_name[0] == '.') {
+          if (DirentPtr->d_name[1] == '\0' ||
+              (DirentPtr->d_name[1] == '.' && DirentPtr->d_name[2] == '\0'))
             continue;
         }
 
-        cpp::string entryPath = dirPath;
-        if (!entryPath.empty() && entryPath[entryPath.size() - 1] != '/')
-          entryPath += "/";
-        entryPath += direntPtr->d_name;
+        cpp::string EntryPath = DirPath;
+        if (!EntryPath.empty() && EntryPath[EntryPath.size() - 1] != '/')
+          EntryPath += "/";
+        EntryPath += DirentPtr->d_name;
 
-        auto res = doMergedFtw(entryPath, fn, fdLimit - 1, flags, level + 1,
-                               startDevice, &currentAncestor);
-        if (!res)
-          return res;
-        if (flags & FTW_ACTIONRETVAL) {
-          if (res.value() == FTW_SKIP_SIBLINGS)
+        auto Res = doMergedFtw(EntryPath, Fn, FdLimit - 1, Flags, Level + 1,
+                                StartDevice, &CurrentAncestor);
+        if (!Res)
+          return Res;
+        if (Flags & FTW_ACTIONRETVAL) {
+          if (Res.value() == FTW_SKIP_SIBLINGS)
             break;
-          if (res.value() != 0 && res.value() != FTW_SKIP_SUBTREE)
-            return res.value();
-        } else if (res.value() != 0) {
-          return res.value();
+          if (Res.value() != 0 && Res.value() != FTW_SKIP_SUBTREE)
+            return Res.value();
+        } else if (Res.value() != 0) {
+          return Res.value();
         }
       }
     }
   }
 
-  if (flags & FTW_DEPTH) {
-    int ret = fn.call(dirPath.c_str(), &statBuf, typeFlag, &ftwBuf);
-    if (flags & FTW_ACTIONRETVAL) {
-      if (ret == FTW_SKIP_SIBLINGS || ret == FTW_SKIP_SUBTREE)
-        return ret;
+  if (Flags & FTW_DEPTH) {
+    int Ret = Fn.call(DirPath.c_str(), &StatBuf, TypeFlag, &FtwBuf);
+    if (Flags & FTW_ACTIONRETVAL) {
+      if (Ret == FTW_SKIP_SIBLINGS || Ret == FTW_SKIP_SUBTREE)
+        return Ret;
     }
-    return ret;
+    return Ret;
   }
   return 0;
 }

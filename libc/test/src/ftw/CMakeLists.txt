@@ -8,6 +8,7 @@ add_libc_unittest(
   SRCS
     ftw_test.cpp
   DEPENDS
+    libc.hdr.ftw_macros
     libc.include.ftw
     libc.src.__support.CPP.string_view
     libc.src.dirent.closedir
