@@ -18,25 +18,22 @@
 #include "src/unistd/chdir.h"
 #include "src/unistd/close.h"
 #include "src/unistd/fchdir.h"
-#include <fcntl.h>
 
+#include "hdr/fcntl_macros.h"
 #include "hdr/ftw_macros.h"
 #include "hdr/sys_stat_macros.h"
 #include "include/llvm-libc-types/struct_FTW.h"
-#include "include/llvm-libc-types/struct_stat.h"
 #include "include/llvm-libc-types/struct_dirent.h"
+#include "include/llvm-libc-types/struct_stat.h"
 
 namespace LIBC_NAMESPACE_DECL {
 namespace ftw_impl {
 
 class StartDirSaver {
-  int startFd = -1;
+  int startFd;
 
 public:
-  StartDirSaver(bool doSave) {
-    if (doSave)
-      startFd = LIBC_NAMESPACE::open(".", O_RDONLY);
-  }
+  StartDirSaver(int fd) : startFd(fd) {}
   ~StartDirSaver() {
     if (startFd >= 0) {
       LIBC_NAMESPACE::fchdir(startFd);
@@ -56,171 +53,170 @@ public:
   }
 };
 
-cpp::expected<int, int> doMergedFtw(const cpp::string &dirPath,
-                                    const CallbackWrapper &fn, int fdLimit,
-                                    int flags, int level,
-                                    unsigned long startDevice) {
-  StartDirSaver rootSaver(level == 0 && (flags & FTW_CHDIR));
-  // fdLimit specifies the maximum number of directories that ftw()
-  // will hold open simultaneously. When a directory is opened, fdLimit is
-  // decreased and if it becomes 0 or less, we won't open any more directories.
-  if (fdLimit <= 0) {
-    return 0;
+cpp::expected<int, int>
+doMergedFtw(const cpp::string &dirPath, const CallbackWrapper &fn, int fdLimit,
+            int flags, int level, unsigned long startDevice,
+            AncestorDir *ancestors) {
+  int startFd = -1;
+  if (level == 0 && (flags & FTW_CHDIR)) {
+    startFd = LIBC_NAMESPACE::open(".", O_RDONLY);
+    if (startFd < 0)
+      return cpp::unexpected<int>(libc_errno);
   }
+  StartDirSaver rootSaver(startFd);
 
   struct FTW ftwBuf;
   ftwBuf.level = level;
   cpp::string_view pathView(dirPath);
-  size_t slash_found = pathView.find_last_of('/');
-  ftwBuf.base = (slash_found != cpp::string_view::npos)
-                    ? static_cast<int>(slash_found + 1)
+  size_t slashFound = pathView.find_last_of('/');
+  ftwBuf.base = (slashFound != cpp::string_view::npos)
+                    ? static_cast<int>(slashFound + 1)
                     : 0;
 
-  // With FTW_CHDIR, all OS calls should use only the basename (except at level
-  // 0).
-  const char *os_path = (level == 0 || !(flags & FTW_CHDIR))
-                            ? dirPath.c_str()
-                            : (dirPath.c_str() + ftwBuf.base);
+  const char *osPath = (level == 0 || !(flags & FTW_CHDIR))
+                           ? dirPath.c_str()
+                           : (dirPath.c_str() + ftwBuf.base);
 
-  // Determine the type of path that is passed.
-  int typeFlag = FTW_F; // Default to regular file
+  int typeFlag = FTW_F;
   struct stat statBuf;
   if (flags & FTW_PHYS) {
-    if (LIBC_NAMESPACE::lstat(os_path, &statBuf) < 0) {
-      return cpp::unexpected<int>(libc_errno);
+    if (LIBC_NAMESPACE::lstat(osPath, &statBuf) < 0) {
+      if (libc_errno == EACCES)
+        typeFlag = FTW_NS;
+      else
+        return cpp::unexpected<int>(libc_errno);
     }
   } else {
-    if (LIBC_NAMESPACE::stat(os_path, &statBuf) < 0) {
-      if (LIBC_NAMESPACE::lstat(os_path, &statBuf) == 0) {
-        typeFlag = FTW_SLN; /* Symbolic link pointing to a nonexistent file. */
-      } else if (libc_errno != EACCES) {
-        /* stat failed with an error that is not Permission denied */
+    if (LIBC_NAMESPACE::stat(osPath, &statBuf) < 0) {
+      if (LIBC_NAMESPACE::lstat(osPath, &statBuf) == 0)
+        typeFlag = FTW_SLN;
+      else if (libc_errno != EACCES)
         return cpp::unexpected<int>(libc_errno);
-      } else {
-        /* The probable cause for the failure is that the caller had read
-         * permission on the parent directory, so that the filename fpath could
-         * be seen, but did not have execute permission on the directory.
-         */
+      else
         typeFlag = FTW_NS;
-      }
     }
   }
 
-  if (flags & FTW_MOUNT) {
-    if (level == 0) {
-      startDevice = statBuf.st_dev;
-    } else if (statBuf.st_dev != startDevice) {
-      return 0;
-    }
-  }
+  if ((flags & FTW_MOUNT) && level > 0 && statBuf.st_dev != startDevice)
+    return 0;
 
-  // Determine type based on stat result (unless we already set a special type)
   if (typeFlag != FTW_SLN && typeFlag != FTW_NS) {
-    if (S_ISDIR(statBuf.st_mode)) {
-      if (flags & FTW_DEPTH) {
-        typeFlag = FTW_DP; /* Directory, all subdirs have been visited. */
-      } else {
-        typeFlag = FTW_D; /* Directory. */
-      }
-    } else if (S_ISLNK(statBuf.st_mode)) {
-      if (flags & FTW_PHYS) {
-        typeFlag = FTW_SL; /* Symbolic link.  */
-      } else {
-        typeFlag = FTW_SLN; /* Symbolic link pointing to a nonexistent file. */
-      }
-    } else {
-      typeFlag = FTW_F; /* Regular file.  */
-    }
+    if (S_ISDIR(statBuf.st_mode))
+      typeFlag = (flags & FTW_DEPTH) ? FTW_DP : FTW_D;
+    else if (S_ISLNK(statBuf.st_mode))
+      typeFlag = (flags & FTW_PHYS) ? FTW_SL : FTW_SLN;
+    else
+      typeFlag = FTW_F;
   }
 
-  // Map FTW_SLN to FTW_SL for legacy ftw to maintain compatibility.
-  if (!fn.isNftw && typeFlag == FTW_SLN) {
+  if (!fn.isNftw && typeFlag == FTW_SLN)
     typeFlag = FTW_SL;
+
+  if (typeFlag == FTW_D || typeFlag == FTW_DP || typeFlag == FTW_DNR) {
+    for (AncestorDir *a = ancestors; a != nullptr; a = a->parent) {
+      if (a->dev == statBuf.st_dev && a->ino == statBuf.st_ino)
+        return 0;
+    }
   }
 
-  // If the dirPath is a file or symlink, call the function on it and return.
-  if ((typeFlag == FTW_SL) || (typeFlag == FTW_F) || (typeFlag == FTW_SLN) ||
-      (typeFlag == FTW_NS)) {
-    return fn.call(dirPath.c_str(), &statBuf, typeFlag, &ftwBuf);
+  if (typeFlag != FTW_D && typeFlag != FTW_DP) {
+    int ret = fn.call(dirPath.c_str(), &statBuf, typeFlag, &ftwBuf);
+    if (ret != 0) {
+      if (flags & FTW_ACTIONRETVAL) {
+        if (ret == FTW_SKIP_SUBTREE || ret == FTW_SKIP_SIBLINGS)
+          return ret;
+      }
+      return ret;
+    }
+    return 0;
   }
 
-  // If FTW_DEPTH is not set, nftw() shall report any directory before reporting
-  // the files in that directory.
+  bool skipSubtree = false;
   if (!(flags & FTW_DEPTH)) {
-    // Check if directory is readable
-    int directory_fd = LIBC_NAMESPACE::open(os_path, O_RDONLY);
-    if (directory_fd < 0 && libc_errno == EACCES) {
-      typeFlag = FTW_DNR; /* Directory can't be read. */
-    }
-    if (directory_fd >= 0) {
-      LIBC_NAMESPACE::close(directory_fd);
-    }
-
-    int returnValue = fn.call(dirPath.c_str(), &statBuf, typeFlag, &ftwBuf);
-    if (returnValue != 0) {
-      return returnValue;
-    }
-  }
-
-  // Open the directory for iteration
-  auto dir_result = Dir::open(os_path);
-  if (!dir_result) {
-    // Could not open directory - this might be FTW_DNR case, already handled
-    // above. We only return error if it's not EACCES or if we haven't reported
-    // it yet.
-    return cpp::unexpected<int>(dir_result.error());
-  }
-  ScopedDir dir(dir_result.value());
-
-  if (flags & FTW_CHDIR) {
-    if (LIBC_NAMESPACE::chdir(os_path) < 0)
-      return cpp::unexpected<int>(libc_errno);
-  }
-  LevelDirSaver levelSaver(flags & FTW_CHDIR);
-
-  // Iterate through directory entries
-  while (true) {
-    auto entry = dir->read();
-    if (!entry) {
-      // Error reading directory
-      return cpp::unexpected(entry.error());
+    if (fdLimit > 0) {
+      int dirFd = LIBC_NAMESPACE::open(osPath, O_RDONLY);
+      if (dirFd < 0 && libc_errno == EACCES)
+        typeFlag = FTW_DNR;
+      else if (dirFd >= 0)
+        LIBC_NAMESPACE::close(dirFd);
     }
 
-    struct ::dirent *dirent_ptr = entry.value();
-    if (dirent_ptr == nullptr) {
-      // End of directory
-      break;
-    }
-
-    // Skip "." and ".." entries
-    if (dirent_ptr->d_name[0] == '.') {
-      if (dirent_ptr->d_name[1] == '\0') {
-        continue;
-      }
-      if (dirent_ptr->d_name[1] == '.' && dirent_ptr->d_name[2] == '\0') {
-        continue;
+    int ret = fn.call(dirPath.c_str(), &statBuf, typeFlag, &ftwBuf);
+    if (ret != 0) {
+      if (flags & FTW_ACTIONRETVAL) {
+        if (ret == FTW_SKIP_SUBTREE) {
+          skipSubtree = true;
+        } else if (ret == FTW_SKIP_SIBLINGS) {
+          return ret;
+        } else {
+          return ret;
+        }
+      } else {
+        return ret;
       }
     }
-
-    // Build the full path for the entry
-    cpp::string entry_path = dirPath;
-    if (!entry_path.empty() && entry_path[entry_path.size() - 1] != '/') {
-      entry_path += "/";
-    }
-    entry_path += dirent_ptr->d_name;
-
-    auto res = doMergedFtw(entry_path, fn, fdLimit - 1, flags, ftwBuf.level + 1,
-                           startDevice);
-    if (!res || res.value() != 0)
-      return res;
   }
 
+  if (typeFlag != FTW_DNR && !skipSubtree) {
+    if (fdLimit <= 0)
+      return cpp::unexpected<int>(EMFILE);
 
-  // If FTW_DEPTH is set, nftw() shall report all files in a directory before
-  // reporting the directory itself.
+    auto dirResult = Dir::open(osPath);
+    if (!dirResult) {
+      if (dirResult.error() != EACCES)
+        return cpp::unexpected<int>(dirResult.error());
+    } else {
+      ScopedDir dir(dirResult.value());
+      if (flags & FTW_CHDIR) {
+        if (LIBC_NAMESPACE::chdir(osPath) < 0)
+          return cpp::unexpected<int>(libc_errno);
+      }
+      LevelDirSaver levelSaver(flags & FTW_CHDIR);
+      AncestorDir currentAncestor = {statBuf.st_dev, statBuf.st_ino, ancestors};
+
+      while (true) {
+        auto entry = dir->read();
+        if (!entry)
+          return cpp::unexpected(entry.error());
+
+        struct ::dirent *direntPtr = entry.value();
+        if (direntPtr == nullptr)
+          break;
+
+        if (direntPtr->d_name[0] == '.') {
+          if (direntPtr->d_name[1] == '\0' ||
+              (direntPtr->d_name[1] == '.' && direntPtr->d_name[2] == '\0'))
+            continue;
+        }
+
+        cpp::string entryPath = dirPath;
+        if (!entryPath.empty() && entryPath[entryPath.size() - 1] != '/')
+          entryPath += "/";
+        entryPath += direntPtr->d_name;
+
+        auto res = doMergedFtw(entryPath, fn, fdLimit - 1, flags, level + 1,
+                               startDevice, &currentAncestor);
+        if (!res)
+          return res;
+        if (flags & FTW_ACTIONRETVAL) {
+          if (res.value() == FTW_SKIP_SIBLINGS)
+            break;
+          if (res.value() != 0 && res.value() != FTW_SKIP_SUBTREE)
+            return res.value();
+        } else if (res.value() != 0) {
+          return res.value();
+        }
+      }
+    }
+  }
+
   if (flags & FTW_DEPTH) {
-    // Call the function on the directory.
-    return fn.call(dirPath.c_str(), &statBuf, typeFlag, &ftwBuf);
+    int ret = fn.call(dirPath.c_str(), &statBuf, typeFlag, &ftwBuf);
+    if (flags & FTW_ACTIONRETVAL) {
+      if (ret == FTW_SKIP_SIBLINGS || ret == FTW_SKIP_SUBTREE)
+        return ret;
+    }
+    return ret;
   }
   return 0;
 }

@@ -13,6 +13,7 @@
 #include "src/fcntl/open.h"
 #include "src/ftw/ftw.h"
 #include "src/ftw/nftw.h"
+#include "src/sys/stat/chmod.h"
 #include "src/sys/stat/mkdir.h"
 #include "src/unistd/close.h"
 #include "src/unistd/getcwd.h"
@@ -28,6 +29,8 @@
 #include <fcntl.h>
 #include <ftw.h>
 #include <sys/stat.h>
+ 
+namespace LIBC_NAMESPACE_DECL {
 
 using LlvmLibcFtwTest = LIBC_NAMESPACE::testing::ErrnoCheckingTest;
 using LlvmLibcNftwTest = LIBC_NAMESPACE::testing::ErrnoCheckingTest;
@@ -250,3 +253,80 @@ TEST_F(LlvmLibcFtwTest, DanglingSymlinkMapping) {
   LIBC_NAMESPACE::unlink(linkName);
   LIBC_NAMESPACE::libc_errno = 0;
 }
+
+TEST_F(LlvmLibcNftwTest, UnreadableDirectory) {
+  // Create an unreadable directory
+  const char *dirName = "unreadable_dir";
+  LIBC_NAMESPACE::rmdir(dirName);
+  ASSERT_EQ(LIBC_NAMESPACE::mkdir(dirName, 0333), 0); // No read permission
+
+  gVisited.reset();
+  int result = LIBC_NAMESPACE::nftw(dirName, recordVisit, 10, 0);
+  EXPECT_EQ(result, 0);
+
+  // Should have visited the directory itself as FTW_DNR
+  bool found = false;
+  for (int i = 0; i < gVisited.count; i++) {
+    if (string_view(gVisited.paths[i]) == dirName) {
+      EXPECT_EQ(gVisited.types[i], FTW_DNR);
+      found = true;
+    }
+  }
+  EXPECT_TRUE(found);
+
+  LIBC_NAMESPACE::rmdir(dirName);
+  LIBC_NAMESPACE::libc_errno = 0;
+}
+
+TEST_F(LlvmLibcNftwTest, NoSearchPermission) {
+  // Create a parent directory and a child, then remove search permission from parent
+  const char *parentName = "no_search_parent";
+  const char *childName = "no_search_parent/child";
+
+  LIBC_NAMESPACE::unlink(childName);
+  LIBC_NAMESPACE::rmdir(parentName);
+
+  ASSERT_EQ(LIBC_NAMESPACE::mkdir(parentName, 0777), 0);
+  int fd = LIBC_NAMESPACE::open(childName, O_CREAT | O_WRONLY, 0666);
+  ASSERT_GE(fd, 0);
+  LIBC_NAMESPACE::close(fd);
+
+  // Remove search (execute) permission from parent
+  ASSERT_EQ(LIBC_NAMESPACE::chmod(parentName, 0666), 0);
+
+  gVisited.reset();
+  // We specify FTW_PHYS to avoid stat() trying to resolve and potentially failing with EACCES before nftw handles it
+  int result = LIBC_NAMESPACE::nftw(childName, recordVisit, 10, FTW_PHYS);
+  EXPECT_EQ(result, 0);
+
+  // Should have visited the child as FTW_NS
+  bool found = false;
+  for (int i = 0; i < gVisited.count; i++) {
+    if (string_view(gVisited.paths[i]) == childName) {
+      EXPECT_EQ(gVisited.types[i], FTW_NS);
+      found = true;
+    }
+  }
+  EXPECT_TRUE(found);
+
+  // Restore permission to allow cleanup
+  LIBC_NAMESPACE::chmod(parentName, 0777);
+  LIBC_NAMESPACE::unlink(childName);
+  LIBC_NAMESPACE::rmdir(parentName);
+  LIBC_NAMESPACE::libc_errno = 0;
+}
+
+TEST_F(LlvmLibcNftwTest, ExcessiveDepthRespectsFdLimit) {
+  // Creating a path with depth > 2
+  const char *path = "testdata";
+  // If we specify fdLimit = 1, it should fail with EMFILE when trying to iterate
+  // subdir, or even when visiting files in testdata because of how recursion works.
+  // Wait, let's see why:
+  // level 0 (testdata): fdLimit=1. Continue.
+  // level 1 (file1.txt): doMergedFtw(..., fdLimit=0). FAILS!
+  int result = LIBC_NAMESPACE::nftw(path, recordVisit, 1, 0);
+  EXPECT_EQ(result, -1);
+  ASSERT_ERRNO_EQ(EMFILE);
+}
+
+} // namespace LIBC_NAMESPACE_DECL

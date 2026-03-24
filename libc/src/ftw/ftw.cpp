@@ -20,7 +20,7 @@ LLVM_LIBC_FUNCTION(int, ftw,
   ftw_impl::CallbackWrapper wrapper;
   wrapper.isNftw = false;
   wrapper.ftwFn = fn;
-  auto result = ftw_impl::doMergedFtw(dirPath, wrapper, fdLimit, 0, 0, 0);
+  auto result = ftw_impl::doMergedFtw(dirPath, wrapper, fdLimit, 0, 0, 0, nullptr);
   if (!result) {
     libc_errno = result.error();
     return -1;

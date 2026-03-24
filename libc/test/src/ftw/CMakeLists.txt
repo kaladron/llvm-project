@@ -17,6 +17,7 @@ add_libc_unittest(
     libc.src.fcntl.open
     libc.src.ftw.ftw
     libc.src.ftw.nftw
+    libc.src.sys.stat.chmod
     libc.src.sys.stat.mkdir
     libc.src.unistd.close
     libc.src.unistd.getcwd

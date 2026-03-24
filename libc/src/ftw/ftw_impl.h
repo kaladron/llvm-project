@@ -11,15 +11,17 @@
 
 #include "src/__support/CPP/expected.h"
 #include "src/__support/CPP/string.h"
-#include "src/__support/macros/config.h"
-
-#include "hdr/ftw_macros.h"
-#include "hdr/sys_stat_macros.h"
 #include "include/llvm-libc-types/struct_FTW.h"
 #include "include/llvm-libc-types/struct_stat.h"
 
 namespace LIBC_NAMESPACE_DECL {
 namespace ftw_impl {
+
+struct AncestorDir {
+  dev_t dev;
+  ino_t ino;
+  AncestorDir *parent;
+};
 
 using NftwFn = int (*)(const char *filePath, const struct stat *statBuf,
                        int tFlag, struct FTW *ftwbuf);
@@ -47,9 +49,10 @@ struct CallbackWrapper {
 // Main implementation function - defined in ftw_impl.cpp
 // Returns the callback return value on success (which might be non-zero),
 // or an unexpected errno on failure.
-cpp::expected<int, int> doMergedFtw(const cpp::string &dirPath,
-                                    const CallbackWrapper &fn, int fdLimit,
-                                    int flags, int level, unsigned long startDevice);
+cpp::expected<int, int>
+doMergedFtw(const cpp::string &dirPath, const CallbackWrapper &fn, int fdLimit,
+            int flags, int level, unsigned long startDevice,
+            AncestorDir *ancestors);
 
 } // namespace ftw_impl
 } // namespace LIBC_NAMESPACE_DECL
