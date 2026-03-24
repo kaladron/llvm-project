@@ -36,19 +36,19 @@ public:
   StartDirSaver(int Fd) : StartFd(Fd) {}
   ~StartDirSaver() {
     if (StartFd >= 0) {
-      fchdir(StartFd);
-      close(StartFd);
+      LIBC_NAMESPACE::fchdir(StartFd);
+      LIBC_NAMESPACE::close(StartFd);
     }
   }
 };
 
 class LevelDirSaver {
-  bool active;
+  bool Active;
 
 public:
-  LevelDirSaver(bool doChdir) : active(doChdir) {}
+  LevelDirSaver(bool DoChdir) : Active(DoChdir) {}
   ~LevelDirSaver() {
-    if (active)
+    if (Active)
       LIBC_NAMESPACE::chdir("..");
   }
 };
@@ -88,12 +88,15 @@ doMergedFtw(const cpp::string &DirPath, const CallbackWrapper &Fn, int FdLimit,
     }
   } else {
     if (LIBC_NAMESPACE::stat(OsPath, &StatBuf) < 0) {
-      if (LIBC_NAMESPACE::lstat(OsPath, &StatBuf) == 0)
-        TypeFlag = FTW_SLN;
-      else if (libc_errno != EACCES)
-        return cpp::unexpected<int>(libc_errno);
-      else
+      if (libc_errno == EACCES) {
         TypeFlag = FTW_NS;
+      } else if (LIBC_NAMESPACE::lstat(OsPath, &StatBuf) == 0) {
+        TypeFlag = FTW_SLN;
+      } else if (libc_errno == EACCES) {
+        TypeFlag = FTW_NS;
+      } else {
+        return cpp::unexpected<int>(libc_errno);
+      }
     }
   }
 
@@ -122,6 +125,23 @@ doMergedFtw(const cpp::string &DirPath, const CallbackWrapper &Fn, int FdLimit,
     }
   }
 
+  bool SkipSubtree = false;
+  Dir *OpenDir = nullptr;
+  if (TypeFlag == FTW_D || TypeFlag == FTW_DP) {
+    if (FdLimit <= 0)
+      return cpp::unexpected<int>(EMFILE);
+    auto DirResult = Dir::open(OsPath);
+    if (!DirResult) {
+      if (DirResult.error() == EACCES) {
+        TypeFlag = FTW_DNR;
+      } else {
+        return cpp::unexpected<int>(DirResult.error());
+      }
+    } else {
+      OpenDir = DirResult.value();
+    }
+  }
+
   if (TypeFlag != FTW_D && TypeFlag != FTW_DP) {
     int Ret = Fn.call(DirPath.c_str(), &StatBuf, TypeFlag, &FtwBuf);
     if (Ret != 0) {
@@ -134,86 +154,76 @@ doMergedFtw(const cpp::string &DirPath, const CallbackWrapper &Fn, int FdLimit,
     return 0;
   }
 
-  bool SkipSubtree = false;
   if (!(Flags & FTW_DEPTH)) {
-    if (FdLimit > 0) {
-      int DirFd = LIBC_NAMESPACE::open(OsPath, O_RDONLY);
-      if (DirFd < 0 && libc_errno == EACCES)
-        TypeFlag = FTW_DNR;
-      else if (DirFd >= 0)
-        LIBC_NAMESPACE::close(DirFd);
-    }
-
     int Ret = Fn.call(DirPath.c_str(), &StatBuf, TypeFlag, &FtwBuf);
     if (Ret != 0) {
       if (Flags & FTW_ACTIONRETVAL) {
         if (Ret == FTW_SKIP_SUBTREE) {
           SkipSubtree = true;
         } else if (Ret == FTW_SKIP_SIBLINGS) {
+          if (OpenDir)
+            OpenDir->close(); // ScopedDir not yet created
           return Ret;
         } else {
+          if (OpenDir)
+            OpenDir->close();
           return Ret;
         }
       } else {
+        if (OpenDir)
+          OpenDir->close();
         return Ret;
       }
     }
   }
 
-  if (TypeFlag != FTW_DNR && !SkipSubtree) {
-    if (FdLimit <= 0)
-      return cpp::unexpected<int>(EMFILE);
+  if (OpenDir && !SkipSubtree) {
+    ScopedDir DirGuard(OpenDir);
+    if (Flags & FTW_CHDIR) {
+      if (LIBC_NAMESPACE::chdir(OsPath) < 0)
+        return cpp::unexpected<int>(libc_errno);
+    }
+    LevelDirSaver LevelSaver(Flags & FTW_CHDIR);
+    AncestorDir CurrentAncestor = {StatBuf.st_dev, StatBuf.st_ino, Ancestors};
 
-    auto DirResult = Dir::open(OsPath);
-    if (!DirResult) {
-      if (DirResult.error() != EACCES)
-        return cpp::unexpected<int>(DirResult.error());
-    } else {
-      ScopedDir Dir(DirResult.value());
-      if (Flags & FTW_CHDIR) {
-        if (chdir(OsPath) < 0)
-          return cpp::unexpected<int>(libc_errno);
+    while (true) {
+      auto Entry = DirGuard->read();
+      if (!Entry)
+        return cpp::unexpected(Entry.error());
+
+      struct ::dirent *DirentPtr = Entry.value();
+      if (DirentPtr == nullptr)
+        break;
+
+      if (DirentPtr->d_name[0] == '.') {
+        if (DirentPtr->d_name[1] == '\0' ||
+            (DirentPtr->d_name[1] == '.' && DirentPtr->d_name[2] == '\0'))
+          continue;
       }
-      LevelDirSaver LevelSaver(Flags & FTW_CHDIR);
-      AncestorDir CurrentAncestor = {StatBuf.st_dev, StatBuf.st_ino, Ancestors};
 
-      while (true) {
-        auto Entry = Dir->read();
-        if (!Entry)
-          return cpp::unexpected(Entry.error());
+      cpp::string EntryPath = DirPath;
+      if (!EntryPath.empty() && EntryPath[EntryPath.size() - 1] != '/')
+        EntryPath += "/";
+      EntryPath += DirentPtr->d_name;
 
-        struct ::dirent *DirentPtr = Entry.value();
-        if (DirentPtr == nullptr)
+      auto Res = doMergedFtw(EntryPath, Fn, FdLimit - 1, Flags, Level + 1,
+                            StartDevice, &CurrentAncestor);
+      if (!Res)
+        return Res;
+      if (Flags & FTW_ACTIONRETVAL) {
+        if (Res.value() == FTW_SKIP_SIBLINGS)
           break;
-
-        if (DirentPtr->d_name[0] == '.') {
-          if (DirentPtr->d_name[1] == '\0' ||
-              (DirentPtr->d_name[1] == '.' && DirentPtr->d_name[2] == '\0'))
-            continue;
-        }
-
-        cpp::string EntryPath = DirPath;
-        if (!EntryPath.empty() && EntryPath[EntryPath.size() - 1] != '/')
-          EntryPath += "/";
-        EntryPath += DirentPtr->d_name;
-
-        auto Res = doMergedFtw(EntryPath, Fn, FdLimit - 1, Flags, Level + 1,
-                                StartDevice, &CurrentAncestor);
-        if (!Res)
-          return Res;
-        if (Flags & FTW_ACTIONRETVAL) {
-          if (Res.value() == FTW_SKIP_SIBLINGS)
-            break;
-          if (Res.value() != 0 && Res.value() != FTW_SKIP_SUBTREE)
-            return Res.value();
-        } else if (Res.value() != 0) {
+        if (Res.value() != 0 && Res.value() != FTW_SKIP_SUBTREE)
           return Res.value();
-        }
+      } else if (Res.value() != 0) {
+        return Res.value();
       }
     }
+  } else if (OpenDir) {
+    OpenDir->close();
   }
 
-  if (Flags & FTW_DEPTH) {
+  if ((Flags & FTW_DEPTH) && !SkipSubtree) {
     int Ret = Fn.call(DirPath.c_str(), &StatBuf, TypeFlag, &FtwBuf);
     if (Flags & FTW_ACTIONRETVAL) {
       if (Ret == FTW_SKIP_SIBLINGS || Ret == FTW_SKIP_SUBTREE)

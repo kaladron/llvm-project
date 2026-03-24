@@ -26,50 +26,50 @@
 #include "test/UnitTest/ErrnoSetterMatcher.h"
 #include "test/UnitTest/Test.h"
 
-namespace LIBC_NAMESPACE_DECL {
+namespace LIBC_NAMESPACE {
 
-using LlvmLibcFtwTest = LIBC_NAMESPACE::testing::ErrnoCheckingTest;
-using LlvmLibcNftwTest = LIBC_NAMESPACE::testing::ErrnoCheckingTest;
-using LIBC_NAMESPACE::cpp::string_view;
+using LlvmLibcFtwTest = testing::ErrnoCheckingTest;
+using LlvmLibcNftwTest = testing::ErrnoCheckingTest;
+using cpp::string_view;
 
 // Test data structure to track visited files
 struct VisitedFiles {
   static constexpr int MAX_FILES = 32;
-  char paths[MAX_FILES][256];
-  int types[MAX_FILES];
-  int levels[MAX_FILES];
-  int count;
+  char Paths[MAX_FILES][256];
+  int Types[MAX_FILES];
+  int Levels[MAX_FILES];
+  int Count;
 
-  void reset() { count = 0; }
+  void reset() { Count = 0; }
 
   void add(const char *Path, int Type, int Level) {
-    if (count < MAX_FILES) {
+    if (Count < MAX_FILES) {
       // Copy path manually.
       int I = 0;
       while (Path[I] && I < 255) {
-        paths[count][I] = Path[I];
+        Paths[Count][I] = Path[I];
         I++;
       }
-      paths[count][I] = '\0';
-      types[count] = Type;
-      levels[count] = Level;
-      count++;
+      Paths[Count][I] = '\0';
+      Types[Count] = Type;
+      Levels[Count] = Level;
+      Count++;
     }
   }
 
-  bool contains(const char *substring) const {
-    string_view sub(substring);
-    for (int i = 0; i < count; i++) {
-      string_view path(paths[i]);
-      if (path.find_first_of(sub[0]) != string_view::npos) {
-        // Simple substring check
-        for (size_t j = 0; j <= path.size() - sub.size(); j++) {
-          bool match = true;
-          for (size_t k = 0; k < sub.size() && match; k++) {
-            if (paths[i][j + k] != substring[k])
-              match = false;
+  bool contains(const char *Substring) const {
+    string_view Sub(Substring);
+    for (int I = 0; I < Count; I++) {
+      string_view Path(Paths[I]);
+      if (Path.find_first_of(Sub[0]) != string_view::npos) {
+        // Simple Substring check
+        for (size_t J = 0; J <= Path.size() - Sub.size(); J++) {
+          bool Match = true;
+          for (size_t K = 0; K < Sub.size() && Match; K++) {
+            if (Paths[I][J + K] != Substring[K])
+              Match = false;
           }
-          if (match)
+          if (Match)
             return true;
         }
       }
@@ -77,18 +77,18 @@ struct VisitedFiles {
     return false;
   }
 
-  int getTypeFor(const char *substring) const {
-    string_view sub(substring);
-    for (int i = 0; i < count; i++) {
-      string_view path(paths[i]);
-      for (size_t j = 0; j + sub.size() <= path.size(); j++) {
-        bool match = true;
-        for (size_t k = 0; k < sub.size() && match; k++) {
-          if (paths[i][j + k] != substring[k])
-            match = false;
+  int getTypeFor(const char *Substring) const {
+    string_view Sub(Substring);
+    for (int I = 0; I < Count; I++) {
+      string_view Path(Paths[I]);
+      for (size_t J = 0; J + Sub.size() <= Path.size(); J++) {
+        bool Match = true;
+        for (size_t K = 0; K < Sub.size() && Match; K++) {
+          if (Paths[I][J + K] != Substring[K])
+            Match = false;
         }
-        if (match)
-          return types[i];
+        if (Match)
+          return Types[I];
       }
     }
     return -1;
@@ -125,15 +125,15 @@ static int simpleCallback(const char *Fpath, const struct stat *Sb,
 // Use static test directory that exists
 TEST_F(LlvmLibcFtwTest, BasicTraversalWithTestData) {
   // First make sure testdata directory exists
-  ::DIR *dir = LIBC_NAMESPACE::opendir("testdata");
-  if (dir == nullptr) {
+  ::DIR *Dir = LIBC_NAMESPACE::opendir("testdata");
+  if (Dir == nullptr) {
     // Skip test if testdata doesn't exist
     return;
   }
-  LIBC_NAMESPACE::closedir(dir);
+  LIBC_NAMESPACE::closedir(Dir);
 
-  int result = LIBC_NAMESPACE::ftw("testdata", simpleCallback, 10);
-  ASSERT_EQ(result, 0);
+  int Result = ftw("testdata", simpleCallback, 10);
+  ASSERT_EQ(Result, 0);
 }
 
 TEST_F(LlvmLibcFtwTest, NonexistentPath) {
@@ -149,7 +149,7 @@ TEST_F(LlvmLibcNftwTest, BasicTraversalWithTestData) {
   ASSERT_EQ(result, 0);
 
   // Should have visited some files
-  EXPECT_GE(gVisited.count, 1);
+  EXPECT_GE(gVisited.Count, 1);
 }
 
 TEST_F(LlvmLibcNftwTest, NonexistentPath) {
@@ -166,7 +166,7 @@ TEST_F(LlvmLibcNftwTest, DepthFirstFlag) {
   ASSERT_EQ(result, 0);
 
   // Should have visited files
-  EXPECT_GE(gVisited.count, 1);
+  EXPECT_GE(gVisited.Count, 1);
 }
 
 TEST_F(LlvmLibcNftwTest, PhysicalFlag) {
@@ -175,7 +175,7 @@ TEST_F(LlvmLibcNftwTest, PhysicalFlag) {
   ASSERT_EQ(result, 0);
 
   // Should have visited files
-  EXPECT_GE(gVisited.count, 1);
+  EXPECT_GE(gVisited.Count, 1);
 }
 
 TEST_F(LlvmLibcNftwTest, CallbackCanStopTraversal) {
@@ -225,7 +225,7 @@ TEST_F(LlvmLibcFtwTest, DanglingSymlinkMapping) {
     return 0;
   };
 
-  LIBC_NAMESPACE::libc_errno = 0;
+  libc_errno = 0;
   int result = LIBC_NAMESPACE::ftw(linkName, checkFtw, 10);
   EXPECT_EQ(result, 0);
 
@@ -240,12 +240,12 @@ TEST_F(LlvmLibcFtwTest, DanglingSymlinkMapping) {
     return 0;
   };
 
-  LIBC_NAMESPACE::libc_errno = 0;
+  libc_errno = 0;
   result = LIBC_NAMESPACE::nftw(linkName, checkNftw, 10, 0);
   EXPECT_EQ(result, 0);
 
   LIBC_NAMESPACE::unlink(linkName);
-  LIBC_NAMESPACE::libc_errno = 0;
+  libc_errno = 0;
 }
 
 TEST_F(LlvmLibcNftwTest, UnreadableDirectory) {
@@ -260,16 +260,16 @@ TEST_F(LlvmLibcNftwTest, UnreadableDirectory) {
 
   // Should have visited the directory itself as FTW_DNR
   bool found = false;
-  for (int i = 0; i < gVisited.count; i++) {
-    if (string_view(gVisited.paths[i]) == dirName) {
-      EXPECT_EQ(gVisited.types[i], FTW_DNR);
+  for (int i = 0; i < gVisited.Count; i++) {
+    if (string_view(gVisited.Paths[i]) == dirName) {
+      EXPECT_EQ(gVisited.Types[i], FTW_DNR);
       found = true;
     }
   }
   EXPECT_TRUE(found);
 
   LIBC_NAMESPACE::rmdir(dirName);
-  LIBC_NAMESPACE::libc_errno = 0;
+  libc_errno = 0;
 }
 
 TEST_F(LlvmLibcNftwTest, NoSearchPermission) {
@@ -295,9 +295,9 @@ TEST_F(LlvmLibcNftwTest, NoSearchPermission) {
 
   // Should have visited the child as FTW_NS
   bool found = false;
-  for (int i = 0; i < gVisited.count; i++) {
-    if (string_view(gVisited.paths[i]) == childName) {
-      EXPECT_EQ(gVisited.types[i], FTW_NS);
+  for (int i = 0; i < gVisited.Count; i++) {
+    if (string_view(gVisited.Paths[i]) == childName) {
+      EXPECT_EQ(gVisited.Types[i], FTW_NS);
       found = true;
     }
   }
@@ -307,7 +307,7 @@ TEST_F(LlvmLibcNftwTest, NoSearchPermission) {
   LIBC_NAMESPACE::chmod(parentName, 0777);
   LIBC_NAMESPACE::unlink(childName);
   LIBC_NAMESPACE::rmdir(parentName);
-  LIBC_NAMESPACE::libc_errno = 0;
+  libc_errno = 0;
 }
 
 TEST_F(LlvmLibcNftwTest, ExcessiveDepthRespectsFdLimit) {
@@ -315,7 +315,6 @@ TEST_F(LlvmLibcNftwTest, ExcessiveDepthRespectsFdLimit) {
   const char *path = "testdata";
   // If we specify fdLimit = 1, it should fail with EMFILE when trying to iterate
   // subdir, or even when visiting files in testdata because of how recursion works.
-  // Wait, let's see why:
   // level 0 (testdata): fdLimit=1. Continue.
   // level 1 (file1.txt): doMergedFtw(..., fdLimit=0). FAILS!
   int result = LIBC_NAMESPACE::nftw(path, recordVisit, 1, 0);
@@ -323,4 +322,4 @@ TEST_F(LlvmLibcNftwTest, ExcessiveDepthRespectsFdLimit) {
   ASSERT_ERRNO_EQ(EMFILE);
 }
 
-} // namespace LIBC_NAMESPACE_DECL
+} // namespace LIBC_NAMESPACE

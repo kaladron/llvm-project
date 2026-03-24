@@ -10,7 +10,7 @@
 #define LLVM_LIBC_SRC_FTW_NFTW_H
 
 #include "src/__support/macros/config.h"
-#include "llvm-libc-types/__nftw_func_t.h"
+#include "include/llvm-libc-types/__nftw_func_t.h"
 
 namespace LIBC_NAMESPACE_DECL {
 

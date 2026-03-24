@@ -23,6 +23,8 @@
 #define FTW_MOUNT 2        // The walk does not cross a mount point.
 #define FTW_CHDIR 4        // Change to each directory before processing.
 #define FTW_DEPTH 8        // All subdirectories visited before the directory.
+
+#ifdef _GNU_SOURCE
 #define FTW_ACTIONRETVAL 16 // Use FTW_* action return values (GNU extension).
 
 // Return values from callback functions (when FTW_ACTIONRETVAL is set).
@@ -30,5 +32,6 @@
 #define FTW_STOP 1         // Return from ftw/nftw with FTW_STOP.
 #define FTW_SKIP_SUBTREE 2 // Don't walk through subtree (FTW_D only).
 #define FTW_SKIP_SIBLINGS 3 // Skip siblings, continue with parent.
+#endif // _GNU_SOURCE
 
 #endif // LLVM_LIBC_MACROS_FTW_MACROS_H

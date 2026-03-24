@@ -10,8 +10,8 @@
 #define LLVM_LIBC_TYPES_STRUCT_FTW_H
 
 struct FTW {
-  int base;  /* Offset of the filename in the pathname. */
-  int level; /* Depth of the file in the tree. */
+  int base;  // Offset of the filename in the pathname.
+  int level; // Depth of the file in the tree.
 };
 
 #endif // LLVM_LIBC_TYPES_STRUCT_FTW_H

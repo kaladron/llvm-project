@@ -19,6 +19,7 @@ functions:
   - name: nftw
     standards:
       - posix
+      - gnu
     return_type: int
     arguments:
       - type: const char *
