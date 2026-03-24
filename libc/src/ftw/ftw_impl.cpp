@@ -15,7 +15,10 @@
 #include "src/fcntl/open.h"
 #include "src/sys/stat/lstat.h"
 #include "src/sys/stat/stat.h"
+#include "src/unistd/chdir.h"
 #include "src/unistd/close.h"
+#include "src/unistd/fchdir.h"
+#include <fcntl.h>
 
 #include "hdr/ftw_macros.h"
 #include "hdr/sys_stat_macros.h"
@@ -26,10 +29,26 @@
 namespace LIBC_NAMESPACE_DECL {
 namespace ftw_impl {
 
+struct StartDirSave {
+  int start_fd = -1;
+  StartDirSave(bool do_save) {
+    if (do_save) {
+      start_fd = LIBC_NAMESPACE::open(".", O_RDONLY);
+    }
+  }
+  ~StartDirSave() {
+    if (start_fd >= 0) {
+      LIBC_NAMESPACE::fchdir(start_fd);
+      LIBC_NAMESPACE::close(start_fd);
+    }
+  }
+};
+
 cpp::expected<int, int> doMergedFtw(const cpp::string &dirPath,
                                     const CallbackWrapper &fn, int fdLimit,
                                     int flags, int level,
                                     unsigned long startDevice) {
+  StartDirSave root_saver(level == 0 && (flags & FTW_CHDIR));
   // fdLimit specifies the maximum number of directories that ftw()
   // will hold open simultaneously. When a directory is opened, fdLimit is
   // decreased and if it becomes 0 or less, we won't open any more directories.
@@ -37,20 +56,34 @@ cpp::expected<int, int> doMergedFtw(const cpp::string &dirPath,
     return 0;
   }
 
+  struct FTW ftwBuf;
+  ftwBuf.level = level;
+  cpp::string_view pathView(dirPath);
+  size_t slash_found = pathView.find_last_of('/');
+  ftwBuf.base = (slash_found != cpp::string_view::npos)
+                    ? static_cast<int>(slash_found + 1)
+                    : 0;
+
+  // With FTW_CHDIR, all OS calls should use only the basename (except at level
+  // 0).
+  const char *os_path = (level == 0 || !(flags & FTW_CHDIR))
+                            ? dirPath.c_str()
+                            : (dirPath.c_str() + ftwBuf.base);
+
   // Determine the type of path that is passed.
   int typeFlag = FTW_F; // Default to regular file
   struct stat statBuf;
   if (flags & FTW_PHYS) {
-    if (LIBC_NAMESPACE::lstat(dirPath.c_str(), &statBuf) < 0) {
-      return cpp::unexpected(libc_errno);
+    if (LIBC_NAMESPACE::lstat(os_path, &statBuf) < 0) {
+      return cpp::unexpected<int>(libc_errno);
     }
   } else {
-    if (LIBC_NAMESPACE::stat(dirPath.c_str(), &statBuf) < 0) {
-      if (LIBC_NAMESPACE::lstat(dirPath.c_str(), &statBuf) == 0) {
+    if (LIBC_NAMESPACE::stat(os_path, &statBuf) < 0) {
+      if (LIBC_NAMESPACE::lstat(os_path, &statBuf) == 0) {
         typeFlag = FTW_SLN; /* Symbolic link pointing to a nonexistent file. */
       } else if (libc_errno != EACCES) {
         /* stat failed with an error that is not Permission denied */
-        return cpp::unexpected(libc_errno);
+        return cpp::unexpected<int>(libc_errno);
       } else {
         /* The probable cause for the failure is that the caller had read
          * permission on the parent directory, so that the filename fpath could
@@ -93,18 +126,6 @@ cpp::expected<int, int> doMergedFtw(const cpp::string &dirPath,
     typeFlag = FTW_SL;
   }
 
-  struct FTW ftwBuf;
-  // Find the base by finding the last slash.
-  cpp::string_view pathView(dirPath);
-  size_t slash_found = pathView.find_last_of('/');
-  if (slash_found != cpp::string_view::npos) {
-    ftwBuf.base = static_cast<int>(slash_found + 1);
-  } else {
-    ftwBuf.base = 0;
-  }
-
-  ftwBuf.level = level;
-
   // If the dirPath is a file or symlink, call the function on it and return.
   if ((typeFlag == FTW_SL) || (typeFlag == FTW_F) || (typeFlag == FTW_SLN) ||
       (typeFlag == FTW_NS)) {
@@ -115,12 +136,12 @@ cpp::expected<int, int> doMergedFtw(const cpp::string &dirPath,
   // the files in that directory.
   if (!(flags & FTW_DEPTH)) {
     // Check if directory is readable
-    int directory_fd = open(dirPath.c_str(), O_RDONLY);
+    int directory_fd = LIBC_NAMESPACE::open(os_path, O_RDONLY);
     if (directory_fd < 0 && libc_errno == EACCES) {
       typeFlag = FTW_DNR; /* Directory can't be read. */
     }
     if (directory_fd >= 0) {
-      close(directory_fd);
+      LIBC_NAMESPACE::close(directory_fd);
     }
 
     int returnValue = fn.call(dirPath.c_str(), &statBuf, typeFlag, &ftwBuf);
@@ -130,14 +151,20 @@ cpp::expected<int, int> doMergedFtw(const cpp::string &dirPath,
   }
 
   // Open the directory for iteration
-  auto dir_result = Dir::open(dirPath.c_str());
+  auto dir_result = Dir::open(os_path);
   if (!dir_result) {
     // Could not open directory - this might be FTW_DNR case, already handled
     // above. We only return error if it's not EACCES or if we haven't reported
     // it yet.
-    return cpp::unexpected(dir_result.error());
+    return cpp::unexpected<int>(dir_result.error());
   }
   ScopedDir dir(dir_result.value());
+
+  if (flags & FTW_CHDIR) {
+    if (LIBC_NAMESPACE::chdir(os_path) < 0) {
+      return cpp::unexpected<int>(libc_errno);
+    }
+  }
 
   // Iterate through directory entries
   while (true) {
@@ -176,7 +203,17 @@ cpp::expected<int, int> doMergedFtw(const cpp::string &dirPath,
       return res;
     }
     if (res.value() != 0) {
+      if (flags & FTW_CHDIR) {
+        // Must restore CWD before returning from early exit
+        LIBC_NAMESPACE::chdir("..");
+      }
       return res.value();
+    }
+  }
+
+  if (flags & FTW_CHDIR) {
+    if (LIBC_NAMESPACE::chdir("..") < 0) {
+      return cpp::unexpected<int>(libc_errno);
     }
   }
 

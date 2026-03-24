@@ -17,7 +17,9 @@ add_object_library(
     libc.src.fcntl.open
     libc.src.sys.stat.lstat
     libc.src.sys.stat.stat
+    libc.src.unistd.chdir
     libc.src.unistd.close
+    libc.src.unistd.fchdir
 )
 
 add_entrypoint_object(
