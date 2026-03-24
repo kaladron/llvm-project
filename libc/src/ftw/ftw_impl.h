@@ -20,18 +20,18 @@
 namespace LIBC_NAMESPACE_DECL {
 namespace ftw_impl {
 
-using nftwFn = int (*)(const char *filePath, const struct stat *statBuf,
+using NftwFn = int (*)(const char *filePath, const struct stat *statBuf,
                        int tFlag, struct FTW *ftwbuf);
 
-using ftwFn = int (*)(const char *filePath, const struct stat *statBuf,
+using FtwFn = int (*)(const char *filePath, const struct stat *statBuf,
                       int tFlag);
 
 // Unified callback wrapper - uses a union to avoid virtual functions
 struct CallbackWrapper {
   bool is_nftw;
   union {
-    nftwFn nftw_fn;
-    ftwFn ftw_fn;
+    NftwFn nftw_fn;
+    FtwFn ftw_fn;
   };
 
   LIBC_INLINE int call(const char *path, const struct stat *sb, int type,
