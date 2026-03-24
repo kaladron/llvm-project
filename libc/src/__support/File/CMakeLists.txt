@@ -35,7 +35,7 @@ add_object_library(
     libc.src.__support.threads.mutex
 )
 
-add_object_library(
+add_header_library(
   scoped_dir
   HDRS
     scoped_dir.h
