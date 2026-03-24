@@ -5,6 +5,8 @@ add_object_library(
   HDRS
     ftw_impl.h
   DEPENDS
+    libc.hdr.ftw_macros
+    libc.hdr.sys_stat_macros
     libc.include.ftw
     libc.include.sys_stat
     libc.src.__support.CPP.string
