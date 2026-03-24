@@ -17,7 +17,6 @@
 #include "src/unistd/close.h"
 #include "src/unistd/getcwd.h"
 #include "src/unistd/rmdir.h"
-#include <string.h>
 #include "src/unistd/symlink.h"
 #include "src/unistd/unlink.h"
 #include "test/UnitTest/ErrnoCheckingTest.h"
@@ -46,7 +45,7 @@ struct VisitedFiles {
 
   void add(const char *path, int type, int level) {
     if (count < MAX_FILES) {
-      // Copy path manually (no strncpy in freestanding)
+      // Copy path manually.
       int i = 0;
       while (path[i] && i < 255) {
         paths[count][i] = path[i];
@@ -115,36 +114,7 @@ static int recordVisitFtw(const char *fpath, const struct stat *sb,
   return 0; // continue traversal
 }
 
-// Callback that stops after finding a specific file
-static int stopOnFile(const char *fpath, const struct stat *sb, int typeflag,
-                      struct FTW *ftwbuf) {
-  (void)sb;
-  (void)ftwbuf;
-  gVisited.add(fpath, typeflag, 0);
-  // Check if path contains "stopfile"
-  string_view path(fpath);
-  for (size_t i = 0; i + 8 <= path.size(); i++) {
-    if (fpath[i] == 's' && fpath[i + 1] == 't' && fpath[i + 2] == 'o' &&
-        fpath[i + 3] == 'p' && fpath[i + 4] == 'f' && fpath[i + 5] == 'i' &&
-        fpath[i + 6] == 'l' && fpath[i + 7] == 'e')
-      return 1; // stop traversal
-  }
-  return 0;
-}
 
-// Helper to create a file
-static bool createFile(const char *path) {
-  int fd = LIBC_NAMESPACE::open(path, O_CREAT | O_WRONLY, S_IRWXU);
-  if (fd < 0)
-    return false;
-  LIBC_NAMESPACE::close(fd);
-  return true;
-}
-
-// Helper to create a directory
-static bool createDir(const char *path) {
-  return LIBC_NAMESPACE::mkdir(path, S_IRWXU) == 0;
-}
 
 // Simplest callback that does nothing
 static int simpleCallback(const char *fpath, const struct stat *sb,
