@@ -19,6 +19,7 @@ add_libc_unittest(
     libc.src.ftw.nftw
     libc.src.sys.stat.mkdir
     libc.src.unistd.close
+    libc.src.unistd.getcwd
     libc.src.unistd.rmdir
     libc.src.unistd.symlink
     libc.src.unistd.unlink

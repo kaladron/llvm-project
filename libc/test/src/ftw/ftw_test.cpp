@@ -15,7 +15,9 @@
 #include "src/ftw/nftw.h"
 #include "src/sys/stat/mkdir.h"
 #include "src/unistd/close.h"
+#include "src/unistd/getcwd.h"
 #include "src/unistd/rmdir.h"
+#include <string.h>
 #include "src/unistd/symlink.h"
 #include "src/unistd/unlink.h"
 #include "test/UnitTest/ErrnoCheckingTest.h"
@@ -217,4 +219,25 @@ TEST_F(LlvmLibcNftwTest, CallbackCanStopTraversal) {
   int result = LIBC_NAMESPACE::nftw("testdata", stopImmediately, 10, 0);
   // nftw should return the callback's return value
   EXPECT_EQ(result, 42);
+}
+
+TEST_F(LlvmLibcNftwTest, ChdirFlag) {
+  char original_cwd[1024];
+  ASSERT_TRUE(LIBC_NAMESPACE::getcwd(original_cwd, sizeof(original_cwd)) != nullptr);
+
+  auto checkCwd = [](const char *, const struct stat *, int,
+                     struct FTW *) -> int {
+    char cwd[1024];
+    if (LIBC_NAMESPACE::getcwd(cwd, sizeof(cwd)) == nullptr)
+      return -1;
+    return 0;
+  };
+
+  int result = LIBC_NAMESPACE::nftw("testdata", checkCwd, 10, FTW_CHDIR);
+  ASSERT_EQ(result, 0);
+
+  char final_cwd[1024];
+  ASSERT_TRUE(LIBC_NAMESPACE::getcwd(final_cwd, sizeof(final_cwd)) != nullptr);
+  // Verify that the original CWD was restored
+  ASSERT_STREQ(original_cwd, final_cwd);
 }
