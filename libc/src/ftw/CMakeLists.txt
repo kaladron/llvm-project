@@ -12,6 +12,7 @@ add_object_library(
     libc.src.__support.CPP.string
     libc.src.__support.CPP.string_view
     libc.src.__support.File.dir
+    libc.src.__support.File.scoped_dir
     libc.src.__support.libc_errno
     libc.src.fcntl.open
     libc.src.sys.stat.lstat
