@@ -36,8 +36,8 @@ public:
   StartDirSaver(int Fd) : StartFd(Fd) {}
   ~StartDirSaver() {
     if (StartFd >= 0) {
-      LIBC_NAMESPACE::fchdir(StartFd);
-      LIBC_NAMESPACE::close(StartFd);
+      fchdir(StartFd);
+      close(StartFd);
     }
   }
 };
@@ -49,7 +49,7 @@ public:
   LevelDirSaver(bool DoChdir) : Active(DoChdir) {}
   ~LevelDirSaver() {
     if (Active)
-      LIBC_NAMESPACE::chdir("..");
+      chdir("..");
   }
 };
 
@@ -59,7 +59,7 @@ doMergedFtw(const cpp::string &DirPath, const CallbackWrapper &Fn, int FdLimit,
             AncestorDir *Ancestors) {
   int StartFd = -1;
   if (Level == 0 && (Flags & FTW_CHDIR)) {
-    StartFd = LIBC_NAMESPACE::open(".", O_RDONLY);
+    StartFd = open(".", O_RDONLY);
     if (StartFd < 0)
       return cpp::unexpected<int>(libc_errno);
   }
@@ -79,6 +79,8 @@ doMergedFtw(const cpp::string &DirPath, const CallbackWrapper &Fn, int FdLimit,
 
   int TypeFlag = FTW_F;
   struct stat StatBuf;
+  // Explicit LIBC_NAMESPACE:: is required for stat/lstat call disambiguation
+  // due to ADL lookup finding candidates in the global namespace.
   if (Flags & FTW_PHYS) {
     if (LIBC_NAMESPACE::lstat(OsPath, &StatBuf) < 0) {
       if (libc_errno == EACCES)
@@ -180,7 +182,7 @@ doMergedFtw(const cpp::string &DirPath, const CallbackWrapper &Fn, int FdLimit,
   if (OpenDir && !SkipSubtree) {
     ScopedDir DirGuard(OpenDir);
     if (Flags & FTW_CHDIR) {
-      if (LIBC_NAMESPACE::chdir(OsPath) < 0)
+      if (chdir(OsPath) < 0)
         return cpp::unexpected<int>(libc_errno);
     }
     LevelDirSaver LevelSaver(Flags & FTW_CHDIR);
