@@ -29,18 +29,30 @@
 namespace LIBC_NAMESPACE_DECL {
 namespace ftw_impl {
 
-struct StartDirSave {
-  int start_fd = -1;
-  StartDirSave(bool do_save) {
-    if (do_save) {
-      start_fd = LIBC_NAMESPACE::open(".", O_RDONLY);
+class StartDirSaver {
+  int startFd = -1;
+
+public:
+  StartDirSaver(bool doSave) {
+    if (doSave)
+      startFd = LIBC_NAMESPACE::open(".", O_RDONLY);
+  }
+  ~StartDirSaver() {
+    if (startFd >= 0) {
+      LIBC_NAMESPACE::fchdir(startFd);
+      LIBC_NAMESPACE::close(startFd);
     }
   }
-  ~StartDirSave() {
-    if (start_fd >= 0) {
-      LIBC_NAMESPACE::fchdir(start_fd);
-      LIBC_NAMESPACE::close(start_fd);
-    }
+};
+
+class LevelDirSaver {
+  bool active;
+
+public:
+  LevelDirSaver(bool doChdir) : active(doChdir) {}
+  ~LevelDirSaver() {
+    if (active)
+      LIBC_NAMESPACE::chdir("..");
   }
 };
 
@@ -48,7 +60,7 @@ cpp::expected<int, int> doMergedFtw(const cpp::string &dirPath,
                                     const CallbackWrapper &fn, int fdLimit,
                                     int flags, int level,
                                     unsigned long startDevice) {
-  StartDirSave root_saver(level == 0 && (flags & FTW_CHDIR));
+  StartDirSaver rootSaver(level == 0 && (flags & FTW_CHDIR));
   // fdLimit specifies the maximum number of directories that ftw()
   // will hold open simultaneously. When a directory is opened, fdLimit is
   // decreased and if it becomes 0 or less, we won't open any more directories.
@@ -122,7 +134,7 @@ cpp::expected<int, int> doMergedFtw(const cpp::string &dirPath,
   }
 
   // Map FTW_SLN to FTW_SL for legacy ftw to maintain compatibility.
-  if (!fn.is_nftw && typeFlag == FTW_SLN) {
+  if (!fn.isNftw && typeFlag == FTW_SLN) {
     typeFlag = FTW_SL;
   }
 
@@ -161,10 +173,10 @@ cpp::expected<int, int> doMergedFtw(const cpp::string &dirPath,
   ScopedDir dir(dir_result.value());
 
   if (flags & FTW_CHDIR) {
-    if (LIBC_NAMESPACE::chdir(os_path) < 0) {
+    if (LIBC_NAMESPACE::chdir(os_path) < 0)
       return cpp::unexpected<int>(libc_errno);
-    }
   }
+  LevelDirSaver levelSaver(flags & FTW_CHDIR);
 
   // Iterate through directory entries
   while (true) {
@@ -199,23 +211,10 @@ cpp::expected<int, int> doMergedFtw(const cpp::string &dirPath,
 
     auto res = doMergedFtw(entry_path, fn, fdLimit - 1, flags, ftwBuf.level + 1,
                            startDevice);
-    if (!res) {
+    if (!res || res.value() != 0)
       return res;
-    }
-    if (res.value() != 0) {
-      if (flags & FTW_CHDIR) {
-        // Must restore CWD before returning from early exit
-        LIBC_NAMESPACE::chdir("..");
-      }
-      return res.value();
-    }
   }
 
-  if (flags & FTW_CHDIR) {
-    if (LIBC_NAMESPACE::chdir("..") < 0) {
-      return cpp::unexpected<int>(libc_errno);
-    }
-  }
 
   // If FTW_DEPTH is set, nftw() shall report all files in a directory before
   // reporting the directory itself.

@@ -7,6 +7,7 @@ add_object_library(
   DEPENDS
     libc.hdr.ftw_macros
     libc.hdr.sys_stat_macros
+    libc.include.dirent
     libc.include.ftw
     libc.include.sys_stat
     libc.src.__support.CPP.string

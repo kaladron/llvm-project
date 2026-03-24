@@ -18,8 +18,8 @@ namespace LIBC_NAMESPACE_DECL {
 LLVM_LIBC_FUNCTION(int, ftw,
                    (const char *dirPath, __ftw_func_t fn, int fdLimit)) {
   ftw_impl::CallbackWrapper wrapper;
-  wrapper.is_nftw = false;
-  wrapper.ftw_fn = fn;
+  wrapper.isNftw = false;
+  wrapper.ftwFn = fn;
   auto result = ftw_impl::doMergedFtw(dirPath, wrapper, fdLimit, 0, 0, 0);
   if (!result) {
     libc_errno = result.error();

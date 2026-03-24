@@ -29,18 +29,18 @@ using FtwFn = int (*)(const char *filePath, const struct stat *statBuf,
 
 // Unified callback wrapper - uses a union to avoid virtual functions
 struct CallbackWrapper {
-  bool is_nftw;
+  bool isNftw;
   union {
-    NftwFn nftw_fn;
-    FtwFn ftw_fn;
+    NftwFn nftwFn;
+    FtwFn ftwFn;
   };
 
   LIBC_INLINE int call(const char *path, const struct stat *sb, int type,
                        struct FTW *ftwbuf) const {
-    if (is_nftw)
-      return nftw_fn(path, sb, type, ftwbuf);
+    if (isNftw)
+      return nftwFn(path, sb, type, ftwbuf);
     else
-      return ftw_fn(path, sb, type);
+      return ftwFn(path, sb, type);
   }
 };
 
