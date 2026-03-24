@@ -26,7 +26,7 @@ add_entrypoint_object(
   DEPENDS
     libc.include.ftw
     libc.src.__support.CPP.string
-    libc.src.errno.errno
+    libc.src.__support.libc_errno
     .ftw_impl
 )
 
@@ -39,6 +39,6 @@ add_entrypoint_object(
   DEPENDS
     libc.include.ftw
     libc.src.__support.CPP.string
-    libc.src.errno.errno
+    libc.src.__support.libc_errno
     .ftw_impl
 )
