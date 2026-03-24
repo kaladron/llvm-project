@@ -6,6 +6,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "hdr/ftw_macros.h"
 #include "src/ftw/ftw.h"
 #include "src/ftw/ftw_impl.h"
 

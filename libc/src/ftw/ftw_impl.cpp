@@ -17,9 +17,11 @@
 #include "src/sys/stat/stat.h"
 #include "src/unistd/close.h"
 
-#include <dirent.h>
-#include <ftw.h>
-#include <sys/stat.h>
+#include "hdr/ftw_macros.h"
+#include "hdr/sys_stat_macros.h"
+#include "include/llvm-libc-types/struct_FTW.h"
+#include "include/llvm-libc-types/struct_stat.h"
+#include "include/llvm-libc-types/struct_dirent.h"
 
 namespace LIBC_NAMESPACE_DECL {
 namespace ftw_impl {

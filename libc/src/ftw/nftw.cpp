@@ -11,7 +11,7 @@
 
 #include "src/__support/common.h"
 
-#include <ftw.h>
+#include "hdr/ftw_macros.h"
 
 namespace LIBC_NAMESPACE_DECL {
 

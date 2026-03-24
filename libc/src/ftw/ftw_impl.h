@@ -12,8 +12,10 @@
 #include "src/__support/CPP/string.h"
 #include "src/__support/macros/config.h"
 
-#include <ftw.h>
-#include <sys/stat.h>
+#include "hdr/ftw_macros.h"
+#include "hdr/sys_stat_macros.h"
+#include "include/llvm-libc-types/struct_FTW.h"
+#include "include/llvm-libc-types/struct_stat.h"
 
 namespace LIBC_NAMESPACE_DECL {
 namespace ftw_impl {
