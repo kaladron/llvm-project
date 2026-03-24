@@ -19,7 +19,7 @@ LLVM_LIBC_FUNCTION(int, ftw,
   ftw_impl::CallbackWrapper wrapper;
   wrapper.is_nftw = false;
   wrapper.ftw_fn = fn;
-  return ftw_impl::doMergedFtw(dirPath, wrapper, fdLimit, FTW_PHYS, 0);
+  return ftw_impl::doMergedFtw(dirPath, wrapper, fdLimit, 0, 0);
 }
 
 } // namespace LIBC_NAMESPACE_DECL
