@@ -79,20 +79,18 @@ doMergedFtw(const cpp::string &DirPath, const CallbackWrapper &Fn, int FdLimit,
 
   int TypeFlag = FTW_F;
   struct stat StatBuf;
-  // Explicit LIBC_NAMESPACE:: is required for stat/lstat call disambiguation
-  // due to ADL lookup finding candidates in the global namespace.
   if (Flags & FTW_PHYS) {
-    if (LIBC_NAMESPACE::lstat(OsPath, &StatBuf) < 0) {
+    if (lstat(OsPath, &StatBuf) < 0) {
       if (libc_errno == EACCES)
         TypeFlag = FTW_NS;
       else
         return cpp::unexpected<int>(libc_errno);
     }
   } else {
-    if (LIBC_NAMESPACE::stat(OsPath, &StatBuf) < 0) {
+    if (stat(OsPath, &StatBuf) < 0) {
       if (libc_errno == EACCES) {
         TypeFlag = FTW_NS;
-      } else if (LIBC_NAMESPACE::lstat(OsPath, &StatBuf) == 0) {
+      } else if (lstat(OsPath, &StatBuf) == 0) {
         TypeFlag = FTW_SLN;
       } else if (libc_errno == EACCES) {
         TypeFlag = FTW_NS;
