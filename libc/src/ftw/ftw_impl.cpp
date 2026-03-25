@@ -58,6 +58,7 @@ doMergedFtw(const cpp::string &DirPath, const CallbackWrapper &Fn, int FdLimit,
             int Flags, int Level, unsigned long StartDevice,
             AncestorDir *Ancestors) {
   int StartFd = -1;
+  // Save starting directory for FTW_CHDIR restoration.
   if (Level == 0 && (Flags & FTW_CHDIR)) {
     StartFd = open(".", O_RDONLY);
     if (StartFd < 0)
@@ -65,6 +66,7 @@ doMergedFtw(const cpp::string &DirPath, const CallbackWrapper &Fn, int FdLimit,
   }
   StartDirSaver RootSaver(StartFd);
 
+  // Set up FTW buffer and calculate filename offset base.
   struct FTW FtwBuf;
   FtwBuf.level = Level;
   cpp::string_view PathView(DirPath);
@@ -79,6 +81,7 @@ doMergedFtw(const cpp::string &DirPath, const CallbackWrapper &Fn, int FdLimit,
 
   int TypeFlag = FTW_F;
   struct stat StatBuf;
+  // Stat the path, respecting FTW_PHYS with lstat vs stat.
   if (Flags & FTW_PHYS) {
     if (lstat(OsPath, &StatBuf) < 0) {
       if (libc_errno == EACCES)
@@ -91,6 +94,7 @@ doMergedFtw(const cpp::string &DirPath, const CallbackWrapper &Fn, int FdLimit,
       if (libc_errno == EACCES) {
         TypeFlag = FTW_NS;
       } else if (lstat(OsPath, &StatBuf) == 0) {
+        // Dangling symlink found.
         TypeFlag = FTW_SLN;
       } else if (libc_errno == EACCES) {
         TypeFlag = FTW_NS;
@@ -100,12 +104,15 @@ doMergedFtw(const cpp::string &DirPath, const CallbackWrapper &Fn, int FdLimit,
     }
   }
 
+  // Track starting device for FTW_MOUNT traversal limits.
   if (Level == 0)
     StartDevice = StatBuf.st_dev;
 
+  // Skip traversal into mounted filesystems if FTW_MOUNT is set.
   if ((Flags & FTW_MOUNT) && Level > 0 && StatBuf.st_dev != StartDevice)
     return 0;
 
+  // Map stat mode to final FTW_* type flags.
   if (TypeFlag != FTW_SLN && TypeFlag != FTW_NS) {
     if (S_ISDIR(StatBuf.st_mode))
       TypeFlag = (Flags & FTW_DEPTH) ? FTW_DP : FTW_D;
@@ -115,9 +122,11 @@ doMergedFtw(const cpp::string &DirPath, const CallbackWrapper &Fn, int FdLimit,
       TypeFlag = FTW_F;
   }
 
+  // Legacy ftw() must map FTW_SLN to FTW_SL.
   if (!Fn.IsNftw && TypeFlag == FTW_SLN)
     TypeFlag = FTW_SL;
 
+  // Cycle detection for directories to prevent infinite recursion.
   if (TypeFlag == FTW_D || TypeFlag == FTW_DP || TypeFlag == FTW_DNR) {
     for (AncestorDir *A = Ancestors; A != nullptr; A = A->Parent) {
       if (A->Dev == StatBuf.st_dev && A->Ino == StatBuf.st_ino)
@@ -127,6 +136,7 @@ doMergedFtw(const cpp::string &DirPath, const CallbackWrapper &Fn, int FdLimit,
 
   bool SkipSubtree = false;
   Dir *OpenDir = nullptr;
+  // Attempt directory open; propagate fd count exhaustion errors.
   if (TypeFlag == FTW_D || TypeFlag == FTW_DP) {
     if (FdLimit <= 0)
       return cpp::unexpected<int>(EMFILE);
@@ -145,10 +155,12 @@ doMergedFtw(const cpp::string &DirPath, const CallbackWrapper &Fn, int FdLimit,
   if (TypeFlag != FTW_D && TypeFlag != FTW_DP)
     return Fn.call(DirPath.c_str(), &StatBuf, TypeFlag, &FtwBuf);
 
+  // Pre-order traversal: call callback BEFORE descending.
   if (!(Flags & FTW_DEPTH)) {
     int Ret = Fn.call(DirPath.c_str(), &StatBuf, TypeFlag, &FtwBuf);
     if (Ret != 0) {
       if (Flags & FTW_ACTIONRETVAL) {
+        // Honor action return values if requested.
         if (Ret == FTW_SKIP_SUBTREE) {
           SkipSubtree = true;
         } else if (Ret == FTW_SKIP_SIBLINGS) {
@@ -168,6 +180,7 @@ doMergedFtw(const cpp::string &DirPath, const CallbackWrapper &Fn, int FdLimit,
     }
   }
 
+  // Descend into children.
   if (OpenDir && !SkipSubtree) {
     ScopedDir DirGuard(OpenDir);
     if (Flags & FTW_CHDIR) {
@@ -186,6 +199,7 @@ doMergedFtw(const cpp::string &DirPath, const CallbackWrapper &Fn, int FdLimit,
       if (DirentPtr == nullptr)
         break;
 
+      // Skip dot and dot-dot directories.
       if (DirentPtr->d_name[0] == '.') {
         if (DirentPtr->d_name[1] == '\0' ||
             (DirentPtr->d_name[1] == '.' && DirentPtr->d_name[2] == '\0'))
@@ -214,6 +228,7 @@ doMergedFtw(const cpp::string &DirPath, const CallbackWrapper &Fn, int FdLimit,
     OpenDir->close();
   }
 
+  // Post-order traversal: call callback AFTER descending.
   if ((Flags & FTW_DEPTH) && !SkipSubtree) {
     int Ret = Fn.call(DirPath.c_str(), &StatBuf, TypeFlag, &FtwBuf);
     if (Flags & FTW_ACTIONRETVAL) {
