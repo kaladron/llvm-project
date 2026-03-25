@@ -165,8 +165,19 @@ TEST_F(LlvmLibcNftwTest, DepthFirstFlag) {
   int result = LIBC_NAMESPACE::nftw("testdata", recordVisit, 10, FTW_DEPTH);
   ASSERT_EQ(result, 0);
 
-  // Should have visited files
-  EXPECT_GE(gVisited.Count, 1);
+  // Verify post-order traversal: contents before directory
+  int NestedIndex = -1;
+  int SubdirIndex = -1;
+  for (int i = 0; i < gVisited.Count; i++) {
+    string_view Path(gVisited.Paths[i]);
+    if (Path.ends_with("nested.txt"))
+      NestedIndex = i;
+    else if (Path.ends_with("subdir") && gVisited.Types[i] == FTW_DP)
+      SubdirIndex = i;
+  }
+  ASSERT_NE(NestedIndex, -1);
+  ASSERT_NE(SubdirIndex, -1);
+  EXPECT_LT(NestedIndex, SubdirIndex);
 }
 
 TEST_F(LlvmLibcNftwTest, PhysicalFlag) {
@@ -320,6 +331,52 @@ TEST_F(LlvmLibcNftwTest, ExcessiveDepthRespectsFdLimit) {
   int result = LIBC_NAMESPACE::nftw(path, recordVisit, 1, 0);
   EXPECT_EQ(result, -1);
   ASSERT_ERRNO_EQ(EMFILE);
+}
+TEST_F(LlvmLibcNftwTest, ActionRetValSkipSubtree) {
+  gVisited.reset();
+  auto callback = [](const char *Fpath, const struct stat *, int Typeflag,
+                     struct FTW *Ftwbuf) -> int {
+    gVisited.add(Fpath, Typeflag, Ftwbuf->level);
+    if (string_view(Fpath).ends_with("subdir"))
+      return FTW_SKIP_SUBTREE;
+    return FTW_CONTINUE;
+  };
+
+  int result = LIBC_NAMESPACE::nftw("testdata", callback, 10, FTW_ACTIONRETVAL);
+  ASSERT_EQ(result, 0);
+
+  bool FoundSubdir = false;
+  bool FoundNested = false;
+  for (int i = 0; i < gVisited.Count; i++) {
+    string_view Path(gVisited.Paths[i]);
+    if (Path.ends_with("subdir"))
+      FoundSubdir = true;
+    if (Path.ends_with("nested.txt"))
+      FoundNested = true;
+  }
+  EXPECT_TRUE(FoundSubdir);
+  EXPECT_FALSE(FoundNested);
+}
+
+TEST_F(LlvmLibcNftwTest, ActionRetValSkipSiblings) {
+  gVisited.reset();
+  auto callback = [](const char *Fpath, const struct stat *, int Typeflag,
+                     struct FTW *Ftwbuf) -> int {
+    gVisited.add(Fpath, Typeflag, Ftwbuf->level);
+    if (Ftwbuf->level == 1)
+      return FTW_SKIP_SIBLINGS;
+    return FTW_CONTINUE;
+  };
+
+  int result = LIBC_NAMESPACE::nftw("testdata", callback, 10, FTW_ACTIONRETVAL);
+  ASSERT_EQ(result, 0);
+
+  int Level1Count = 0;
+  for (int i = 0; i < gVisited.Count; i++) {
+    if (gVisited.Levels[i] == 1)
+      Level1Count++;
+  }
+  EXPECT_EQ(Level1Count, 1);
 }
 
 } // namespace LIBC_NAMESPACE

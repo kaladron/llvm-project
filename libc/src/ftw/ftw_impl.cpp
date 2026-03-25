@@ -144,17 +144,8 @@ doMergedFtw(const cpp::string &DirPath, const CallbackWrapper &Fn, int FdLimit,
     }
   }
 
-  if (TypeFlag != FTW_D && TypeFlag != FTW_DP) {
-    int Ret = Fn.call(DirPath.c_str(), &StatBuf, TypeFlag, &FtwBuf);
-    if (Ret != 0) {
-      if (Flags & FTW_ACTIONRETVAL) {
-        if (Ret == FTW_SKIP_SUBTREE || Ret == FTW_SKIP_SIBLINGS)
-          return Ret;
-      }
-      return Ret;
-    }
-    return 0;
-  }
+  if (TypeFlag != FTW_D && TypeFlag != FTW_DP)
+    return Fn.call(DirPath.c_str(), &StatBuf, TypeFlag, &FtwBuf);
 
   if (!(Flags & FTW_DEPTH)) {
     int Ret = Fn.call(DirPath.c_str(), &StatBuf, TypeFlag, &FtwBuf);
