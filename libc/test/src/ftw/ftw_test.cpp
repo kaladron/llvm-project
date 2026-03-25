@@ -125,14 +125,14 @@ static int simpleCallback(const char *Fpath, const struct stat *Sb,
 // Use static test directory that exists
 TEST_F(LlvmLibcFtwTest, BasicTraversalWithTestData) {
   // First make sure testdata directory exists
-  ::DIR *Dir = LIBC_NAMESPACE::opendir("testdata");
+  ::DIR *Dir = LIBC_NAMESPACE::opendir(libc_make_test_file_path("testdata"));
   if (Dir == nullptr) {
     // Skip test if testdata doesn't exist
     return;
   }
   LIBC_NAMESPACE::closedir(Dir);
 
-  int Result = ftw("testdata", simpleCallback, 10);
+  int Result = ftw(libc_make_test_file_path("testdata"), simpleCallback, 10);
   ASSERT_EQ(Result, 0);
 }
 
@@ -145,7 +145,7 @@ TEST_F(LlvmLibcFtwTest, NonexistentPath) {
 
 TEST_F(LlvmLibcNftwTest, BasicTraversalWithTestData) {
   gVisited.reset();
-  int result = LIBC_NAMESPACE::nftw("testdata", recordVisit, 10, 0);
+  int result = LIBC_NAMESPACE::nftw(libc_make_test_file_path("testdata"), recordVisit, 10, 0);
   ASSERT_EQ(result, 0);
 
   // Should have visited some files
@@ -162,7 +162,7 @@ TEST_F(LlvmLibcNftwTest, NonexistentPath) {
 
 TEST_F(LlvmLibcNftwTest, DepthFirstFlag) {
   gVisited.reset();
-  int result = LIBC_NAMESPACE::nftw("testdata", recordVisit, 10, FTW_DEPTH);
+  int result = LIBC_NAMESPACE::nftw(libc_make_test_file_path("testdata"), recordVisit, 10, FTW_DEPTH);
   ASSERT_EQ(result, 0);
 
   // Verify post-order traversal: contents before directory
@@ -182,7 +182,7 @@ TEST_F(LlvmLibcNftwTest, DepthFirstFlag) {
 
 TEST_F(LlvmLibcNftwTest, PhysicalFlag) {
   gVisited.reset();
-  int result = LIBC_NAMESPACE::nftw("testdata", recordVisit, 10, FTW_PHYS);
+  int result = LIBC_NAMESPACE::nftw(libc_make_test_file_path("testdata"), recordVisit, 10, FTW_PHYS);
   ASSERT_EQ(result, 0);
 
   // Should have visited files
@@ -194,7 +194,7 @@ TEST_F(LlvmLibcNftwTest, CallbackCanStopTraversal) {
   // Use a callback that returns non-zero
   auto stopImmediately = [](const char *, const struct stat *, int,
                             struct FTW *) -> int { return 42; };
-  int result = LIBC_NAMESPACE::nftw("testdata", stopImmediately, 10, 0);
+  int result = LIBC_NAMESPACE::nftw(libc_make_test_file_path("testdata"), stopImmediately, 10, 0);
   // nftw should return the callback's return value
   EXPECT_EQ(result, 42);
 }
@@ -211,7 +211,7 @@ TEST_F(LlvmLibcNftwTest, ChdirFlag) {
     return 0;
   };
 
-  int result = LIBC_NAMESPACE::nftw("testdata", checkCwd, 10, FTW_CHDIR);
+  int result = LIBC_NAMESPACE::nftw(libc_make_test_file_path("testdata"), checkCwd, 10, FTW_CHDIR);
   ASSERT_EQ(result, 0);
 
   char final_cwd[1024];
@@ -222,7 +222,7 @@ TEST_F(LlvmLibcNftwTest, ChdirFlag) {
 
 TEST_F(LlvmLibcFtwTest, DanglingSymlinkMapping) {
   // Create a dangling symlink: link -> nonexistent
-  const char *linkName = "testdata/dangling_link";
+  auto linkName = libc_make_test_file_path("testdata/dangling_link");
   LIBC_NAMESPACE::unlink(linkName);
   ASSERT_EQ(LIBC_NAMESPACE::symlink("nonexistent_target", linkName), 0);
 
@@ -323,7 +323,7 @@ TEST_F(LlvmLibcNftwTest, NoSearchPermission) {
 
 TEST_F(LlvmLibcNftwTest, ExcessiveDepthRespectsFdLimit) {
   // Creating a path with depth > 2
-  const char *path = "testdata";
+  auto path = libc_make_test_file_path("testdata");
   // If we specify fdLimit = 1, it should fail with EMFILE when trying to iterate
   // subdir, or even when visiting files in testdata because of how recursion works.
   // level 0 (testdata): fdLimit=1. Continue.
@@ -342,7 +342,7 @@ TEST_F(LlvmLibcNftwTest, ActionRetValSkipSubtree) {
     return FTW_CONTINUE;
   };
 
-  int result = LIBC_NAMESPACE::nftw("testdata", callback, 10, FTW_ACTIONRETVAL);
+  int result = LIBC_NAMESPACE::nftw(libc_make_test_file_path("testdata"), callback, 10, FTW_ACTIONRETVAL);
   ASSERT_EQ(result, 0);
 
   bool FoundSubdir = false;
@@ -368,7 +368,7 @@ TEST_F(LlvmLibcNftwTest, ActionRetValSkipSiblings) {
     return FTW_CONTINUE;
   };
 
-  int result = LIBC_NAMESPACE::nftw("testdata", callback, 10, FTW_ACTIONRETVAL);
+  int result = LIBC_NAMESPACE::nftw(libc_make_test_file_path("testdata"), callback, 10, FTW_ACTIONRETVAL);
   ASSERT_EQ(result, 0);
 
   int Level1Count = 0;
