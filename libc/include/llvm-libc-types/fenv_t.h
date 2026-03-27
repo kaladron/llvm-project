@@ -25,6 +25,8 @@ typedef struct {
 } fenv_t;
 #elif defined(__riscv)
 typedef unsigned int fenv_t;
+#elif defined(__powerpc__) || defined(__PPC__) || defined(__PPC64__)
+typedef unsigned int fenv_t;
 #elif defined(__AMDGPU__) || defined(__NVPTX__) || defined(__SPIRV__)
 typedef struct {
   unsigned int __fpc;

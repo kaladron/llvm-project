@@ -58,6 +58,10 @@
 #define LIBC_TARGET_ARCH_IS_ANY_ARM
 #endif
 
+#if defined(__powerpc__) || defined(__PPC__) || defined(__PPC64__)
+#define LIBC_TARGET_ARCH_IS_POWER
+#endif
+
 #if defined(__riscv) && (__riscv_xlen == 64)
 #define LIBC_TARGET_ARCH_IS_RISCV64
 #endif

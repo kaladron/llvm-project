@@ -25,6 +25,8 @@
 #include "arm/syscall.h"
 #elif defined(LIBC_TARGET_ARCH_IS_ANY_RISCV)
 #include "riscv/syscall.h"
+#elif defined(LIBC_TARGET_ARCH_IS_POWER)
+#include "power/syscall.h"
 #endif
 
 namespace LIBC_NAMESPACE_DECL {
