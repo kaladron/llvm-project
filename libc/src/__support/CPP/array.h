@@ -16,13 +16,15 @@
 #include "src/__support/macros/config.h"
 #include <stddef.h>
 
+#define _LIBC_SUPPORT_HIDE_FROM_ABI [[gnu::visibility("hidden")]]
+#define _LIBC_SUPPORT_INLINE_VISIBILITY [[gnu::visibility("hidden")]] inline
 
 namespace LIBC_NAMESPACE_DECL {
 namespace cpp {
 
 // Minimal implementations of needed algorithms
 template <class InputIt1, class InputIt2>
-constexpr bool equal(InputIt1 first1, InputIt1 last1, InputIt2 first2) {
+_LIBC_SUPPORT_HIDE_FROM_ABI constexpr bool equal(InputIt1 first1, InputIt1 last1, InputIt2 first2) {
   for (; first1 != last1; ++first1, ++first2) {
     if (!(*first1 == *first2)) {
       return false;
@@ -32,7 +34,7 @@ constexpr bool equal(InputIt1 first1, InputIt1 last1, InputIt2 first2) {
 }
 
 template <class OutputIt, class Size, class T>
-constexpr OutputIt fill_n(OutputIt first, Size n, const T& value) {
+_LIBC_SUPPORT_HIDE_FROM_ABI constexpr OutputIt fill_n(OutputIt first, Size n, const T& value) {
   for (Size i = 0; i < n; ++first, ++i) {
     *first = value;
   }
@@ -40,7 +42,7 @@ constexpr OutputIt fill_n(OutputIt first, Size n, const T& value) {
 }
 
 template <class InputIt1, class InputIt2>
-constexpr bool lexicographical_compare(InputIt1 first1, InputIt1 last1,
+_LIBC_SUPPORT_HIDE_FROM_ABI constexpr bool lexicographical_compare(InputIt1 first1, InputIt1 last1,
                                        InputIt2 first2, InputIt2 last2) {
   for (; (first1 != last1) && (first2 != last2); ++first1, ++first2) {
     if (*first1 < *first2)
@@ -52,7 +54,7 @@ constexpr bool lexicographical_compare(InputIt1 first1, InputIt1 last1,
 }
 
 template <class ForwardIt1, class ForwardIt2>
-constexpr ForwardIt2 swap_ranges(ForwardIt1 first1, ForwardIt1 last1, ForwardIt2 first2) {
+_LIBC_SUPPORT_HIDE_FROM_ABI constexpr ForwardIt2 swap_ranges(ForwardIt1 first1, ForwardIt1 last1, ForwardIt2 first2) {
   for (; first1 != last1; ++first1, ++first2) {
     auto tmp = *first1;
     *first1 = *first2;
@@ -82,86 +84,86 @@ struct array {
   _Tp __elems_[_Size];
 
   // No explicit construct/copy/destroy for aggregate type
-  constexpr void fill(const value_type& __u) {
+  _LIBC_SUPPORT_HIDE_FROM_ABI constexpr void fill(const value_type& __u) {
     fill_n(data(), _Size, __u);
   }
 
-  constexpr void swap(array& __a) {
+  _LIBC_SUPPORT_HIDE_FROM_ABI constexpr void swap(array& __a) {
     swap_ranges(data(), data() + _Size, __a.data());
   }
 
   // iterators:
-  constexpr iterator begin() noexcept {
+  _LIBC_SUPPORT_HIDE_FROM_ABI constexpr iterator begin() noexcept {
     return data();
   }
-  constexpr const_iterator begin() const noexcept {
+  _LIBC_SUPPORT_HIDE_FROM_ABI constexpr const_iterator begin() const noexcept {
     return data();
   }
 
-  constexpr iterator end() noexcept {
+  _LIBC_SUPPORT_HIDE_FROM_ABI constexpr iterator end() noexcept {
     return data() + _Size;
   }
-  constexpr const_iterator end() const noexcept {
+  _LIBC_SUPPORT_HIDE_FROM_ABI constexpr const_iterator end() const noexcept {
     return data() + _Size;
   }
 
 
-  constexpr reverse_iterator rbegin() noexcept {
+  _LIBC_SUPPORT_HIDE_FROM_ABI constexpr reverse_iterator rbegin() noexcept {
     return reverse_iterator(end());
   }
-  constexpr const_reverse_iterator rbegin() const noexcept {
+  _LIBC_SUPPORT_HIDE_FROM_ABI constexpr const_reverse_iterator rbegin() const noexcept {
     return const_reverse_iterator(end());
   }
-  constexpr reverse_iterator rend() noexcept {
+  _LIBC_SUPPORT_HIDE_FROM_ABI constexpr reverse_iterator rend() noexcept {
     return reverse_iterator(begin());
   }
-  constexpr const_reverse_iterator rend() const noexcept {
+  _LIBC_SUPPORT_HIDE_FROM_ABI constexpr const_reverse_iterator rend() const noexcept {
     return const_reverse_iterator(begin());
   }
 
-  constexpr const_iterator cbegin() const noexcept {
+  _LIBC_SUPPORT_HIDE_FROM_ABI constexpr const_iterator cbegin() const noexcept {
     return begin();
   }
-  constexpr const_iterator cend() const noexcept {
+  _LIBC_SUPPORT_HIDE_FROM_ABI constexpr const_iterator cend() const noexcept {
     return end();
   }
-  constexpr const_reverse_iterator crbegin() const noexcept {
+  _LIBC_SUPPORT_HIDE_FROM_ABI constexpr const_reverse_iterator crbegin() const noexcept {
     return rbegin();
   }
-  constexpr const_reverse_iterator crend() const noexcept {
+  _LIBC_SUPPORT_HIDE_FROM_ABI constexpr const_reverse_iterator crend() const noexcept {
     return rend();
   }
 
   // capacity:
-  constexpr size_type size() const noexcept { return _Size; }
-  constexpr size_type max_size() const noexcept { return _Size; }
-  constexpr bool empty() const noexcept { return _Size == 0; }
+  _LIBC_SUPPORT_HIDE_FROM_ABI constexpr size_type size() const noexcept { return _Size; }
+  _LIBC_SUPPORT_HIDE_FROM_ABI constexpr size_type max_size() const noexcept { return _Size; }
+  _LIBC_SUPPORT_HIDE_FROM_ABI constexpr bool empty() const noexcept { return _Size == 0; }
 
   // element access:
-  constexpr reference operator[](size_type __n) noexcept {
+  _LIBC_SUPPORT_HIDE_FROM_ABI constexpr reference operator[](size_type __n) noexcept {
     return __elems_[__n];
   }
-  constexpr const_reference operator[](size_type __n) const noexcept {
+  _LIBC_SUPPORT_HIDE_FROM_ABI constexpr const_reference operator[](size_type __n) const noexcept {
     return __elems_[__n];
   }
 
-  constexpr reference front() noexcept {
+  _LIBC_SUPPORT_HIDE_FROM_ABI constexpr reference front() noexcept {
     return __elems_[0];
   }
-  constexpr const_reference front() const noexcept {
+  _LIBC_SUPPORT_HIDE_FROM_ABI constexpr const_reference front() const noexcept {
     return __elems_[0];
   }
-  constexpr reference back() noexcept {
+  _LIBC_SUPPORT_HIDE_FROM_ABI constexpr reference back() noexcept {
     return __elems_[_Size - 1];
   }
-  constexpr const_reference back() const noexcept {
+  _LIBC_SUPPORT_HIDE_FROM_ABI constexpr const_reference back() const noexcept {
     return __elems_[_Size - 1];
   }
 
-  constexpr value_type* data() noexcept {
+  _LIBC_SUPPORT_HIDE_FROM_ABI constexpr value_type* data() noexcept {
     return __elems_;
   }
-  constexpr const value_type* data() const noexcept {
+  _LIBC_SUPPORT_HIDE_FROM_ABI constexpr const value_type* data() const noexcept {
     return __elems_;
   }
 
@@ -170,42 +172,39 @@ struct array {
 
 
 template <class _Tp, size_t _Size>
-constexpr bool operator==(const array<_Tp, _Size>& __x, const array<_Tp, _Size>& __y) {
+_LIBC_SUPPORT_HIDE_FROM_ABI constexpr bool operator==(const array<_Tp, _Size>& __x, const array<_Tp, _Size>& __y) {
   return equal(__x.begin(), __x.end(), __y.begin());
 }
 
 template <class _Tp, size_t _Size>
-constexpr bool operator!=(const array<_Tp, _Size>& __x, const array<_Tp, _Size>& __y) {
+_LIBC_SUPPORT_HIDE_FROM_ABI constexpr bool operator!=(const array<_Tp, _Size>& __x, const array<_Tp, _Size>& __y) {
   return !(__x == __y);
 }
 
 template <class _Tp, size_t _Size>
-constexpr bool operator<(const array<_Tp, _Size>& __x, const array<_Tp, _Size>& __y) {
+_LIBC_SUPPORT_HIDE_FROM_ABI constexpr bool operator<(const array<_Tp, _Size>& __x, const array<_Tp, _Size>& __y) {
   return lexicographical_compare(__x.begin(), __x.end(), __y.begin(), __y.end());
 }
 
 template <class _Tp, size_t _Size>
-constexpr bool operator>(const array<_Tp, _Size>& __x, const array<_Tp, _Size>& __y) {
+_LIBC_SUPPORT_HIDE_FROM_ABI constexpr bool operator>(const array<_Tp, _Size>& __x, const array<_Tp, _Size>& __y) {
   return __y < __x;
 }
 
 template <class _Tp, size_t _Size>
-constexpr bool operator<=(const array<_Tp, _Size>& __x, const array<_Tp, _Size>& __y) {
+_LIBC_SUPPORT_HIDE_FROM_ABI constexpr bool operator<=(const array<_Tp, _Size>& __x, const array<_Tp, _Size>& __y) {
   return !(__y < __x);
 }
 
 template <class _Tp, size_t _Size>
-constexpr bool operator>=(const array<_Tp, _Size>& __x, const array<_Tp, _Size>& __y) {
+_LIBC_SUPPORT_HIDE_FROM_ABI constexpr bool operator>=(const array<_Tp, _Size>& __x, const array<_Tp, _Size>& __y) {
   return !(__x < __y);
 }
 
 template <class _Tp, size_t _Size>
-constexpr void swap(array<_Tp, _Size>& __x, array<_Tp, _Size>& __y) {
+_LIBC_SUPPORT_HIDE_FROM_ABI constexpr void swap(array<_Tp, _Size>& __x, array<_Tp, _Size>& __y) {
   __x.swap(__y);
 }
-
-
-
 
 } // namespace cpp
 } // namespace LIBC_NAMESPACE_DECL
