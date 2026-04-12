@@ -9,70 +9,203 @@
 #ifndef LLVM_LIBC_SRC___SUPPORT_CPP_ARRAY_H
 #define LLVM_LIBC_SRC___SUPPORT_CPP_ARRAY_H
 
-#include "src/__support/CPP/iterator.h" // reverse_iterator
+#include "src/__support/CPP/type_traits.h"
+#include "src/__support/CPP/utility.h"
+#include "src/__support/CPP/iterator.h"
 #include "src/__support/macros/attributes.h"
 #include "src/__support/macros/config.h"
-#include <stddef.h> // For size_t.
+#include <stddef.h>
+
 
 namespace LIBC_NAMESPACE_DECL {
 namespace cpp {
 
-template <class T, size_t N> struct array {
-  static_assert(N != 0,
-                "Cannot create a LIBC_NAMESPACE::cpp::array of size 0.");
+// Minimal implementations of needed algorithms
+template <class InputIt1, class InputIt2>
+constexpr bool equal(InputIt1 first1, InputIt1 last1, InputIt2 first2) {
+  for (; first1 != last1; ++first1, ++first2) {
+    if (!(*first1 == *first2)) {
+      return false;
+    }
+  }
+  return true;
+}
 
-  T Data[N];
-  using value_type = T;
-  using iterator = T *;
-  using const_iterator = const T *;
-  using reverse_iterator = cpp::reverse_iterator<iterator>;
+template <class OutputIt, class Size, class T>
+constexpr OutputIt fill_n(OutputIt first, Size n, const T& value) {
+  for (Size i = 0; i < n; ++first, ++i) {
+    *first = value;
+  }
+  return first;
+}
+
+template <class InputIt1, class InputIt2>
+constexpr bool lexicographical_compare(InputIt1 first1, InputIt1 last1,
+                                       InputIt2 first2, InputIt2 last2) {
+  for (; (first1 != last1) && (first2 != last2); ++first1, ++first2) {
+    if (*first1 < *first2)
+      return true;
+    if (*first2 < *first1)
+      return false;
+  }
+  return (first1 == last1) && (first2 != last2);
+}
+
+template <class ForwardIt1, class ForwardIt2>
+constexpr ForwardIt2 swap_ranges(ForwardIt1 first1, ForwardIt1 last1, ForwardIt2 first2) {
+  for (; first1 != last1; ++first1, ++first2) {
+    auto tmp = *first1;
+    *first1 = *first2;
+    *first2 = tmp;
+  }
+  return first2;
+}
+
+
+template <class _Tp, size_t _Size>
+struct array {
+  // types:
+  using value_type             = _Tp;
+  using reference              = value_type&;
+  using const_reference        = const value_type&;
+  using pointer                = value_type*;
+  using const_pointer          = const value_type*;
+  using iterator               = pointer;
+  using const_iterator         = const_pointer;
+  using size_type              = size_t;
+  using difference_type        = ptrdiff_t;
+  using reverse_iterator       = cpp::reverse_iterator<iterator>;
   using const_reverse_iterator = cpp::reverse_iterator<const_iterator>;
 
-  LIBC_INLINE constexpr T *data() { return Data; }
-  LIBC_INLINE constexpr const T *data() const { return Data; }
 
-  LIBC_INLINE constexpr T &front() { return Data[0]; }
-  LIBC_INLINE constexpr const T &front() const { return Data[0]; }
 
-  LIBC_INLINE constexpr T &back() { return Data[N - 1]; }
-  LIBC_INLINE constexpr const T &back() const { return Data[N - 1]; }
+  _Tp __elems_[_Size];
 
-  LIBC_INLINE constexpr T &operator[](size_t Index) { return Data[Index]; }
-
-  LIBC_INLINE constexpr const T &operator[](size_t Index) const {
-    return Data[Index];
+  // No explicit construct/copy/destroy for aggregate type
+  constexpr void fill(const value_type& __u) {
+    fill_n(data(), _Size, __u);
   }
 
-  LIBC_INLINE constexpr size_t size() const { return N; }
-
-  LIBC_INLINE constexpr bool empty() const { return N == 0; }
-
-  LIBC_INLINE constexpr iterator begin() { return Data; }
-  LIBC_INLINE constexpr const_iterator begin() const { return Data; }
-  LIBC_INLINE constexpr const_iterator cbegin() const { return begin(); }
-
-  LIBC_INLINE constexpr iterator end() { return Data + N; }
-  LIBC_INLINE constexpr const_iterator end() const { return Data + N; }
-  LIBC_INLINE constexpr const_iterator cend() const { return end(); }
-
-  LIBC_INLINE constexpr reverse_iterator rbegin() {
-    return reverse_iterator{end()};
+  constexpr void swap(array& __a) {
+    swap_ranges(data(), data() + _Size, __a.data());
   }
-  LIBC_INLINE constexpr const_reverse_iterator rbegin() const {
-    return const_reverse_iterator{end()};
+
+  // iterators:
+  constexpr iterator begin() noexcept {
+    return data();
   }
-  LIBC_INLINE constexpr const_reverse_iterator crbegin() const {
+  constexpr const_iterator begin() const noexcept {
+    return data();
+  }
+
+  constexpr iterator end() noexcept {
+    return data() + _Size;
+  }
+  constexpr const_iterator end() const noexcept {
+    return data() + _Size;
+  }
+
+
+  constexpr reverse_iterator rbegin() noexcept {
+    return reverse_iterator(end());
+  }
+  constexpr const_reverse_iterator rbegin() const noexcept {
+    return const_reverse_iterator(end());
+  }
+  constexpr reverse_iterator rend() noexcept {
+    return reverse_iterator(begin());
+  }
+  constexpr const_reverse_iterator rend() const noexcept {
+    return const_reverse_iterator(begin());
+  }
+
+  constexpr const_iterator cbegin() const noexcept {
+    return begin();
+  }
+  constexpr const_iterator cend() const noexcept {
+    return end();
+  }
+  constexpr const_reverse_iterator crbegin() const noexcept {
     return rbegin();
   }
+  constexpr const_reverse_iterator crend() const noexcept {
+    return rend();
+  }
 
-  LIBC_INLINE constexpr reverse_iterator rend() {
-    return reverse_iterator{begin()};
+  // capacity:
+  constexpr size_type size() const noexcept { return _Size; }
+  constexpr size_type max_size() const noexcept { return _Size; }
+  constexpr bool empty() const noexcept { return _Size == 0; }
+
+  // element access:
+  constexpr reference operator[](size_type __n) noexcept {
+    return __elems_[__n];
   }
-  LIBC_INLINE constexpr const_reverse_iterator rend() const {
-    return const_reverse_iterator{begin()};
+  constexpr const_reference operator[](size_type __n) const noexcept {
+    return __elems_[__n];
   }
-  LIBC_INLINE constexpr const_reverse_iterator crend() const { return rend(); }
+
+  constexpr reference front() noexcept {
+    return __elems_[0];
+  }
+  constexpr const_reference front() const noexcept {
+    return __elems_[0];
+  }
+  constexpr reference back() noexcept {
+    return __elems_[_Size - 1];
+  }
+  constexpr const_reference back() const noexcept {
+    return __elems_[_Size - 1];
+  }
+
+  constexpr value_type* data() noexcept {
+    return __elems_;
+  }
+  constexpr const value_type* data() const noexcept {
+    return __elems_;
+  }
+
 };
+
+
+
+template <class _Tp, size_t _Size>
+constexpr bool operator==(const array<_Tp, _Size>& __x, const array<_Tp, _Size>& __y) {
+  return equal(__x.begin(), __x.end(), __y.begin());
+}
+
+template <class _Tp, size_t _Size>
+constexpr bool operator!=(const array<_Tp, _Size>& __x, const array<_Tp, _Size>& __y) {
+  return !(__x == __y);
+}
+
+template <class _Tp, size_t _Size>
+constexpr bool operator<(const array<_Tp, _Size>& __x, const array<_Tp, _Size>& __y) {
+  return lexicographical_compare(__x.begin(), __x.end(), __y.begin(), __y.end());
+}
+
+template <class _Tp, size_t _Size>
+constexpr bool operator>(const array<_Tp, _Size>& __x, const array<_Tp, _Size>& __y) {
+  return __y < __x;
+}
+
+template <class _Tp, size_t _Size>
+constexpr bool operator<=(const array<_Tp, _Size>& __x, const array<_Tp, _Size>& __y) {
+  return !(__y < __x);
+}
+
+template <class _Tp, size_t _Size>
+constexpr bool operator>=(const array<_Tp, _Size>& __x, const array<_Tp, _Size>& __y) {
+  return !(__x < __y);
+}
+
+template <class _Tp, size_t _Size>
+constexpr void swap(array<_Tp, _Size>& __x, array<_Tp, _Size>& __y) {
+  __x.swap(__y);
+}
+
+
+
 
 } // namespace cpp
 } // namespace LIBC_NAMESPACE_DECL
