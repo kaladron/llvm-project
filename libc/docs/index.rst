@@ -94,6 +94,7 @@ levels.  See :doc:`contributing` to learn how to help.
 
    contributing
    build_and_test
+   code_coverage
    dev/index.rst
    porting
    Maintainers

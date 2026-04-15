@@ -13,13 +13,17 @@
 LIBC_NAMESPACE::Mutex mutex(/*timed=*/false, /*recursive=*/false,
                             /*robust=*/false, /*pshared=*/false);
 
+volatile bool thread_finished = false;
+
 int func(void *) {
   mutex.lock();
   mutex.unlock();
+  thread_finished = true;
   return 0;
 }
 
 void detach_simple_test() {
+  thread_finished = false;
   mutex.lock();
   LIBC_NAMESPACE::Thread th;
   th.run(func, nullptr, nullptr, 0);
@@ -31,6 +35,11 @@ void detach_simple_test() {
 
   // We will release |mutex| now to let the thread finish an cleanup itself.
   mutex.unlock();
+
+  // Wait for the detached thread to finish to avoid race condition at exit.
+  while (!thread_finished) {
+    // Busy wait.
+  }
 }
 
 void detach_cleanup_test() {

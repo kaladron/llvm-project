@@ -69,13 +69,17 @@ else()
   set(test_logger_osutil "libc.src.__support.OSUtil.osutil")
 endif()
 
+set(libc_test_srcs
+  CmakeFilePath.cpp
+  LibcTest.cpp
+  LibcTestMain.cpp
+  TestLogger.cpp
+)
+
 add_unittest_framework_library(
   LibcTest
   SRCS
-    CmakeFilePath.cpp
-    LibcTest.cpp
-    LibcTestMain.cpp
-    TestLogger.cpp
+    ${libc_test_srcs}
   HDRS
     LibcTest.h
     Test.h

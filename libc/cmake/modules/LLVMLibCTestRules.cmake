@@ -70,6 +70,28 @@ function(_get_common_test_compile_options output_var c_test flags)
   set(${output_var} ${compile_options} PARENT_SCOPE)
 endfunction()
 
+if(LIBC_ENABLE_COVERAGE)
+  # Common dependencies required by the compiler-rt profile runtime (e.g.,
+  # InstrProfiling.c) for functionality like filename expansion, environment
+  # lookup, and memory allocation.
+  set(LIBC_COVERAGE_COMMON_DEPS
+      libc.src.stdio.vfprintf
+      libc.src.stdio.vsnprintf
+      libc.src.sys.stat.mkdir
+      libc.src.sys.utsname.uname
+      libc.src.string.strncpy
+      libc.src.unistd.getpid
+      libc.src.fcntl.fcntl
+      libc.src.fcntl.open
+      libc.src.stdlib.getenv
+      libc.src.string.strlen
+      libc.src.string.strchr
+      libc.src.string.strrchr
+      libc.src.stdlib.calloc
+      libc.src.stdlib.strtol
+  )
+endif()
+
 function(_get_hermetic_test_compile_options output_var)
   _get_common_test_compile_options(compile_options "" "")
   libc_add_definition(compile_options "LIBC_TEST=HERMETIC")
@@ -243,6 +265,17 @@ function(create_libc_unittest fq_target_name)
     list(APPEND fq_deps_list libc.src.__support.StringUtil.error_to_string
                              libc.test.UnitTest.ErrnoSetterMatcher)
   endif()
+  if(LIBC_ENABLE_COVERAGE)
+    # Add common dependencies plus additional ones required by the hosted 
+    # profile runtime for file locking, process control, and memory management.
+    list(APPEND fq_deps_list
+         ${LIBC_COVERAGE_COMMON_DEPS}
+         libc.src.stdio.fileno
+         libc.src.sys.prctl.prctl
+         libc.src.unistd.getpagesize
+         libc.src.sys.mman.madvise
+    )
+  endif()
   list(REMOVE_DUPLICATES fq_deps_list)
 
   _get_common_test_compile_options(compile_options "${LIBC_UNITTEST_C_TEST}"
@@ -346,9 +379,13 @@ function(create_libc_unittest fq_target_name)
   target_link_libraries(${fq_build_target_name} PRIVATE ${link_libraries})
 
   if(NOT LIBC_UNITTEST_NO_RUN_POSTBUILD)
+    set(test_env ${LIBC_UNITTEST_ENV})
+    if(LIBC_ENABLE_COVERAGE)
+      list(APPEND test_env "LLVM_PROFILE_FILE=default-%p.profraw")
+    endif()
     add_custom_target(
       ${fq_target_name}
-      COMMAND ${LIBC_UNITTEST_ENV} ${CMAKE_CROSSCOMPILING_EMULATOR} ${CMAKE_CURRENT_BINARY_DIR}/${fq_build_target_name}
+      COMMAND ${test_env} ${CMAKE_CROSSCOMPILING_EMULATOR} ${CMAKE_CURRENT_BINARY_DIR}/${fq_build_target_name}
       COMMENT "Running unit test ${fq_target_name}"
       DEPENDS ${fq_build_target_name}
     )
@@ -523,6 +560,7 @@ function(add_integration_test test_name)
   if(NOT INTEGRATION_TEST_SRCS)
     message(FATAL_ERROR "The SRCS list for add_integration_test is missing.")
   endif()
+
   if(NOT LLVM_LIBC_FULL_BUILD AND NOT TARGET libc.startup.${LIBC_TARGET_OS}.crt1)
     message(FATAL_ERROR "The 'crt1' target for the integration test is missing.")
   endif()
@@ -549,6 +587,13 @@ function(add_integration_test test_name)
     # __stack_chk_fail should always be included if supported to allow building
     # libc with the stack protector enabled.
     list(APPEND fq_deps_list libc.src.compiler.__stack_chk_fail)
+  endif()
+
+  if(LIBC_ENABLE_COVERAGE)
+    # Add common dependencies required by the profile runtime.
+    list(APPEND fq_deps_list
+      ${LIBC_COVERAGE_COMMON_DEPS}
+    )
   endif()
 
   list(REMOVE_DUPLICATES fq_deps_list)
@@ -594,6 +639,9 @@ function(add_integration_test test_name)
   _get_hermetic_test_compile_options(compile_options "")
   target_compile_options(${fq_build_target_name} PRIVATE
                          ${compile_options} ${INTEGRATION_TEST_COMPILE_OPTIONS})
+  if(LIBC_ENABLE_COVERAGE)
+    target_compile_options(${fq_build_target_name} PRIVATE -fno-profile-instr-generate -fno-coverage-mapping)
+  endif()
 
   set(compiler_runtime "")
 
@@ -618,6 +666,10 @@ function(add_integration_test test_name)
       ${LIBC_LINK_OPTIONS_DEFAULT}
       ${LIBC_TEST_LINK_OPTIONS_DEFAULT}
     )
+    if(LIBC_ENABLE_COVERAGE)
+      list(APPEND link_options "-noprofilelib")
+      list(APPEND link_options "-Wl,--allow-multiple-definition")
+    endif()
     target_link_options(${fq_build_target_name} PRIVATE ${link_options})
   else()
     # Older version of gcc does not support `nostdlib++` flag.  We use
@@ -629,14 +681,23 @@ function(add_integration_test test_name)
       ${LIBC_LINK_OPTIONS_DEFAULT}
       ${LIBC_TEST_LINK_OPTIONS_DEFAULT}
     )
+    if(LIBC_ENABLE_COVERAGE)
+      list(APPEND link_options "-noprofilelib")
+      list(APPEND link_options "-Wl,--allow-multiple-definition")
+    endif()
     target_link_options(${fq_build_target_name} PRIVATE ${link_options})
     list(APPEND compiler_runtime ${LIBGCC_S_LOCATION})
+  endif()
+  set(profile_lib)
+  if(LIBC_ENABLE_COVERAGE)
+    set(profile_lib libc.test.IntegrationTest.profile_baremetal)
   endif()
   target_link_libraries(
     ${fq_build_target_name}
     libc.startup.${LIBC_TARGET_OS}.crt1
     libc.test.IntegrationTest.test
     ${fq_target_name}.__libc__
+    ${profile_lib}
     ${compiler_runtime}
   )
   add_dependencies(${fq_build_target_name}
@@ -747,8 +808,16 @@ function(add_libc_hermetic test_name)
       # Hermetic tests use the platform's startup object. So, their deps also
       # have to be collected.
       libc.startup.${LIBC_TARGET_OS}.crt1
-      # We always add the memory functions objects. This is because the
-      # compiler's codegen can emit calls to the C memory functions.
+  )
+  if(LIBC_ENABLE_COVERAGE)
+    # Add common dependencies required by the profile runtime.
+    list(APPEND fq_deps_list
+      ${LIBC_COVERAGE_COMMON_DEPS}
+    )
+  endif()
+  # We always add the memory functions objects. This is because the
+  # compiler's codegen can emit calls to the C memory functions.
+  list(APPEND fq_deps_list
       libc.src.__support.StringUtil.error_to_string
       libc.src.string.memcmp
       libc.src.string.memcpy
@@ -857,6 +926,9 @@ function(add_libc_hermetic test_name)
       ${LIBC_LINK_OPTIONS_DEFAULT}
       ${LIBC_TEST_LINK_OPTIONS_DEFAULT}
     )
+    if(LIBC_ENABLE_COVERAGE)
+      list(APPEND link_options "LINKER:--whole-archive")
+    endif()
     target_link_options(${fq_build_target_name} PRIVATE ${link_options})
   else()
     # Older version of gcc does not support `nostdlib++` flag.  We use
@@ -871,15 +943,31 @@ function(add_libc_hermetic test_name)
     target_link_options(${fq_build_target_name} PRIVATE ${link_options})
     list(APPEND compiler_runtime ${LIBGCC_S_LOCATION})
   endif()
-  target_link_libraries(
-    ${fq_build_target_name}
-    PRIVATE
-      libc.startup.${LIBC_TARGET_OS}.crt1
-      ${link_libraries}
-      LibcHermeticTestSupport.hermetic
-      ${fq_target_name}.__libc__
-      ${compiler_runtime}
-    )
+
+  set(libc_lib ${fq_target_name}.__libc__)
+
+  if(LIBC_ENABLE_COVERAGE AND NOT LIBC_TARGET_ARCHITECTURE_IS_AMDGPU AND NOT LIBC_TARGET_ARCHITECTURE_IS_NVPTX)
+    target_link_libraries(
+      ${fq_build_target_name}
+      PRIVATE
+        libc.startup.${LIBC_TARGET_OS}.crt1
+        ${link_libraries}
+        LibcHermeticTestSupport.hermetic
+        ${compiler_runtime}
+      )
+    target_link_options(${fq_build_target_name} PRIVATE "-Wl,--whole-archive" "$<TARGET_FILE:${libc_lib}>" "-Wl,--no-whole-archive")
+    add_dependencies(${fq_build_target_name} ${libc_lib})
+  else()
+    target_link_libraries(
+      ${fq_build_target_name}
+      PRIVATE
+        libc.startup.${LIBC_TARGET_OS}.crt1
+        ${link_libraries}
+        LibcHermeticTestSupport.hermetic
+        ${libc_lib}
+        ${compiler_runtime}
+      )
+  endif()
   add_dependencies(${fq_build_target_name}
                    LibcTest.hermetic
                    libc.test.UnitTest.ErrnoSetterMatcher

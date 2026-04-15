@@ -99,3 +99,41 @@ unsigned long __getauxval(unsigned long id) {
 }
 #endif
 } // extern "C"
+
+#include "src/__support/OSUtil/linux/syscall.h"
+#include <sys/syscall.h>
+
+extern "C" {
+uint64_t __llvm_profile_get_size_for_buffer(void);
+int __llvm_profile_write_buffer(char *Buffer);
+}
+
+namespace LIBC_NAMESPACE_DECL {
+namespace internal {
+
+[[noreturn]] void exit(int status) {
+#ifdef LIBC_ENABLE_COVERAGE
+  uint64_t size = __llvm_profile_get_size_for_buffer();
+  if (size > 0) {
+    void *buffer = ::malloc(size);
+    if (buffer) {
+      if (__llvm_profile_write_buffer(static_cast<char *>(buffer)) == 0) {
+        // O_WRONLY | O_CREAT | O_TRUNC = 01 | 0100 | 01000 = 01101
+        long fd = LIBC_NAMESPACE::syscall_impl<long>(SYS_open, "default.profraw", 01101, 0644);
+        if (fd >= 0) {
+          LIBC_NAMESPACE::syscall_impl<long>(SYS_write, fd, buffer, size);
+          LIBC_NAMESPACE::syscall_impl<long>(SYS_close, fd);
+        }
+      }
+    }
+  }
+#endif
+
+  for (;;) {
+    LIBC_NAMESPACE::syscall_impl<long>(SYS_exit_group, status);
+    LIBC_NAMESPACE::syscall_impl<long>(SYS_exit, status);
+  }
+}
+
+} // namespace internal
+} // namespace LIBC_NAMESPACE_DECL

@@ -1,5 +1,6 @@
 add_custom_target(libc_sys_resource_unittests)
 
+if(NOT LIBC_ENABLE_COVERAGE)
 add_libc_unittest(
   getrlimit_setrlimit_test
   SUITE
@@ -18,3 +19,4 @@ add_libc_unittest(
     libc.test.UnitTest.ErrnoCheckingTest
     libc.test.UnitTest.ErrnoSetterMatcher
 )
+endif()

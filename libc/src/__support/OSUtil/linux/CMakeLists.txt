@@ -61,6 +61,7 @@ add_object_library(
     libc.src.__support.threads.linux.futex_word_type
     libc.src.__support.OSUtil.linux.auxv
     libc.hdr.elf_proxy
+    libc.hdr.elf_macros
     libc.hdr.link_macros
     libc.hdr.sys_auxv_macros
     libc.hdr.types.clockid_t

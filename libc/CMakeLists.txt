@@ -141,6 +141,14 @@ option(LLVM_LIBC_IMPLEMENTATION_DEFINED_TEST_BEHAVIOR "Build LLVM libc tests ass
 option(LLVM_LIBC_ENABLE_LINTING "Enables linting of libc source files" OFF)
 option(LLVM_LIBC_ALL_HEADERS "Outputs all functions in header files, regardless of whether they are enabled on this target" OFF)
 
+option(LIBC_ENABLE_COVERAGE "Enable code coverage instrumentation for LLVM libc" OFF)
+if(LIBC_ENABLE_COVERAGE)
+  list(APPEND LIBC_COMPILE_OPTIONS_DEFAULT "-fprofile-instr-generate" "-fcoverage-mapping")
+  list(APPEND LIBC_TEST_COMPILE_OPTIONS_DEFAULT "-fprofile-instr-generate" "-fcoverage-mapping")
+  # Also need to pass it to linker for tests
+  list(APPEND LIBC_TEST_LINK_OPTIONS_DEFAULT "-fprofile-instr-generate")
+endif()
+
 option(LIBC_CONFIG_PATH "The path to user provided folder that configures the build for the target system." OFF)
 
 if(LIBC_TARGET_OS_IS_LINUX)
