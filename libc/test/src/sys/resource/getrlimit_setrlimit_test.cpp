@@ -11,6 +11,7 @@
 #include "src/sys/resource/getrlimit.h"
 #include "src/sys/resource/setrlimit.h"
 #include "src/unistd/close.h"
+#include "src/unistd/dup.h"
 #include "src/unistd/unlink.h"
 #include "test/UnitTest/ErrnoCheckingTest.h"
 #include "test/UnitTest/ErrnoSetterMatcher.h"
@@ -33,6 +34,11 @@ TEST_F(LlvmLibcResourceLimitsTest, SetNoFileLimit) {
   auto TEST_FILE1 = libc_make_test_file_path(TEST_FILE1_NAME);
   auto TEST_FILE2 = libc_make_test_file_path(TEST_FILE2_NAME);
 
+  // Find the next available descriptor to determine how many are already open.
+  int next_fd = LIBC_NAMESPACE::dup(0);
+  ASSERT_GT(next_fd, 0);
+  ASSERT_THAT(LIBC_NAMESPACE::close(next_fd), Succeeds(0));
+
   int fd1 = LIBC_NAMESPACE::open(TEST_FILE1, O_CREAT | O_WRONLY, S_IRWXU);
   ASSERT_GT(fd1, 0);
   ASSERT_ERRNO_SUCCESS();
@@ -44,7 +50,7 @@ TEST_F(LlvmLibcResourceLimitsTest, SetNoFileLimit) {
   ASSERT_THAT(LIBC_NAMESPACE::close(fd2), Succeeds(0));
 
   struct rlimit limits {
-    4, 4
+    rlim_t(next_fd + 1), rlim_t(next_fd + 1)
   };
   ASSERT_THAT(LIBC_NAMESPACE::setrlimit(RLIMIT_NOFILE, &limits), Succeeds(0));
 
@@ -73,6 +79,6 @@ TEST_F(LlvmLibcResourceLimitsTest, SetNoFileLimit) {
   struct rlimit current_limits;
   ASSERT_THAT(LIBC_NAMESPACE::getrlimit(RLIMIT_NOFILE, &current_limits),
               Succeeds(0));
-  ASSERT_EQ(current_limits.rlim_cur, rlim_t(4));
-  ASSERT_EQ(current_limits.rlim_max, rlim_t(4));
+  ASSERT_EQ(current_limits.rlim_cur, rlim_t(next_fd + 1));
+  ASSERT_EQ(current_limits.rlim_max, rlim_t(next_fd + 1));
 }
