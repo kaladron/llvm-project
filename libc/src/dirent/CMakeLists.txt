@@ -48,3 +48,21 @@ add_entrypoint_object(
     libc.src.__support.File.platform_dir
     libc.src.errno.errno
 )
+
+add_entrypoint_object(
+  scandir
+  SRCS
+    scandir.cpp
+  HDRS
+    scandir.h
+  DEPENDS
+    libc.hdr.func.free
+    libc.hdr.func.malloc
+    libc.hdr.func.realloc
+    libc.include.dirent
+    libc.src.__support.File.dir
+    libc.src.__support.File.platform_dir
+    libc.src.errno.errno
+    libc.src.stdlib.qsort_util
+    libc.src.string.memory_utils.inline_memcpy
+)

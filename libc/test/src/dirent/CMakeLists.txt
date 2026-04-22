@@ -17,3 +17,15 @@ add_libc_unittest(
     libc.test.UnitTest.ErrnoCheckingTest
 )
 
+add_libc_test(
+  scandir_test
+  SUITE
+    libc_dirent_unittests
+  SRCS
+    scandir_test.cpp
+  DEPENDS
+    libc.src.__support.CPP.string_view
+    libc.src.dirent.scandir
+    libc.src.errno.errno
+    libc.test.UnitTest.ErrnoCheckingTest
+)

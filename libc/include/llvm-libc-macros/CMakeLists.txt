@@ -73,6 +73,12 @@ add_macro_header(
 )
 
 add_macro_header(
+  dirent_macros
+  HDR
+    dirent-macros.h
+)
+
+add_macro_header(
   cfloat128_macros
   HDR
     cfloat128-macros.h

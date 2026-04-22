@@ -1,7 +1,28 @@
 header: dirent.h
 standards:
   - posix
+macros:
+  - macro_name: DT_UNKNOWN
+    macro_header: dirent-macros.h
+  - macro_name: DT_FIFO
+    macro_header: dirent-macros.h
+  - macro_name: DT_CHR
+    macro_header: dirent-macros.h
+  - macro_name: DT_DIR
+    macro_header: dirent-macros.h
+  - macro_name: DT_BLK
+    macro_header: dirent-macros.h
+  - macro_name: DT_REG
+    macro_header: dirent-macros.h
+  - macro_name: DT_LNK
+    macro_header: dirent-macros.h
+  - macro_name: DT_SOCK
+    macro_header: dirent-macros.h
+  - macro_name: DT_WHT
+    macro_header: dirent-macros.h
 types:
+  - type_name: __scandir_compare_t
+  - type_name: __scandir_filter_t
   - type_name: struct_dirent
   - type_name: DIR
   - type_name: ino_t
@@ -43,3 +64,12 @@ functions:
     return_type: struct dirent *
     arguments:
       - type: DIR *
+  - name: scandir
+    standards:
+      - posix
+    return_type: int
+    arguments:
+      - type: const char *
+      - type: struct dirent ***
+      - type: __scandir_filter_t
+      - type: __scandir_compare_t
