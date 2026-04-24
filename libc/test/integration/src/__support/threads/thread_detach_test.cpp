@@ -6,6 +6,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "src/__support/CPP/atomic.h"
 #include "src/__support/threads/mutex.h"
 #include "src/__support/threads/thread.h"
 #include "test/IntegrationTest/test.h"
@@ -13,13 +14,17 @@
 LIBC_NAMESPACE::Mutex mutex(/*timed=*/false, /*recursive=*/false,
                             /*robust=*/false, /*pshared=*/false);
 
+LIBC_NAMESPACE::cpp::Atomic<bool> thread_finished{false};
+
 int func(void *) {
   mutex.lock();
   mutex.unlock();
+  thread_finished.store(true, LIBC_NAMESPACE::cpp::MemoryOrder::RELEASE);
   return 0;
 }
 
 void detach_simple_test() {
+  thread_finished.store(false, LIBC_NAMESPACE::cpp::MemoryOrder::RELAXED);
   mutex.lock();
   LIBC_NAMESPACE::Thread th;
   th.run(func, nullptr, nullptr, 0);
@@ -31,6 +36,11 @@ void detach_simple_test() {
 
   // We will release |mutex| now to let the thread finish an cleanup itself.
   mutex.unlock();
+
+  // Wait for the detached thread to finish to avoid race condition at exit.
+  while (!thread_finished.load(LIBC_NAMESPACE::cpp::MemoryOrder::ACQUIRE)) {
+    // Busy wait.
+  }
 }
 
 void detach_cleanup_test() {
