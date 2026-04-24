@@ -927,7 +927,8 @@ function(add_libc_hermetic test_name)
       ${LIBC_TEST_LINK_OPTIONS_DEFAULT}
     )
     if(LIBC_ENABLE_COVERAGE)
-      list(APPEND link_options "LINKER:--whole-archive")
+      list(APPEND link_options "-noprofilelib")
+      list(APPEND link_options "-Wl,--allow-multiple-definition")
     endif()
     target_link_options(${fq_build_target_name} PRIVATE ${link_options})
   else()
@@ -947,16 +948,42 @@ function(add_libc_hermetic test_name)
   set(libc_lib ${fq_target_name}.__libc__)
 
   if(LIBC_ENABLE_COVERAGE AND NOT LIBC_TARGET_ARCHITECTURE_IS_AMDGPU AND NOT LIBC_TARGET_ARCHITECTURE_IS_NVPTX)
+    # Hermetic tests use a custom profile data writer instead of the full
+    # compiler-rt profile runtime. The full runtime (InstrProfilingFile.c,
+    # InstrProfilingRuntime.cpp) depends on stdio functions (fopen, fprintf,
+    # stderr, etc.) which are not available in the hermetic environment
+    # since the libc archive doesn't export plain C symbols.
+    #
+    # Instead, we link:
+    # - profile_baremetal: the baremetal profile runtime from compiler-rt,
+    #   which provides __llvm_profile_write_buffer() and counter management
+    #   without any stdio dependencies.
+    # - coverage_dump: a lightweight writer that uses raw Linux syscalls
+    #   (via inline assembly) to write the profile buffer to disk. It
+    #   registers itself in .fini_array so it runs at exit.
+    #
+    # Link order is critical: crt1.o must come before the --whole-archive
+    # libc.a so that the linker resolves weak symbols (e.g., syscall_impl)
+    # to the non-instrumented versions from crt1.o. The startup code runs
+    # before TLS is initialized, so it cannot use coverage-instrumented
+    # functions that access %fs (stack canary).
     target_link_libraries(
       ${fq_build_target_name}
       PRIVATE
         libc.startup.${LIBC_TARGET_OS}.crt1
         ${link_libraries}
         LibcHermeticTestSupport.hermetic
+        "$<TARGET_OBJECTS:libc.test.IntegrationTest.profile_baremetal>"
+        "$<TARGET_OBJECTS:libc.test.IntegrationTest.coverage_dump>"
+        "$<LINK_LIBRARY:WHOLE_ARCHIVE,${libc_lib}>"
         ${compiler_runtime}
       )
-    target_link_options(${fq_build_target_name} PRIVATE "-Wl,--whole-archive" "$<TARGET_FILE:${libc_lib}>" "-Wl,--no-whole-archive")
-    add_dependencies(${fq_build_target_name} ${libc_lib})
+    target_link_options(${fq_build_target_name} PRIVATE
+      "-Wl,--allow-multiple-definition"
+    )
+    add_dependencies(${fq_build_target_name} ${libc_lib}
+      libc.test.IntegrationTest.profile_baremetal
+      libc.test.IntegrationTest.coverage_dump)
   else()
     target_link_libraries(
       ${fq_build_target_name}

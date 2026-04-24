@@ -127,6 +127,8 @@ add_object_library(
     -ffreestanding       # To avoid compiler warnings about calling the main function.
     -fno-builtin         # avoid emit unexpected calls
     -fno-stack-protector # stack protect canary is not available yet.
+    -fno-profile-instr-generate # Coverage instrumentation is unsafe before TLS init.
+    -fno-coverage-mapping
 )
 
 # TODO: factor out crt1 into multiple objects

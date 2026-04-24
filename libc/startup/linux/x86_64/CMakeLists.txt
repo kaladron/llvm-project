@@ -13,6 +13,8 @@ add_startup_object(
     -fno-omit-frame-pointer
     -ffreestanding
     -fno-builtin
+    -fno-profile-instr-generate
+    -fno-coverage-mapping
 )
 
 add_startup_object(
@@ -27,6 +29,8 @@ add_startup_object(
     -fno-omit-frame-pointer
     -ffreestanding
     -fno-builtin
+    -fno-profile-instr-generate
+    -fno-coverage-mapping
 )
 
 add_startup_object(
@@ -44,4 +48,6 @@ add_startup_object(
     -fno-omit-frame-pointer
     -ffreestanding
     -fno-builtin
+    -fno-profile-instr-generate
+    -fno-coverage-mapping
 )
