@@ -17,6 +17,7 @@ Navigate to the links below for information on the respective topics:
    cmake_build_rules
    config_options
    clang_tidy_checks
+   date_and_time
    fuzzing
    header_generation
    implementation_standard

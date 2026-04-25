@@ -25,6 +25,8 @@ add_object_library(
     libc.src.__support.CPP.limits
     libc.src.__support.CPP.string_view
     libc.src.__support.CPP.optional
+    libc.src.__support.libc_assert
+    libc.src.__support.uint128
     libc.src.errno.errno
     .time_constants
     libc.hdr.types.time_t
