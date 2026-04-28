@@ -59,9 +59,10 @@ add_entrypoint_object(
     libc.hdr.func.free
     libc.hdr.func.malloc
     libc.hdr.func.realloc
-    libc.include.dirent
+    libc.hdr.types.struct_dirent
     libc.src.__support.File.dir
     libc.src.__support.File.platform_dir
+    libc.src.__support.File.scoped_dir
     libc.src.errno.errno
     libc.src.stdlib.qsort_util
     libc.src.string.memory_utils.inline_memcpy
