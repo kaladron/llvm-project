@@ -14,6 +14,7 @@ add_llvm_unittest(VectorizeTests
   VPPostDomFrontierTest.cpp
   VPlanHCFGTest.cpp
   VPlanPatternMatchTest.cpp
+  VPlanSlpTest.cpp
   VPlanUncountableExitTest.cpp
   VPlanVerifierTest.cpp
   )

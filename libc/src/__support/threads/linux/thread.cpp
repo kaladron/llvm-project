@@ -25,11 +25,11 @@
 #include "hdr/errno_macros.h"
 #include "hdr/fcntl_macros.h"
 #include "hdr/stdint_proxy.h"
-#include <linux/param.h> // For EXEC_PAGESIZE.
-#include <linux/prctl.h> // For PR_SET_NAME
-#include <linux/sched.h> // For CLONE_* flags.
-#include <sys/mman.h>    // For PROT_* and MAP_* definitions.
-#include <sys/syscall.h> // For syscall numbers.
+#include "hdr/sys_mman_macros.h" // For PROT_* and MAP_* definitions.
+#include <linux/param.h>         // For EXEC_PAGESIZE.
+#include <linux/prctl.h>         // For PR_SET_NAME
+#include <linux/sched.h>         // For CLONE_* flags.
+#include <sys/syscall.h>         // For syscall numbers.
 
 namespace LIBC_NAMESPACE_DECL {
 

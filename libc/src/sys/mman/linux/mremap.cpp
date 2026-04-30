@@ -15,7 +15,9 @@
 #include "src/__support/macros/config.h"
 #include <linux/param.h> // For EXEC_PAGESIZE.
 #include <stdarg.h>
-#include <sys/syscall.h> // For syscall numbers.
+#include <sys/syscall.h>
+
+#include "hdr/sys_mman_macros.h" // For syscall numbers.
 
 namespace LIBC_NAMESPACE_DECL {
 

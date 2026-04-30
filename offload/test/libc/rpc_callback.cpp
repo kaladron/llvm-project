@@ -98,32 +98,32 @@ int sum_array(const int *arr, int n) {
 
 #pragma omp begin declare variant match(device = {kind(gpu)})
 int foo(int x, double d, char c) {
-  return rpc::dispatch<FOO_OPCODE, foo>(client, x, d, c);
+  return rpc::dispatch<FOO_OPCODE>(client, foo, x, d, c);
 }
 
-void void_fn(int x) { rpc::dispatch<VOID_OPCODE, void_fn>(client, x); }
+void void_fn(int x) { rpc::dispatch<VOID_OPCODE>(client, void_fn, x); }
 
 void writeback_fn(int *out) {
-  rpc::dispatch<WRITEBACK_OPCODE, writeback_fn>(client, out);
+  rpc::dispatch<WRITEBACK_OPCODE>(client, writeback_fn, out);
 }
 
 int sum_const(const S *p) {
-  return rpc::dispatch<CONST_PTR_OPCODE, sum_const>(client, p);
+  return rpc::dispatch<CONST_PTR_OPCODE>(client, sum_const, p);
 }
 
 int c_string(const char *s) {
-  return rpc::dispatch<STRING_OPCODE, c_string>(client, s);
+  return rpc::dispatch<STRING_OPCODE>(client, c_string, s);
 }
 
-int empty() { return rpc::dispatch<EMPTY_OPCODE, empty>(client); }
+int empty() { return rpc::dispatch<EMPTY_OPCODE>(client, empty); }
 
 void divergent(int *p) {
-  rpc::dispatch<DIVERGENT_OPCODE, divergent>(client, p);
+  rpc::dispatch<DIVERGENT_OPCODE>(client, divergent, p);
 }
 
 int sum_array(const int *arr, int n) {
-  return rpc::dispatch<ARRAY_SUM_OPCODE, sum_array>(
-      client, rpc::span<const int>{arr, uint64_t(n)}, n);
+  return rpc::dispatch<ARRAY_SUM_OPCODE>(
+      client, sum_array, rpc::span<const int>{arr, uint64_t(n)}, n);
 }
 #pragma omp end declare variant
 

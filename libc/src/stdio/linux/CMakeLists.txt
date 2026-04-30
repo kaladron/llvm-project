@@ -19,10 +19,9 @@ add_entrypoint_object(
   HDRS
     ../rename.h
   DEPENDS
-    libc.include.sys_syscall
-    libc.src.__support.OSUtil.osutil
-    libc.src.errno.errno
     libc.hdr.fcntl_macros
+    libc.src.__support.OSUtil.linux.syscall_wrappers.rename
+    libc.src.errno.errno
 )
 
 add_entrypoint_object(
