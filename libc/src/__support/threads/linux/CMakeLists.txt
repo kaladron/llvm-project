@@ -32,6 +32,7 @@ add_object_library(
     .futex_utils
     libc.config.app_h
     libc.include.sys_syscall
+    libc.hdr.sys_mman_macros
     libc.hdr.fcntl_macros
     libc.hdr.errno_macros
     libc.src.errno.errno

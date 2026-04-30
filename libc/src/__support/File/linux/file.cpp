@@ -12,53 +12,51 @@
 #include "hdr/types/off_t.h"
 #include "src/__support/CPP/new.h"
 #include "src/__support/File/file.h"
-#include "src/__support/File/linux/lseekImpl.h"
 #include "src/__support/OSUtil/fcntl.h"
+#include "src/__support/OSUtil/linux/syscall_wrappers/close.h"
+#include "src/__support/OSUtil/linux/syscall_wrappers/lseek.h"
+#include "src/__support/OSUtil/linux/syscall_wrappers/open.h"
+#include "src/__support/OSUtil/linux/syscall_wrappers/read.h"
+#include "src/__support/OSUtil/linux/syscall_wrappers/write.h"
 #include "src/__support/OSUtil/syscall.h" // For internal syscall function.
 #include "src/__support/alloc-checker.h"
 #include "src/__support/libc_errno.h" // For error macros
 #include "src/__support/macros/config.h"
 
 #include "hdr/fcntl_macros.h" // For mode_t and other flags to the open syscall
-#include <sys/stat.h>         // For S_IS*, S_IF*, and S_IR* flags.
-#include <sys/syscall.h>      // For syscall numbers
+#include "hdr/sys_stat_macros.h" // For S_IS*, S_IF*, and S_IR* flags.
 
 namespace LIBC_NAMESPACE_DECL {
 
 FileIOResult linux_file_write(File *f, const void *data, size_t size) {
   auto *lf = reinterpret_cast<LinuxFile *>(f);
-  int ret =
-      LIBC_NAMESPACE::syscall_impl<int>(SYS_write, lf->get_fd(), data, size);
-  if (ret < 0) {
-    return {0, -ret};
+  auto ret = linux_syscalls::write(lf->get_fd(), data, size);
+  if (!ret) {
+    return {0, ret.error()};
   }
-  return ret;
+  return ret.value();
 }
 
 FileIOResult linux_file_read(File *f, void *buf, size_t size) {
   auto *lf = reinterpret_cast<LinuxFile *>(f);
-  int ret =
-      LIBC_NAMESPACE::syscall_impl<int>(SYS_read, lf->get_fd(), buf, size);
-  if (ret < 0) {
-    return {0, -ret};
+  auto ret = linux_syscalls::read(lf->get_fd(), buf, size);
+  if (!ret) {
+    return {0, ret.error()};
   }
-  return ret;
+  return ret.value();
 }
 
 ErrorOr<off_t> linux_file_seek(File *f, off_t offset, int whence) {
   auto *lf = reinterpret_cast<LinuxFile *>(f);
-  auto result = internal::lseekimpl(lf->get_fd(), offset, whence);
-  if (!result.has_value())
-    return result.error();
-  return result.value();
+  return linux_syscalls::lseek(lf->get_fd(), offset, whence);
 }
 
 int linux_file_close(File *f) {
   File::remove_file(f);
   auto *lf = reinterpret_cast<LinuxFile *>(f);
-  int ret = LIBC_NAMESPACE::syscall_impl<int>(SYS_close, lf->get_fd());
-  if (ret < 0) {
-    return -ret;
+  auto ret = linux_syscalls::close(lf->get_fd());
+  if (!ret) {
+    return ret.error();
   }
   delete lf;
   return 0;
@@ -71,7 +69,7 @@ ErrorOr<File *> openfile(const char *path, const char *mode) {
     // return {nullptr, EINVAL};
     return Error(EINVAL);
   }
-  long open_flags = 0;
+  int open_flags = 0;
   if (modeflags & ModeFlags(File::OpenMode::APPEND)) {
     open_flags = O_CREAT | O_APPEND;
     if (modeflags & ModeFlags(File::OpenMode::PLUS))
@@ -92,21 +90,15 @@ ErrorOr<File *> openfile(const char *path, const char *mode) {
   }
 
   // File created will have 0666 permissions.
-  constexpr long OPEN_MODE =
+  constexpr mode_t OPEN_MODE =
       S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH;
 
-#ifdef SYS_open
-  int fd =
-      LIBC_NAMESPACE::syscall_impl<int>(SYS_open, path, open_flags, OPEN_MODE);
-#elif defined(SYS_openat)
-  int fd = LIBC_NAMESPACE::syscall_impl<int>(SYS_openat, AT_FDCWD, path,
-                                             open_flags, OPEN_MODE);
-#else
-#error "open and openat syscalls not available."
-#endif
+  auto result = linux_syscalls::open(path, open_flags, OPEN_MODE);
 
-  if (fd < 0)
-    return Error(-fd);
+  if (!result)
+    return Error(result.error());
+
+  int fd = result.value();
 
   uint8_t *buffer;
   {
