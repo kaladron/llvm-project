@@ -221,5 +221,68 @@ int EnvironmentManager::set(cpp::string_view name, cpp::string_view value,
   return 0;
 }
 
+int EnvironmentManager::unset(cpp::string_view name) {
+  cpp::optional<size_t> idx = find_var(name);
+  if (!idx)
+    return 0; // Variable not found; POSIX defines this as success.
+
+  // Transition to managed storage so we can modify the array and track
+  // ownership correctly.
+  if (!ensure_capacity(count))
+    return -1;
+
+  char **env_array = get_array();
+
+  // Free the string if we allocated it.
+  if (ownership[*idx].can_free())
+    delete[] env_array[*idx];
+
+  // Compact: shift remaining entries left to fill the gap.
+  for (size_t i = *idx; i < count - 1; i++) {
+    env_array[i] = env_array[i + 1];
+    ownership[i] = ownership[i + 1];
+  }
+  count--;
+  env_array[count] = nullptr;
+
+  return 0;
+}
+
+int EnvironmentManager::put(char *string) {
+  cpp::string_view sv(string);
+  size_t eq_pos = sv.find_first_of('=');
+
+  // No '=' found: treat as unset (glibc/musl convention).
+  if (eq_pos == cpp::string_view::npos)
+    return unset(sv);
+
+  cpp::string_view name = sv.substr(0, eq_pos);
+
+  cpp::optional<size_t> idx = find_var(name);
+
+  size_t needed = idx ? count : count + 1;
+  if (!ensure_capacity(needed))
+    return -1;
+
+  char **env_array = get_array();
+
+  if (idx) {
+    // Replace existing variable. Free old string if we own it.
+    if (ownership[*idx].can_free())
+      delete[] env_array[*idx];
+
+    env_array[*idx] = string;
+    ownership[*idx].allocated_by_us = false; // Caller owns this string.
+  } else {
+    // Add new variable at the end.
+    env_array[count] = string;
+    ownership[count].allocated_by_us = false;
+    count++;
+    env_array[count] = nullptr;
+  }
+
+  return 0;
+}
+
 } // namespace internal
 } // namespace LIBC_NAMESPACE_DECL
