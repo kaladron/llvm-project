@@ -88,12 +88,14 @@ add_object_library(
   DEPENDS
     libc.config.app_h
     libc.hdr.types.size_t
+    libc.src.__support.alloc_checker
     libc.src.__support.CPP.new
     libc.src.__support.CPP.optional
     libc.src.__support.CPP.string_view
     libc.src.__support.macros.attributes
     libc.src.__support.macros.config
     libc.src.string.memory_utils.inline_memcpy
+    libc.src.unistd.environ
 )
 
 add_entrypoint_object(
@@ -658,6 +660,20 @@ add_entrypoint_object(
   ALIAS
   DEPENDS
     .${LIBC_TARGET_OS}.setenv
+)
+
+add_entrypoint_object(
+  putenv
+  ALIAS
+  DEPENDS
+    .${LIBC_TARGET_OS}.putenv
+)
+
+add_entrypoint_object(
+  unsetenv
+  ALIAS
+  DEPENDS
+    .${LIBC_TARGET_OS}.unsetenv
 )
 
 if(LIBC_TARGET_OS_IS_BAREMETAL OR LIBC_TARGET_OS_IS_GPU)
