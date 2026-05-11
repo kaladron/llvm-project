@@ -1,9 +1,14 @@
-//===-- Unittests for inet_aton -------------------------------------------===//
+//===----------------------------------------------------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
+//===----------------------------------------------------------------------===//
+///
+/// \file
+/// Unittests for inet_aton.
+///
 //===----------------------------------------------------------------------===//
 
 #include "src/arpa/inet/htonl.h"
@@ -87,6 +92,13 @@ TEST(LlvmLibcInetAton, InvalidTest) {
 
   // Out of range octal.
   ASSERT_EQ(0, inet_aton("0400.0.0.1", nullptr));
+
+  // Signs and whitespace.
+  ASSERT_EQ(0, inet_aton(" 127.0.0.1", nullptr));
+  ASSERT_EQ(0, inet_aton("+127.0.0.1", nullptr));
+  ASSERT_EQ(0, inet_aton("-127.0.0.1", nullptr));
+  ASSERT_EQ(0, inet_aton("127. 0.0.1", nullptr));
+  ASSERT_EQ(0, inet_aton("127.+0.0.1", nullptr));
 }
 
 } // namespace LIBC_NAMESPACE_DECL

@@ -1,15 +1,20 @@
-//===-- Implementation of inet_addr function ------------------------------===//
+//===----------------------------------------------------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
+///
+/// \file
+/// Implementation of the inet_addr function.
+///
+//===----------------------------------------------------------------------===//
 
 #include "src/arpa/inet/inet_addr.h"
+#include "hdr/types/in_addr_t.h"
+#include "hdr/types/struct_in_addr.h"
 #include "include/llvm-libc-macros/netinet-in-macros.h"
-#include "include/llvm-libc-types/in_addr_t.h"
-#include "include/llvm-libc-types/struct_in_addr.h"
 #include "src/__support/common.h"
 #include "src/arpa/inet/inet_aton.h"
 

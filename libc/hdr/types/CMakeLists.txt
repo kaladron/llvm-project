@@ -50,6 +50,14 @@ add_proxy_header_library(
 )
 
 add_proxy_header_library(
+  in_addr_t
+  HDRS
+    in_addr_t.h
+  FULL_BUILD_DEPENDS
+    libc.include.llvm-libc-types.in_addr_t
+)
+
+add_proxy_header_library(
   ldiv_t
   HDRS
     ldiv_t.h
@@ -427,6 +435,14 @@ add_proxy_header_library(
   FULL_BUILD_DEPENDS
     libc.include.llvm-libc-types.struct_sockaddr
     libc.include.sys_socket
+)
+
+add_proxy_header_library(
+  struct_in_addr
+  HDRS
+    struct_in_addr.h
+  FULL_BUILD_DEPENDS
+    libc.include.llvm-libc-types.struct_in_addr
 )
 
 add_proxy_header_library(
