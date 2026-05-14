@@ -189,13 +189,11 @@ static unsigned optpos;
 static GetoptContext ctx{&impl::optarg, &impl::optind, &impl::optopt,
                          &optpos,       &impl::opterr, /*errstream=*/nullptr};
 
-#ifndef LIBC_COPT_PUBLIC_PACKAGING
 // This is used exclusively in tests.
 void set_getopt_state(char **optarg_in, int *optind_in, int *optopt_in,
                       unsigned *optpos_in, int *opterr_in, FILE *errstream) {
   ctx = {optarg_in, optind_in, optopt_in, optpos_in, opterr_in, errstream};
 }
-#endif
 
 } // namespace impl
 

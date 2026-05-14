@@ -34,25 +34,25 @@ int atexit(void (*func)(void));
 
 extern "C" {
 
-int bcmp(const void *lhs, const void *rhs, size_t count) {
+[[gnu::weak]] int bcmp(const void *lhs, const void *rhs, size_t count) {
   return LIBC_NAMESPACE::bcmp(lhs, rhs, count);
 }
-void bzero(void *ptr, size_t count) { LIBC_NAMESPACE::bzero(ptr, count); }
-int memcmp(const void *lhs, const void *rhs, size_t count) {
+[[gnu::weak]] void bzero(void *ptr, size_t count) { LIBC_NAMESPACE::bzero(ptr, count); }
+[[gnu::weak]] int memcmp(const void *lhs, const void *rhs, size_t count) {
   return LIBC_NAMESPACE::memcmp(lhs, rhs, count);
 }
-void *memcpy(void *__restrict dst, const void *__restrict src, size_t count) {
+[[gnu::weak]] void *memcpy(void *__restrict dst, const void *__restrict src, size_t count) {
   return LIBC_NAMESPACE::memcpy(dst, src, count);
 }
-void *memmove(void *dst, const void *src, size_t count) {
+[[gnu::weak]] void *memmove(void *dst, const void *src, size_t count) {
   return LIBC_NAMESPACE::memmove(dst, src, count);
 }
-void *memset(void *ptr, int value, size_t count) {
+[[gnu::weak]] void *memset(void *ptr, int value, size_t count) {
   return LIBC_NAMESPACE::memset(ptr, value, count);
 }
 
 // This is needed if the test was compiled with '-fno-use-cxa-atexit'.
-int atexit(void (*func)(void)) { return LIBC_NAMESPACE::atexit(func); }
+[[gnu::weak]] int atexit(void (*func)(void)) { return LIBC_NAMESPACE::atexit(func); }
 
 } // extern "C"
 

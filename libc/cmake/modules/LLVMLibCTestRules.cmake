@@ -111,7 +111,7 @@ endfunction()
 #   set to a true value.
 #   targetN is either an "add_entrypoint_target" target or an
 #   "add_object_library" target.
-function(get_object_files_for_test result skipped_entrypoints_list)
+function(get_object_files_for_test result skipped_entrypoints_list internal_obj)
   set(object_files "")
   set(skipped_list "")
   set(checked_list "")
@@ -140,19 +140,29 @@ function(get_object_files_for_test result skipped_entrypoints_list)
       continue()
     endif()
 
-    get_target_property(dep_checked ${dep} "CHECK_OBJ_FOR_TESTS")
+    if(internal_obj)
+      set(check_prop "CHECK_INTERNAL_OBJ_FOR_TESTS")
+      set(obj_prop "INTERNAL_OBJECT_FILES_FOR_TESTS")
+    else()
+      set(check_prop "CHECK_PUBLIC_OBJ_FOR_TESTS")
+      set(obj_prop "PUBLIC_OBJECT_FILES_FOR_TESTS")
+    endif()
+    get_target_property(dep_checked ${dep} ${check_prop})
 
     if(dep_checked)
       # Target full dependency has already been checked.  Just use the results.
-      get_target_property(dep_obj ${dep} "OBJECT_FILES_FOR_TESTS")
+      get_target_property(dep_obj ${dep} ${obj_prop})
       get_target_property(dep_skip ${dep} "SKIPPED_LIST_FOR_TESTS")
     else()
       # Target full dependency hasn't been checked.  Recursively check its DEPS.
-      set(dep_obj "${dep}")
+      set(dep_obj "")
+      if(NOT (${dep_type} STREQUAL ${ENTRYPOINT_OBJ_TARGET_TYPE}))
+        set(dep_obj "${dep}")
+      endif()
       set(dep_skip "")
 
       get_target_property(indirect_deps ${dep} "DEPS")
-      get_object_files_for_test(dep_obj dep_skip ${indirect_deps})
+      get_object_files_for_test(dep_obj dep_skip ${internal_obj} ${indirect_deps})
 
       if(${dep_type} STREQUAL ${OBJECT_LIBRARY_TARGET_TYPE})
         get_target_property(dep_object_files ${dep} "OBJECT_FILES")
@@ -163,9 +173,12 @@ function(get_object_files_for_test result skipped_entrypoints_list)
         get_target_property(is_skipped ${dep} "SKIPPED")
         if(is_skipped)
           list(APPEND dep_skip ${dep})
-          list(REMOVE_ITEM dep_obj ${dep})
         endif()
-        get_target_property(object_file_raw ${dep} "OBJECT_FILE_RAW")
+        if(internal_obj)
+          get_target_property(object_file_raw ${dep} "OBJECT_FILE_RAW")
+        else()
+          get_target_property(object_file_raw ${dep} "OBJECT_FILE")
+        endif()
         if(object_file_raw)
           # TODO: Remove this once we stop suffixing the target with ".__internal__"
           if(fq_target_name STREQUAL "libc.test.include.issignaling_c_test.__unit__" OR fq_target_name STREQUAL "libc.test.include.iscanonical_c_test.__unit__")
@@ -176,9 +189,9 @@ function(get_object_files_for_test result skipped_entrypoints_list)
       endif()
 
       set_target_properties(${dep} PROPERTIES
-        OBJECT_FILES_FOR_TESTS "${dep_obj}"
+        ${obj_prop} "${dep_obj}"
         SKIPPED_LIST_FOR_TESTS "${dep_skip}"
-        CHECK_OBJ_FOR_TESTS "YES"
+        ${check_prop} "YES"
       )
 
     endif()
@@ -266,7 +279,7 @@ function(create_libc_unittest fq_target_name)
   endif()
 
   get_object_files_for_test(
-      link_object_files skipped_entrypoints_list ${fq_deps_list})
+      link_object_files skipped_entrypoints_list TRUE ${fq_deps_list})
   if(skipped_entrypoints_list)
     # If a test is OS/target machine independent, it has to be skipped if the
     # OS/target machine combination does not provide any dependent entrypoints.
@@ -426,7 +439,7 @@ function(add_libc_fuzzer target_name)
   get_fq_target_name(${target_name} fq_target_name)
   get_fq_deps_list(fq_deps_list ${LIBC_FUZZER_DEPENDS})
   get_object_files_for_test(
-      link_object_files skipped_entrypoints_list ${fq_deps_list})
+      link_object_files skipped_entrypoints_list TRUE ${fq_deps_list})
   if(skipped_entrypoints_list)
     if(LIBC_CMAKE_VERBOSE_LOGGING)
       set(msg "Skipping fuzzer target ${fq_target_name} as it has missing deps: "
@@ -556,7 +569,7 @@ function(add_integration_test test_name)
   # TODO: Instead of gathering internal object files from entrypoints,
   # collect the object files with public names of entrypoints.
   get_object_files_for_test(
-      link_object_files skipped_entrypoints_list ${fq_deps_list})
+      link_object_files skipped_entrypoints_list FALSE ${fq_deps_list})
   if(skipped_entrypoints_list)
     if(LIBC_CMAKE_VERBOSE_LOGGING)
       set(msg "Skipping integration test ${fq_target_name} as it has missing deps: "
@@ -774,7 +787,7 @@ function(add_libc_hermetic test_name)
   # TODO: Instead of gathering internal object files from entrypoints,
   # collect the object files with public names of entrypoints.
   get_object_files_for_test(
-      link_object_files skipped_entrypoints_list ${fq_deps_list})
+      link_object_files skipped_entrypoints_list FALSE ${fq_deps_list})
   if(skipped_entrypoints_list)
     if(LIBC_CMAKE_VERBOSE_LOGGING)
       set(msg "Skipping hermetic test ${fq_target_name} as it has missing deps: "

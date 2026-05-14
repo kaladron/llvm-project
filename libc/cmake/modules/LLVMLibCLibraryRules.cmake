@@ -89,7 +89,7 @@ endfunction()
 function(add_bitcode_entrypoint_library target_name base_target_name)
   cmake_parse_arguments(
     "ENTRYPOINT_LIBRARY"
-    "" # No optional arguments
+    "INTERNAL" # Optional arguments
     "" # No single value arguments
     "DEPENDS" # Multi-value arguments
     ${ARGN}
@@ -102,17 +102,27 @@ function(add_bitcode_entrypoint_library target_name base_target_name)
   get_fq_deps_list(fq_deps_list ${ENTRYPOINT_LIBRARY_DEPENDS})
   get_all_object_file_deps(all_deps "${fq_deps_list}")
 
+  if(ENTRYPOINT_LIBRARY_INTERNAL)
+    set(obj_prop "OBJECT_FILE_RAW")
+  else()
+    set(obj_prop "OBJECT_FILE")
+  endif()
+
   set(objects "")
   foreach(dep IN LISTS all_deps)
-    set(object $<$<STREQUAL:$<TARGET_NAME_IF_EXISTS:${dep}>,${dep}>:$<TARGET_OBJECTS:${dep}>>)
-    list(APPEND objects ${object})
+    if(TARGET ${dep})
+      get_target_property(dep_obj ${dep} ${obj_prop})
+      if(dep_obj)
+        list(APPEND objects ${dep_obj})
+      endif()
+    endif()
   endforeach()
 
   add_executable(${target_name} ${objects})
   if(LIBC_TARGET_ARCHITECTURE_IS_SPIRV)
       target_link_options(${target_name} PRIVATE "${LIBC_COMPILE_OPTIONS_DEFAULT}"
                       "-nostdlib" "-emit-llvm")
-  else()  
+  else()
       target_link_options(${target_name} PRIVATE "${LIBC_COMPILE_OPTIONS_DEFAULT}"
                       "-r" "-nostdlib" "-flto" "-Wl,--lto-emit-llvm")
   endif()
@@ -130,7 +140,7 @@ endfunction(add_bitcode_entrypoint_library)
 function(add_entrypoint_library target_name)
   cmake_parse_arguments(
     "ENTRYPOINT_LIBRARY"
-    "" # No optional arguments
+    "INTERNAL" # Optional arguments
     "" # No single value arguments
     "DEPENDS" # Multi-value arguments
     ${ARGN}
@@ -143,9 +153,20 @@ function(add_entrypoint_library target_name)
   get_fq_deps_list(fq_deps_list ${ENTRYPOINT_LIBRARY_DEPENDS})
   get_all_object_file_deps(all_deps "${fq_deps_list}")
 
+  if(ENTRYPOINT_LIBRARY_INTERNAL)
+    set(obj_prop "OBJECT_FILE_RAW")
+  else()
+    set(obj_prop "OBJECT_FILE")
+  endif()
+
   set(objects "")
   foreach(dep IN LISTS all_deps)
-    list(APPEND objects $<$<STREQUAL:$<TARGET_NAME_IF_EXISTS:${dep}>,${dep}>:$<TARGET_OBJECTS:${dep}>>)
+    if(TARGET ${dep})
+      get_target_property(dep_obj ${dep} ${obj_prop})
+      if(dep_obj)
+        list(APPEND objects ${dep_obj})
+      endif()
+    endif()
   endforeach(dep)
 
   add_library(
