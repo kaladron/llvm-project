@@ -7,23 +7,30 @@
 //===----------------------------------------------------------------------===//
 ///
 /// \file
-/// Implementation header for regfree.
+/// Parser for Regular Expressions.
 ///
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_LIBC_SRC_REGEX_REGFREE_H
-#define LLVM_LIBC_SRC_REGEX_REGFREE_H
-
-#include "hdr/types/regex_t.h"
-#include "src/__support/macros/config.h"
+#include "src/__support/regex/regex_parser.h"
+#include "include/llvm-libc-macros/regex-macros.h"
 
 namespace LIBC_NAMESPACE_DECL {
 
-/// Frees all memory allocated for a compiled regular expression.
-///
-/// \param preg The precompiled regex_t structure to free.
-void regfree(regex_t *preg);
+cpp::expected<Expr *, int> parse_ere(const char *pattern, ExprPool &pool) {
+  Expr *res = pool.empty_str();
+  if (!pattern)
+    return res;
+
+  while (*pattern) {
+    Expr *lit = pool.make_lit(*pattern);
+    if (!lit)
+      return cpp::unexpected(REG_ESPACE);
+    res = pool.make_concat(res, lit);
+    if (!res)
+      return cpp::unexpected(REG_ESPACE);
+    pattern++;
+  }
+  return res;
+}
 
 } // namespace LIBC_NAMESPACE_DECL
-
-#endif // LLVM_LIBC_SRC_REGEX_REGFREE_H

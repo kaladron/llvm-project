@@ -21,6 +21,14 @@
 
 namespace LIBC_NAMESPACE_DECL {
 
+/// Matches a precompiled regular expression against a string.
+///
+/// \param preg The precompiled regex_t structure.
+/// \param string The null-terminated string to search.
+/// \param nmatch Number of match results to store in pmatch.
+/// \param pmatch Array to store match offsets.
+/// \param eflags Execution flags (REG_NOTBOL, REG_NOTEOL).
+/// \returns 0 on success (match found), REG_NOMATCH if no match found.
 int regexec(const regex_t *__restrict preg, const char *__restrict string,
             size_t nmatch, regmatch_t *__restrict pmatch, int eflags);
 

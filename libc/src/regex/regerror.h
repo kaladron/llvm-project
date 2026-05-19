@@ -21,6 +21,13 @@
 
 namespace LIBC_NAMESPACE_DECL {
 
+/// Maps a regex error code to a human-readable string.
+///
+/// \param errcode The error code returned by regcomp or regexec.
+/// \param preg (Optional) The compiled regex state that produced the error.
+/// \param errbuf The buffer to store the error message.
+/// \param errbuf_size The size of the error message buffer.
+/// \returns The size of the full error message, including the NUL terminator.
 size_t regerror(int errcode, const regex_t *__restrict preg,
                 char *__restrict errbuf, size_t errbuf_size);
 

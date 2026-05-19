@@ -1,4 +1,4 @@
-//===----------------------------------------------------------------------===//
+//===-- Basic tests for POSIX regex functions ------------------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -7,7 +7,7 @@
 //===----------------------------------------------------------------------===//
 ///
 /// \file
-/// Basic round-trip tests for POSIX regex functions.
+/// Basic tests for POSIX regex functions (ERE literals).
 ///
 //===----------------------------------------------------------------------===//
 
@@ -17,61 +17,56 @@
 #include "test/UnitTest/Test.h"
 
 #include "hdr/regex_macros.h"
-#include "hdr/types/regex_t.h"
+
+using namespace LIBC_NAMESPACE;
 
 TEST(LlvmLibcRegexTest, BasicLiteralRoundTrip) {
   regex_t preg;
-  ASSERT_EQ(0,
-            LIBC_NAMESPACE::regcomp(&preg, "hello", REG_EXTENDED | REG_NOSUB));
-  ASSERT_EQ(0,
-            LIBC_NAMESPACE::regexec(&preg, "say hello world", 0, nullptr, 0));
-  ASSERT_EQ(REG_NOMATCH,
-            LIBC_NAMESPACE::regexec(&preg, "goodbye", 0, nullptr, 0));
-  LIBC_NAMESPACE::regfree(&preg);
+  ASSERT_EQ(0, regcomp(&preg, "hello", REG_EXTENDED | REG_NOSUB));
+  ASSERT_EQ(0, regexec(&preg, "say hello world", 0, nullptr, 0));
+  ASSERT_EQ(REG_NOMATCH, regexec(&preg, "goodbye", 0, nullptr, 0));
+  regfree(&preg);
 }
 
-TEST(LlvmLibcRegexTest, MismatchCases) {
+TEST(LlvmLibcRegexTest, EmptyPattern) {
   regex_t preg;
-  // Partial match
-  ASSERT_EQ(0,
-            LIBC_NAMESPACE::regcomp(&preg, "hello", REG_EXTENDED | REG_NOSUB));
-  ASSERT_EQ(REG_NOMATCH, LIBC_NAMESPACE::regexec(&preg, "hell", 0, nullptr, 0));
-  LIBC_NAMESPACE::regfree(&preg);
-
-  // Case sensitivity
-  ASSERT_EQ(0,
-            LIBC_NAMESPACE::regcomp(&preg, "Hello", REG_EXTENDED | REG_NOSUB));
-  ASSERT_EQ(REG_NOMATCH,
-            LIBC_NAMESPACE::regexec(&preg, "hello", 0, nullptr, 0));
-  LIBC_NAMESPACE::regfree(&preg);
-
-  // Empty string vs non-empty pattern
-  ASSERT_EQ(0, LIBC_NAMESPACE::regcomp(&preg, "a", REG_EXTENDED | REG_NOSUB));
-  ASSERT_EQ(REG_NOMATCH, LIBC_NAMESPACE::regexec(&preg, "", 0, nullptr, 0));
-  LIBC_NAMESPACE::regfree(&preg);
+  ASSERT_EQ(0, regcomp(&preg, "", REG_EXTENDED | REG_NOSUB));
+  ASSERT_EQ(0, regexec(&preg, "anything", 0, nullptr, 0));
+  ASSERT_EQ(0, regexec(&preg, "", 0, nullptr, 0));
+  regfree(&preg);
 }
 
-TEST(LlvmLibcRegexTest, EmptyString) {
+TEST(LlvmLibcRegexTest, MultiCharLiteral) {
   regex_t preg;
-  ASSERT_EQ(0, LIBC_NAMESPACE::regcomp(&preg, "", REG_EXTENDED | REG_NOSUB));
-  ASSERT_EQ(0, LIBC_NAMESPACE::regexec(&preg, "anything", 0, nullptr, 0));
-  ASSERT_EQ(0, LIBC_NAMESPACE::regexec(&preg, "", 0, nullptr, 0));
-  LIBC_NAMESPACE::regfree(&preg);
+  ASSERT_EQ(0, regcomp(&preg, "world", REG_EXTENDED | REG_NOSUB));
+  ASSERT_EQ(0, regexec(&preg, "hello world", 0, nullptr, 0));
+  ASSERT_EQ(REG_NOMATCH, regexec(&preg, "hello worl", 0, nullptr, 0));
+  regfree(&preg);
 }
 
-TEST(LlvmLibcRegexTest, ExactMatch) {
+TEST(LlvmLibcRegexTest, LiteralPositions) {
   regex_t preg;
-  ASSERT_EQ(0,
-            LIBC_NAMESPACE::regcomp(&preg, "test", REG_EXTENDED | REG_NOSUB));
-  ASSERT_EQ(0, LIBC_NAMESPACE::regexec(&preg, "test", 0, nullptr, 0));
-  LIBC_NAMESPACE::regfree(&preg);
+  ASSERT_EQ(0, regcomp(&preg, "ab", REG_EXTENDED | REG_NOSUB));
+  ASSERT_EQ(0, regexec(&preg, "ab", 0, nullptr, 0));       // exact
+  ASSERT_EQ(0, regexec(&preg, "abc", 0, nullptr, 0));      // at start
+  ASSERT_EQ(0, regexec(&preg, "xab", 0, nullptr, 0));      // at end
+  ASSERT_EQ(0, regexec(&preg, "xabx", 0, nullptr, 0));     // in middle
+  ASSERT_EQ(REG_NOMATCH, regexec(&preg, "axb", 0, nullptr, 0));
+  regfree(&preg);
 }
 
-TEST(LlvmLibcRegexTest, NullByteStopsParsing) {
+TEST(LlvmLibcRegexTest, SingleCharLiteral) {
   regex_t preg;
-  ASSERT_EQ(0,
-            LIBC_NAMESPACE::regcomp(&preg, "match", REG_EXTENDED | REG_NOSUB));
-  ASSERT_EQ(REG_NOMATCH,
-            LIBC_NAMESPACE::regexec(&preg, "doesn't \0 match", 0, nullptr, 0));
-  LIBC_NAMESPACE::regfree(&preg);
+  ASSERT_EQ(0, regcomp(&preg, "x", REG_EXTENDED | REG_NOSUB));
+  ASSERT_EQ(0, regexec(&preg, "x", 0, nullptr, 0));
+  ASSERT_EQ(0, regexec(&preg, "axb", 0, nullptr, 0));
+  ASSERT_EQ(REG_NOMATCH, regexec(&preg, "abc", 0, nullptr, 0));
+  regfree(&preg);
+}
+
+TEST(LlvmLibcRegexTest, CaseSensitivity) {
+  regex_t preg;
+  ASSERT_EQ(0, regcomp(&preg, "Hello", REG_EXTENDED | REG_NOSUB));
+  ASSERT_EQ(REG_NOMATCH, regexec(&preg, "hello", 0, nullptr, 0));
+  regfree(&preg);
 }

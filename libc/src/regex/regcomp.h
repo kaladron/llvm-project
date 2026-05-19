@@ -19,6 +19,12 @@
 
 namespace LIBC_NAMESPACE_DECL {
 
+/// Compiles a regular expression into a form that can be used by regexec.
+///
+/// \param preg The regex_t structure to store the compiled regex.
+/// \param pattern The null-terminated regular expression pattern.
+/// \param cflags Compilation flags (REG_EXTENDED, REG_ICASE, etc.).
+/// \returns 0 on success, or a REG_* error code on failure.
 int regcomp(regex_t *__restrict preg, const char *__restrict pattern,
             int cflags);
 
