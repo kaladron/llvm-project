@@ -13,10 +13,21 @@
 #include "src/time/timer_create.h"
 #include "test/UnitTest/Test.h"
 
-TEST(LlvmLibcTimerTest, CreateTest) {
+TEST(LlvmLibcTimerTest, CreateAndDeleteTest) {
   timer_t timerid;
   struct sigevent sev;
   sev.sigev_notify = SIGEV_NONE;
 
   ASSERT_EQ(LIBC_NAMESPACE::timer_create(CLOCK_REALTIME, &sev, &timerid), 0);
+  ASSERT_EQ(LIBC_NAMESPACE::timer_delete(timerid), 0);
+}
+
+TEST(LlvmLibcTimerTest, GetOverrunTest) {
+  timer_t timerid;
+  struct sigevent sev;
+  sev.sigev_notify = SIGEV_NONE;
+
+  ASSERT_EQ(LIBC_NAMESPACE::timer_create(CLOCK_REALTIME, &sev, &timerid), 0);
+  ASSERT_EQ(LIBC_NAMESPACE::timer_getoverrun(timerid), 0);
+  ASSERT_EQ(LIBC_NAMESPACE::timer_delete(timerid), 0);
 }

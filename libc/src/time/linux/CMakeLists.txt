@@ -5,6 +5,32 @@ if(NOT TARGET libc.src.__support.OSUtil.osutil)
 endif()
 
 add_entrypoint_object(
+  timer_delete
+  SRCS
+    timer_delete.cpp
+  HDRS
+    ../timer_delete.h
+  DEPENDS
+    libc.include.time
+    libc.src.__support.OSUtil.osutil
+    libc.src.__support.common
+    libc.src.__support.libc_errno
+)
+
+add_entrypoint_object(
+  timer_getoverrun
+  SRCS
+    timer_getoverrun.cpp
+  HDRS
+    ../timer_getoverrun.h
+  DEPENDS
+    libc.include.time
+    libc.src.__support.OSUtil.osutil
+    libc.src.__support.common
+    libc.src.__support.libc_errno
+)
+
+add_entrypoint_object(
   timer_create
   SRCS
     timer_create.cpp

@@ -149,6 +149,18 @@ functions:
       - type: clockid_t
       - type: const struct sigevent *__restrict
       - type: timer_t *__restrict
+  - name: timer_delete
+    standards:
+      - posix
+    return_type: int
+    arguments:
+      - type: timer_t
+  - name: timer_getoverrun
+    standards:
+      - posix
+    return_type: int
+    arguments:
+      - type: timer_t
   - name: time
     standards:
       - stdc

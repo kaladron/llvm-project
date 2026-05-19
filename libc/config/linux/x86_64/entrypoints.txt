@@ -1424,6 +1424,8 @@ if(LLVM_LIBC_FULL_BUILD)
     libc.src.time.clock
     libc.src.time.clock_gettime
     libc.src.time.timer_create
+    libc.src.time.timer_delete
+    libc.src.time.timer_getoverrun
     libc.src.time.clock_settime
     libc.src.time.difftime
     libc.src.time.gettimeofday

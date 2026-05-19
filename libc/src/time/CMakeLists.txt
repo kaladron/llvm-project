@@ -226,6 +226,20 @@ add_entrypoint_object(
 )
 
 add_entrypoint_object(
+  timer_delete
+  ALIAS
+  DEPENDS
+    .${LIBC_TARGET_OS}.timer_delete
+)
+
+add_entrypoint_object(
+  timer_getoverrun
+  ALIAS
+  DEPENDS
+    .${LIBC_TARGET_OS}.timer_getoverrun
+)
+
+add_entrypoint_object(
   timer_create
   ALIAS
   DEPENDS
