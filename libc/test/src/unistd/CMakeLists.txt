@@ -15,8 +15,20 @@ add_libc_unittest(
     libc.src.unistd.access
     libc.src.unistd.close
     libc.src.unistd.unlink
-    libc.test.UnitTest.ErrnoCheckingTest
     libc.test.UnitTest.ErrnoSetterMatcher
+)
+
+add_libc_unittest(
+  alarm_test
+  SUITE
+    libc_unistd_unittests
+  SRCS
+    alarm_test.cpp
+  DEPENDS
+    libc.hdr.signal_macros
+    libc.include.unistd
+    libc.src.signal.signal
+    libc.src.unistd.alarm
 )
 
 add_libc_unittest(

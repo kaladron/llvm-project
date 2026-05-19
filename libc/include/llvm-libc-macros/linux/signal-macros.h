@@ -101,4 +101,9 @@
 #define CLD_STOPPED 5   // child has stopped
 #define CLD_CONTINUED 6 // stopped child has continued
 
+#define SIGEV_SIGNAL 0
+#define SIGEV_NONE 1
+#define SIGEV_THREAD 2
+#define SIGEV_THREAD_ID 4
+
 #endif // LLVM_LIBC_MACROS_LINUX_SIGNAL_MACROS_H

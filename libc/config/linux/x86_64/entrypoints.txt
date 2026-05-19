@@ -378,6 +378,7 @@ set(TARGET_LIBC_ENTRYPOINTS
     libc.src.termios.tcsetattr
 
     # unistd.h entrypoints
+    libc.src.unistd.alarm
     libc.src.unistd.access
     libc.src.unistd.chdir
     libc.src.unistd.chown
@@ -1422,6 +1423,11 @@ if(LLVM_LIBC_FULL_BUILD)
     libc.src.time.ctime_r
     libc.src.time.clock
     libc.src.time.clock_gettime
+    libc.src.time.timer_create
+    libc.src.time.timer_delete
+    libc.src.time.timer_getoverrun
+    libc.src.time.timer_gettime
+    libc.src.time.timer_settime
     libc.src.time.clock_settime
     libc.src.time.difftime
     libc.src.time.gettimeofday

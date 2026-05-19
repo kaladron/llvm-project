@@ -595,3 +595,66 @@ add_header_library(
     libc.hdr.types.off_t
     libc.include.sys_syscall
 )
+
+add_header_library(
+  timer_create
+  HDRS
+    timer_create.h
+  DEPENDS
+    libc.src.__support.OSUtil.osutil
+    libc.src.__support.common
+    libc.src.__support.error_or
+    libc.src.__support.macros.config
+    libc.hdr.types.struct_sigevent
+    libc.include.sys_syscall
+)
+
+add_header_library(
+  timer_delete
+  HDRS
+    timer_delete.h
+  DEPENDS
+    libc.src.__support.OSUtil.osutil
+    libc.src.__support.common
+    libc.src.__support.error_or
+    libc.src.__support.macros.config
+    libc.include.sys_syscall
+)
+
+add_header_library(
+  timer_getoverrun
+  HDRS
+    timer_getoverrun.h
+  DEPENDS
+    libc.src.__support.OSUtil.osutil
+    libc.src.__support.common
+    libc.src.__support.error_or
+    libc.src.__support.macros.config
+    libc.include.sys_syscall
+)
+
+add_header_library(
+  timer_gettime
+  HDRS
+    timer_gettime.h
+  DEPENDS
+    libc.src.__support.OSUtil.osutil
+    libc.src.__support.common
+    libc.src.__support.error_or
+    libc.src.__support.macros.config
+    libc.hdr.types.struct_itimerspec
+    libc.include.sys_syscall
+)
+
+add_header_library(
+  timer_settime
+  HDRS
+    timer_settime.h
+  DEPENDS
+    libc.src.__support.OSUtil.osutil
+    libc.src.__support.common
+    libc.src.__support.error_or
+    libc.src.__support.macros.config
+    libc.hdr.types.struct_itimerspec
+    libc.include.sys_syscall
+)

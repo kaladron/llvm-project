@@ -339,6 +339,9 @@ add_header_macro(
     .llvm-libc-types.struct_timeval
     .llvm-libc-types.clockid_t
     .llvm-libc-types.rsize_t
+    .llvm-libc-types.struct_itimerspec
+    .llvm-libc-types.struct_sigevent
+    .llvm-libc-types.timer_t
 )
 
 add_header_macro(

@@ -86,3 +86,71 @@ add_entrypoint_object(
     libc.src.__support.time.units
     libc.src.errno.errno
 )
+add_entrypoint_object(
+  timer_gettime
+  SRCS
+    timer_gettime.cpp
+  HDRS
+    ../timer_gettime.h
+  DEPENDS
+    libc.hdr.types.struct_itimerspec
+    libc.hdr.types.timer_t
+    libc.src.__support.OSUtil.linux.syscall_wrappers.timer_gettime
+    libc.src.__support.macros.config
+    libc.src.errno.errno
+)
+
+add_entrypoint_object(
+  timer_settime
+  SRCS
+    timer_settime.cpp
+  HDRS
+    ../timer_settime.h
+  DEPENDS
+    libc.hdr.types.struct_itimerspec
+    libc.hdr.types.timer_t
+    libc.src.__support.OSUtil.linux.syscall_wrappers.timer_settime
+    libc.src.__support.macros.config
+    libc.src.errno.errno
+)
+
+add_entrypoint_object(
+  timer_create
+  SRCS
+    timer_create.cpp
+  HDRS
+    ../timer_create.h
+  DEPENDS
+    libc.hdr.types.struct_sigevent
+    libc.hdr.types.timer_t
+    libc.hdr.types.clockid_t
+    libc.src.__support.OSUtil.linux.syscall_wrappers.timer_create
+    libc.src.__support.macros.config
+    libc.src.errno.errno
+)
+
+add_entrypoint_object(
+  timer_delete
+  SRCS
+    timer_delete.cpp
+  HDRS
+    ../timer_delete.h
+  DEPENDS
+    libc.hdr.types.timer_t
+    libc.src.__support.OSUtil.linux.syscall_wrappers.timer_delete
+    libc.src.__support.macros.config
+    libc.src.errno.errno
+)
+
+add_entrypoint_object(
+  timer_getoverrun
+  SRCS
+    timer_getoverrun.cpp
+  HDRS
+    ../timer_getoverrun.h
+  DEPENDS
+    libc.hdr.types.timer_t
+    libc.src.__support.OSUtil.linux.syscall_wrappers.timer_getoverrun
+    libc.src.__support.macros.config
+    libc.src.errno.errno
+)

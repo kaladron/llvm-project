@@ -253,3 +253,37 @@ add_entrypoint_object(
     .${LIBC_TARGET_OS}.clock_settime
 )
 
+add_entrypoint_object(
+  timer_gettime
+  ALIAS
+  DEPENDS
+    .${LIBC_TARGET_OS}.timer_gettime
+)
+
+add_entrypoint_object(
+  timer_settime
+  ALIAS
+  DEPENDS
+    .${LIBC_TARGET_OS}.timer_settime
+)
+
+add_entrypoint_object(
+  timer_create
+  ALIAS
+  DEPENDS
+    .${LIBC_TARGET_OS}.timer_create
+)
+
+add_entrypoint_object(
+  timer_delete
+  ALIAS
+  DEPENDS
+    .${LIBC_TARGET_OS}.timer_delete
+)
+
+add_entrypoint_object(
+  timer_getoverrun
+  ALIAS
+  DEPENDS
+    .${LIBC_TARGET_OS}.timer_getoverrun
+)

@@ -1,5 +1,27 @@
 add_custom_target(libc_time_unittests)
 
+add_libc_test(
+  timer_test
+  SUITE
+    libc_time_unittests
+  SRCS
+    timer_test.cpp
+  DEPENDS
+    libc.src.signal.sigaction
+    libc.src.signal.sigemptyset
+    libc.src.time.timer_create
+    libc.src.time.timer_delete
+    libc.src.time.timer_getoverrun
+    libc.src.time.timer_gettime
+    libc.src.time.timer_settime
+    libc.hdr.signal_macros
+    libc.hdr.time_macros
+    libc.hdr.types.struct_itimerspec
+    libc.hdr.types.struct_sigevent
+    libc.hdr.types.timer_t
+    libc.test.UnitTest.ErrnoCheckingTest
+)
+
 add_libc_unittest(
   asctime_test
   SUITE
