@@ -141,6 +141,22 @@ functions:
       - type: const char *__restrict
       - type: const struct tm *__restrict
       - type: locale_t
+  - name: timer_gettime
+    standards:
+      - posix
+    return_type: int
+    arguments:
+      - type: timer_t
+      - type: struct itimerspec *
+  - name: timer_settime
+    standards:
+      - posix
+    return_type: int
+    arguments:
+      - type: timer_t
+      - type: int
+      - type: const struct itimerspec *__restrict
+      - type: struct itimerspec *__restrict
   - name: timer_create
     standards:
       - posix

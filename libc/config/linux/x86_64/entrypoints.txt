@@ -1,12 +1,4 @@
 set(TARGET_LIBC_ENTRYPOINTS
-    # arpa/inet.h entrypoints
-    libc.src.arpa.inet.htonl
-    libc.src.arpa.inet.htons
-    libc.src.arpa.inet.inet_addr
-    libc.src.arpa.inet.inet_aton
-    libc.src.arpa.inet.ntohl
-    libc.src.arpa.inet.ntohs
-
     # ctype.h entrypoints
     libc.src.ctype.isalnum
     libc.src.ctype.isalpha
@@ -1201,6 +1193,14 @@ if(LLVM_LIBC_FULL_BUILD)
     libc.src.dirent.opendir
     libc.src.dirent.readdir
 
+    # arpa/inet.h entrypoints
+    libc.src.arpa.inet.htonl
+    libc.src.arpa.inet.htons
+    libc.src.arpa.inet.inet_addr
+    libc.src.arpa.inet.inet_aton
+    libc.src.arpa.inet.ntohl
+    libc.src.arpa.inet.ntohs
+
     # pthread.h entrypoints
     libc.src.pthread.pthread_atfork
     libc.src.pthread.pthread_attr_destroy
@@ -1426,6 +1426,8 @@ if(LLVM_LIBC_FULL_BUILD)
     libc.src.time.timer_create
     libc.src.time.timer_delete
     libc.src.time.timer_getoverrun
+    libc.src.time.timer_gettime
+    libc.src.time.timer_settime
     libc.src.time.clock_settime
     libc.src.time.difftime
     libc.src.time.gettimeofday
@@ -1476,13 +1478,13 @@ if(LLVM_LIBC_FULL_BUILD)
     libc.src.wchar.wcsrtombs
     libc.src.wchar.wcsnrtombs
     libc.src.wchar.fgetwc
-    libc.src.wchar.fgetws
-    libc.src.wchar.fputwc
-    libc.src.wchar.fputws
+    # libc.src.wchar.fgetws
+    # libc.src.wchar.fputwc
+    # libc.src.wchar.fputws
     libc.src.wchar.fwide
     libc.src.wchar.getwc
-    libc.src.wchar.getwchar
-    libc.src.wchar.putwc
+    # libc.src.wchar.getwchar
+    # libc.src.wchar.putwc
     libc.src.wchar.putwchar
     libc.src.wchar.ungetwc
 
@@ -1496,17 +1498,6 @@ if(LLVM_LIBC_FULL_BUILD)
   )
 endif()
 
-if(LLVM_LIBC_ENABLE_EXPERIMENTAL_ENTRYPOINTS)
-  if(LLVM_LIBC_FULL_BUILD)
-    list(APPEND TARGET_LIBC_ENTRYPOINTS
-      # regex.h entrypoints
-      libc.src.regex.regcomp
-      libc.src.regex.regexec
-      libc.src.regex.regerror
-      libc.src.regex.regfree
-    )
-  endif()
-endif()
 
 set(TARGET_LIBMVEC_ENTRYPOINTS)
 

@@ -5,6 +5,34 @@ if(NOT TARGET libc.src.__support.OSUtil.osutil)
 endif()
 
 add_entrypoint_object(
+  timer_gettime
+  SRCS
+    timer_gettime.cpp
+  HDRS
+    ../timer_gettime.h
+  DEPENDS
+    libc.hdr.types.struct_itimerspec
+    libc.include.time
+    libc.src.__support.OSUtil.osutil
+    libc.src.__support.common
+    libc.src.__support.libc_errno
+)
+
+add_entrypoint_object(
+  timer_settime
+  SRCS
+    timer_settime.cpp
+  HDRS
+    ../timer_settime.h
+  DEPENDS
+    libc.hdr.types.struct_itimerspec
+    libc.include.time
+    libc.src.__support.OSUtil.osutil
+    libc.src.__support.common
+    libc.src.__support.libc_errno
+)
+
+add_entrypoint_object(
   timer_delete
   SRCS
     timer_delete.cpp
