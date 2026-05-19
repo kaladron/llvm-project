@@ -1,6 +1,18 @@
 add_custom_target(libc_time_unittests)
 
 add_libc_unittest(
+  timer_test
+  SUITE
+    libc_time_unittests
+  SRCS
+    timer_test.cpp
+  DEPENDS
+    libc.include.time
+    libc.src.time.timer_create
+    libc.src.time.clock_gettime
+)
+
+add_libc_unittest(
   asctime_test
   SUITE
     libc_time_unittests

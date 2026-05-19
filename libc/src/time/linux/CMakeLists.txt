@@ -5,6 +5,20 @@ if(NOT TARGET libc.src.__support.OSUtil.osutil)
 endif()
 
 add_entrypoint_object(
+  timer_create
+  SRCS
+    timer_create.cpp
+  HDRS
+    ../timer_create.h
+  DEPENDS
+    libc.hdr.types.struct_sigevent
+    libc.include.time
+    libc.src.__support.OSUtil.osutil
+    libc.src.__support.common
+    libc.src.__support.libc_errno
+)
+
+add_entrypoint_object(
   timespec_get
   SRCS
     timespec_get.cpp
