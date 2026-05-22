@@ -7,44 +7,44 @@
 //===----------------------------------------------------------------------===//
 ///
 /// \file
-/// Implementation of regcomp (stub).
+/// Implementation of regcomp (Implementation).
 ///
 //===----------------------------------------------------------------------===//
 
 #include "src/regex/regcomp.h"
-
 #include "hdr/regex_macros.h"
-#include "src/__support/CPP/new.h"
-#include "src/__support/CPP/string_view.h"
 #include "src/__support/alloc-checker.h"
+#include "src/__support/common.h"
 #include "src/__support/macros/config.h"
-#include "src/string/memory_utils/inline_memcpy.h"
+#include "src/__support/macros/null_check.h"
+#include "src/__support/regex/regex_internal.h"
+#include "src/__support/regex/regex_parser.h"
 
 namespace LIBC_NAMESPACE_DECL {
 
 LLVM_LIBC_FUNCTION(int, regcomp,
                    (regex_t *__restrict preg, const char *__restrict pattern,
                     int cflags)) {
-  // Silencing unused parameter warning for the stub.
-  (void)cflags;
+  LIBC_CRASH_ON_NULLPTR(preg);
+  LIBC_CRASH_ON_NULLPTR(pattern);
 
-  // Note: POSIX requires callers to call regfree() before reusing a preg
-  // object.  We therefore do not attempt to free any previous __internal here
-  // — preg is uninitialized on first use and the pointer would be garbage.
-
-  cpp::string_view pattern_view(pattern);
-  size_t len = pattern_view.size();
+  preg->re_nsub = 0;
   AllocChecker ac;
-  char *copy = new (ac) char[len + 1];
+  RegexInternal *ri = new (ac) RegexInternal(nullptr, cflags);
   if (!ac)
     return REG_ESPACE;
 
-  inline_memcpy(copy, pattern, len + 1);
+  auto res = parse_ere(pattern, ri->pool);
+  if (!res) {
+    int err = res.error();
+    ri->~RegexInternal();
+    ::operator delete(ri);
+    return err;
+  }
 
-  // TODO: This is a stub. re_nsub is always 0 because parenthesised
-  // subexpressions are not yet parsed. REG_NOSUB is effectively always active.
-  preg->re_nsub = 0;
-  preg->__internal = copy;
+  ri->pattern = res.value();
+  preg->__internal = ri;
+
   return 0;
 }
 

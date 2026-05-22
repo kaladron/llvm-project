@@ -7,7 +7,7 @@
 //===----------------------------------------------------------------------===//
 ///
 /// \file
-/// Implementation header for regfree.
+/// Implementation header for regfree (Prototypes).
 ///
 //===----------------------------------------------------------------------===//
 
@@ -19,6 +19,9 @@
 
 namespace LIBC_NAMESPACE_DECL {
 
+/// Frees all memory allocated for a compiled regular expression.
+///
+/// \param preg The precompiled regex_t structure to free.
 void regfree(regex_t *preg);
 
 } // namespace LIBC_NAMESPACE_DECL

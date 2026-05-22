@@ -7,25 +7,29 @@
 //===----------------------------------------------------------------------===//
 ///
 /// \file
-/// Implementation of regfree.
+/// Implementation of regfree (Implementation).
 ///
 //===----------------------------------------------------------------------===//
 
 #include "src/regex/regfree.h"
-
-#include "src/__support/CPP/new.h"
 #include "src/__support/common.h"
 #include "src/__support/macros/config.h"
+#include "src/__support/macros/null_check.h"
+#include "src/__support/regex/regex_internal.h"
+#include "src/__support/CPP/new.h"
 
 namespace LIBC_NAMESPACE_DECL {
 
-LLVM_LIBC_FUNCTION(void, regfree, (regex_t * preg)) {
-  if (preg->__internal) {
-    char *ptr = static_cast<char *>(preg->__internal);
-    delete[] ptr;
-    preg->__internal = nullptr;
-  }
-  preg->re_nsub = 0;
+LLVM_LIBC_FUNCTION(void, regfree, (regex_t *preg)) {
+  LIBC_CRASH_ON_NULLPTR(preg);
+
+  if (!preg->__internal)
+    return;
+
+  RegexInternal *ri = reinterpret_cast<RegexInternal *>(preg->__internal);
+  ri->~RegexInternal();
+  ::operator delete(ri);
+  preg->__internal = nullptr;
 }
 
 } // namespace LIBC_NAMESPACE_DECL
