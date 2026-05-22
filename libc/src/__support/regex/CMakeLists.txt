@@ -14,3 +14,28 @@ add_object_library(
     libc.hdr.regex_macros
     libc.hdr.stdint_proxy
 )
+
+add_object_library(
+  regex_parser
+  SRCS
+    regex_parser.cpp
+  HDRS
+    regex_parser.h
+  DEPENDS
+    .regex_expr_pool
+    libc.src.__support.CPP.expected
+    libc.src.__support.macros.config
+    libc.hdr.regex_macros
+)
+
+add_object_library(
+  regex_matcher
+  SRCS
+    regex_matcher.cpp
+  HDRS
+    regex_matcher.h
+  DEPENDS
+    .regex_expr_pool
+    libc.src.__support.macros.config
+    libc.hdr.regex_macros
+)

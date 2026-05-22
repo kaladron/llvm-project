@@ -11,3 +11,17 @@ add_libc_test(
   # of the simple bump allocator used in hermetic tests.
   UNIT_TEST_ONLY
 )
+
+add_libc_test(
+  matcher_test
+  SUITE
+    libc-support-tests
+  SRCS
+    matcher_test.cpp
+  DEPENDS
+    libc.src.__support.regex.regex_parser
+    libc.src.__support.regex.regex_matcher
+    libc.src.__support.regex.regex_expr_pool
+    libc.hdr.regex_macros
+  UNIT_TEST_ONLY
+)
