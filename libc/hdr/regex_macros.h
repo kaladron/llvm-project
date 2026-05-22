@@ -18,6 +18,10 @@
 
 #include "include/llvm-libc-macros/regex-macros.h"
 
+#else // Overlay mode
+
+#include <regex.h>
+
 #endif // LIBC_FULL_BUILD
 
 #endif // LLVM_LIBC_HDR_REGEX_MACROS_H

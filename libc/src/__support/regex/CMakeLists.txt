@@ -1,0 +1,46 @@
+add_object_library(
+  regex_expr_pool
+  SRCS
+    regex_expr_pool.cpp
+  HDRS
+    regex_expr_pool.h
+    regex_ast.h
+  DEPENDS
+    libc.src.__support.CPP.new
+    libc.src.__support.hash
+    libc.src.__support.macros.config
+)
+
+add_object_library(
+  regex_parser
+  SRCS
+    regex_parser.cpp
+  HDRS
+    regex_parser.h
+  DEPENDS
+    .regex_expr_pool
+    libc.src.__support.CPP.expected
+    libc.src.__support.macros.config
+    libc.include.llvm-libc-macros.regex_macros
+)
+
+add_object_library(
+  regex_matcher
+  SRCS
+    regex_matcher.cpp
+  HDRS
+    regex_matcher.h
+  DEPENDS
+    .regex_expr_pool
+    libc.src.__support.macros.config
+    libc.include.llvm-libc-macros.regex_macros
+)
+
+add_header_library(
+  regex_internal
+  HDRS
+    regex_internal.h
+  DEPENDS
+    .regex_expr_pool
+    libc.src.__support.macros.config
+)
