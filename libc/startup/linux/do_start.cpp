@@ -135,7 +135,9 @@ static TLSDescriptor tls;
   // Process IRELATIVE relocations (ifunc resolvers).
   // Skips when no ifuncs are present in the binary.
   if (reinterpret_cast<uintptr_t>(__rela_iplt_start) !=
-      reinterpret_cast<uintptr_t>(__rela_iplt_end))
+          reinterpret_cast<uintptr_t>(__rela_iplt_end) ||
+      reinterpret_cast<uintptr_t>(__rel_iplt_start) !=
+          reinterpret_cast<uintptr_t>(__rel_iplt_end))
     apply_irelative_relocs(base, hwcap, hwcap2);
 
   app.tls.address = tls_phdr->p_vaddr + base;

@@ -32,3 +32,12 @@ LLVM_LIBC_FUNCTION(long, __llvm_libc_syscall,
 }
 
 } // namespace LIBC_NAMESPACE_DECL
+
+#ifdef LIBC_TARGET_ARCH_IS_X86
+#undef syscall
+extern "C" long syscall(long number, long arg1, long arg2, long arg3, long arg4,
+                        long arg5, long arg6) {
+  return LIBC_NAMESPACE::__llvm_libc_syscall(number, arg1, arg2, arg3, arg4,
+                                             arg5, arg6);
+}
+#endif

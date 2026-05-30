@@ -82,7 +82,11 @@ template <typename T> LIBC_INLINE void stream(Ptr dst, T value) {
   store<T>(dst, value);
 #endif
 }
-template <typename T> LIBC_INLINE void fence() { _mm_sfence(); }
+template <typename T> LIBC_INLINE void fence() {
+#if defined(__SSE__)
+  _mm_sfence();
+#endif
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 // Specializations for uint16_t

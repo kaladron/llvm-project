@@ -39,3 +39,16 @@ LLVM_LIBC_FUNCTION(int, open, (const char *path, int flags, ...)) {
 }
 
 } // namespace LIBC_NAMESPACE_DECL
+
+#ifdef LIBC_TARGET_ARCH_IS_X86_32
+#include <stdarg.h>
+extern "C" int open64(const char *path, int flags, ...) {
+  va_list varargs;
+  va_start(varargs, flags);
+  int mode = 0;
+  if ((flags & O_CREAT) || (flags & O_TMPFILE) == O_TMPFILE)
+    mode = va_arg(varargs, int);
+  va_end(varargs);
+  return LIBC_NAMESPACE::open(path, flags, mode);
+}
+#endif

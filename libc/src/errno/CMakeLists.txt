@@ -13,4 +13,5 @@ add_entrypoint_object(
     libc.src.__support.libc_errno
     libc.src.__support.macros.attributes
     libc.src.__support.macros.config
+    libc.src.execinfo.backtrace
 )

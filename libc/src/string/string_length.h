@@ -22,7 +22,7 @@
 #if LIBC_HAS_VECTOR_TYPE
 #include "src/string/memory_utils/generic/inline_strlen.h"
 #endif
-#if defined(LIBC_TARGET_ARCH_IS_X86)
+#if defined(LIBC_TARGET_ARCH_IS_X86_64)
 #include "src/string/memory_utils/x86_64/inline_strlen.h"
 #elif defined(LIBC_TARGET_ARCH_IS_AARCH64) &&                                  \
     (defined(LIBC_TARGET_CPU_HAS_SVE) || defined(__ARM_NEON))
@@ -42,7 +42,8 @@ namespace internal {
 
 #if !LIBC_HAS_VECTOR_TYPE
 // Forward any clang vector impls to architecture specific ones
-namespace arch_vector {}
+namespace arch_vector {
+}
 namespace clang_vector = arch_vector;
 #endif
 
@@ -184,6 +185,22 @@ find_first_character(const unsigned char *src, unsigned char ch,
 }
 
 } // namespace word
+ 
+#if !LIBC_HAS_VECTOR_TYPE
+// Forward any clang vector impls to architecture specific ones
+namespace arch_vector {
+#if defined(LIBC_TARGET_ARCH_IS_X86_32)
+LIBC_INLINE size_t string_length(const char *src) {
+  return word::string_length(src);
+}
+LIBC_INLINE void *find_first_character(const unsigned char *s, unsigned char c,
+                                       size_t n) {
+  return word::find_first_character(s, c, n);
+}
+#endif
+}
+namespace clang_vector = arch_vector;
+#endif
 
 // Dispatch mechanism for implementations of performance-sensitive
 // functions. Always measure, but generally from lower- to higher-performance

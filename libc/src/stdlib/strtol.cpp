@@ -28,3 +28,8 @@ LLVM_LIBC_FUNCTION(long, strtol,
 }
 
 } // namespace LIBC_NAMESPACE_DECL
+
+extern "C" long __isoc23_strtol(const char *__restrict str,
+                                char **__restrict str_end, int base) {
+  return LIBC_NAMESPACE::strtol(str, str_end, base);
+}

@@ -22,9 +22,11 @@ namespace LIBC_NAMESPACE_DECL {
 namespace testing {
 
 void FEnvSafeTest::PreserveFEnv::check() {
+  if (test == nullptr)
+    return;
   fenv_t after;
-  test.get_fenv(after);
-  test.expect_fenv_eq(before, after);
+  test->get_fenv(after);
+  test->expect_fenv_eq(before, after);
 }
 
 void FEnvSafeTest::TearDown() {

@@ -77,7 +77,8 @@ bool test(RunContext *Ctx, TestCond Cond, ValType LHS, ValType RHS,
                                      cpp::string_view OpString) -> bool {
     if (Cond)
       return true;
-    Ctx->markFail();
+    if (Ctx)
+      Ctx->markFail();
     size_t OffsetLength = OpString.size() > 2 ? OpString.size() - 2 : 0;
     cpp::string Offset(OffsetLength, ' ');
     tlog << Loc;

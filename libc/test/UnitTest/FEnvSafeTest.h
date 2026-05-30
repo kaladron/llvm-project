@@ -30,11 +30,12 @@ protected:
   // `fenv_t` state and restore it when `preserve` goes out of scope.
   class PreserveFEnv {
     fenv_t before;
-    FEnvSafeTest &test;
+    FEnvSafeTest *test;
 
   public:
-    explicit PreserveFEnv(FEnvSafeTest *self) : test{*self} {
-      test.get_fenv(before);
+    explicit PreserveFEnv(FEnvSafeTest *self) : test{self} {
+      if (test != nullptr)
+        test->get_fenv(before);
     }
 
     // Cause test expectation failures if the current state doesn't match what
@@ -42,7 +43,10 @@ protected:
     void check();
 
     // Restore the state captured in the constructor.
-    void restore() { test.set_fenv(before); }
+    void restore() {
+      if (test != nullptr)
+        test->set_fenv(before);
+    }
 
     ~PreserveFEnv() { restore(); }
   };

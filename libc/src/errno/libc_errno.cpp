@@ -53,4 +53,10 @@ Errno libc_errno;
 
 #endif // LIBC_ERRNO_MODE != LIBC_ERRNO_MODE_SYSTEM_INLINE
 
+#ifdef LIBC_TARGET_ARCH_IS_X86_32
+extern "C" int *__errno_location() noexcept {
+  return __llvm_libc_errno();
+}
+#endif
+
 } // namespace LIBC_NAMESPACE_DECL

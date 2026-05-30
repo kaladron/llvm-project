@@ -14,7 +14,7 @@ typedef struct {
   unsigned char __control_word[4];
   unsigned char __status_word[4];
 } fenv_t;
-#elif defined(__x86_64__)
+#elif defined(__x86_64__) || defined(__i386__)
 typedef struct {
   unsigned char __x86_status[28];
   unsigned char __mxcsr[4];

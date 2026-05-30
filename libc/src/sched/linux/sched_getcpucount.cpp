@@ -28,3 +28,7 @@ LLVM_LIBC_FUNCTION(int, __sched_getcpucount,
 }
 
 } // namespace LIBC_NAMESPACE_DECL
+
+extern "C" int __sched_cpucount(size_t cpuset_size, const cpu_set_t *mask) {
+  return LIBC_NAMESPACE::__sched_getcpucount(cpuset_size, mask);
+}

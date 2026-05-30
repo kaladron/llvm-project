@@ -15,10 +15,15 @@
 struct semid_ds {
   struct ipc_perm sem_perm;
 #ifdef __linux__
+#if defined(__i386__) && !defined(LIBC_TYPES_TIME_T_IS_32_BIT)
+  time_t sem_otime;
+  time_t sem_ctime;
+#else
   time_t sem_otime;
   unsigned long __unused1;
   time_t sem_ctime;
   unsigned long __unused2;
+#endif
 #else
   time_t sem_otime;
   time_t sem_ctime;

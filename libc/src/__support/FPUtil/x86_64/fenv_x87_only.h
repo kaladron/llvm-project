@@ -82,7 +82,7 @@ LIBC_INLINE static int set_round(int rounding_mode) {
   return 0;
 }
 
-LIBC_INLINE static void get_env(fenv_t *env) {
+LIBC_INLINE static int get_env(fenv_t *env) {
   internal::X87StateDescriptor x87_state;
   x87::get_x87_state_descriptor(x87_state);
   if constexpr (sizeof(fenv_t) >= sizeof(internal::X87StateDescriptor)) {
@@ -99,6 +99,7 @@ LIBC_INLINE static void get_env(fenv_t *env) {
     char *env_ptr = reinterpret_cast<char *>(env);
     cpp::inline_copy<sizeof(uint16_t)>(mxcsr_ptr, env_ptr);
   }
+  return 0;
 }
 
 LIBC_INLINE static int set_env(const fenv_t *env) {

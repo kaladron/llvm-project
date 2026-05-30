@@ -28,3 +28,10 @@ LLVM_LIBC_FUNCTION(void *, mmap,
 }
 
 } // namespace LIBC_NAMESPACE_DECL
+
+#ifdef LIBC_TARGET_ARCH_IS_X86_32
+extern "C" void *mmap64(void *addr, size_t size, int prot, int flags, int fd,
+                        off_t offset) {
+  return LIBC_NAMESPACE::mmap(addr, size, prot, flags, fd, offset);
+}
+#endif

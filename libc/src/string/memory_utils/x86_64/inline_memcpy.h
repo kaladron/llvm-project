@@ -159,12 +159,12 @@ inline_memcpy_x86_avx_ge64_sw_prefetching(Ptr __restrict dst,
     if (count >= x86::K_NTA_THRESHOLD) {
       while (offset + K_THREE_CACHELINES + 64 <= count) {
         for (size_t i = 0; i < 3; ++i, offset += K_ONE_CACHELINE) {
-          generic::stream(dst + offset, generic::load<__m256i>(src + offset));
+          generic::stream(dst + offset, generic::load<generic_v256>(src + offset));
           generic::stream(dst + offset + 32,
-                          generic::load<__m256i>(src + offset + 32));
+                          generic::load<generic_v256>(src + offset + 32));
         }
       }
-      generic::fence<__m256i>();
+      generic::fence<generic_v256>();
       need_prefetch_run = false;
     }
   }

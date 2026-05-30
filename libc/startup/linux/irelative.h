@@ -18,6 +18,10 @@ extern "C" {
     __rela_iplt_start[]; // NOLINT
 [[gnu::weak, gnu::visibility("hidden")]] extern const ElfW(Rela)
     __rela_iplt_end[]; // NOLINT
+[[gnu::weak, gnu::visibility("hidden")]] extern const ElfW(Rel)
+    __rel_iplt_start[]; // NOLINT
+[[gnu::weak, gnu::visibility("hidden")]] extern const ElfW(Rel)
+    __rel_iplt_end[]; // NOLINT
 }
 
 namespace LIBC_NAMESPACE_DECL {
