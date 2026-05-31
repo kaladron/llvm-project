@@ -1,0 +1,19 @@
+# Meta-portfolio for linux (TARGET_LIBC_ENTRYPOINTS)
+
+include(${LIBC_SOURCE_DIR}/config/portfolios/linux/sys_auxv.txt)
+include(${LIBC_SOURCE_DIR}/config/portfolios/linux/sys_epoll.txt)
+include(${LIBC_SOURCE_DIR}/config/portfolios/linux/sys_ioctl.txt)
+include(${LIBC_SOURCE_DIR}/config/portfolios/linux/sys_personality.txt)
+include(${LIBC_SOURCE_DIR}/config/portfolios/linux/sys_prctl.txt)
+include(${LIBC_SOURCE_DIR}/config/portfolios/linux/sys_random.txt)
+include(${LIBC_SOURCE_DIR}/config/portfolios/linux/sys_sendfile.txt)
+
+set(PORTFOLIO_LIBC_LINUX
+    ${PORTFOLIO_LIBC_SYS_AUXV}
+    ${PORTFOLIO_LIBC_SYS_EPOLL}
+    ${PORTFOLIO_LIBC_SYS_IOCTL}
+    ${PORTFOLIO_LIBC_SYS_PERSONALITY}
+    ${PORTFOLIO_LIBC_SYS_PRCTL}
+    ${PORTFOLIO_LIBC_SYS_RANDOM}
+    ${PORTFOLIO_LIBC_SYS_SENDFILE}
+)

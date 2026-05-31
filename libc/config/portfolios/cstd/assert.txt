@@ -1,0 +1,9 @@
+# Portfolios for assert (PORTFOLIO_LIBC_ASSERT)
+
+set(PORTFOLIO_LIBC_ASSERT)
+
+if(LLVM_LIBC_FULL_BUILD)
+  list(APPEND PORTFOLIO_LIBC_ASSERT
+      libc.src.assert.__assert_fail
+  )
+endif()

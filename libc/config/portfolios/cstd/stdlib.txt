@@ -1,0 +1,145 @@
+# Portfolios for stdlib (PORTFOLIO_LIBC_STDLIB)
+
+set(PORTFOLIO_LIBC_STDLIB
+    libc.src.stdlib.abs
+    libc.src.stdlib.atof
+    libc.src.stdlib.atoi
+    libc.src.stdlib.atol
+    libc.src.stdlib.atoll
+    libc.src.stdlib.bsearch
+    libc.src.stdlib.div
+    libc.src.stdlib.free
+    libc.src.stdlib.labs
+    libc.src.stdlib.ldiv
+    libc.src.stdlib.llabs
+    libc.src.stdlib.lldiv
+    libc.src.stdlib.malloc
+    libc.src.stdlib.qsort
+    libc.src.stdlib.strtod
+    libc.src.stdlib.strtof
+    libc.src.stdlib.strtol
+    libc.src.stdlib.strtold
+    libc.src.stdlib.strtoll
+    libc.src.stdlib.strtoul
+    libc.src.stdlib.strtoull
+)
+
+if(LIBC_TARGET_OS_IS_BAREMETAL OR (LIBC_TARGET_OS_IS_DARWIN AND LIBC_TARGET_ARCHITECTURE_IS_AARCH64) OR LIBC_TARGET_OS_IS_GPU OR (LIBC_TARGET_OS_IS_LINUX AND (LIBC_TARGET_ARCHITECTURE_IS_AARCH64 OR LIBC_TARGET_ARCHITECTURE_IS_RISCV OR LIBC_TARGET_ARCHITECTURE_IS_X86_64)))
+  list(APPEND PORTFOLIO_LIBC_STDLIB
+      libc.src.stdlib.rand
+      libc.src.stdlib.srand
+  )
+endif()
+
+if((LIBC_TARGET_OS_IS_BAREMETAL OR (LIBC_TARGET_OS_IS_DARWIN AND LIBC_TARGET_ARCHITECTURE_IS_AARCH64) OR LIBC_TARGET_OS_IS_GPU OR (LIBC_TARGET_OS_IS_LINUX AND (LIBC_TARGET_ARCHITECTURE_IS_AARCH64 OR LIBC_TARGET_ARCHITECTURE_IS_RISCV OR LIBC_TARGET_ARCHITECTURE_IS_X86_64))) AND (LLVM_LIBC_FULL_BUILD))
+  list(APPEND PORTFOLIO_LIBC_STDLIB
+      libc.src.stdlib._Exit
+  )
+endif()
+
+if(LIBC_TARGET_OS_IS_BAREMETAL OR (LIBC_TARGET_OS_IS_LINUX AND (LIBC_TARGET_ARCHITECTURE_IS_RISCV OR LIBC_TARGET_ARCHITECTURE_IS_X86_64)))
+  list(APPEND PORTFOLIO_LIBC_STDLIB
+      libc.src.stdlib.a64l
+      libc.src.stdlib.l64a
+  )
+endif()
+
+if(LIBC_TARGET_OS_IS_BAREMETAL OR LIBC_TARGET_OS_IS_DARWIN OR LIBC_TARGET_OS_IS_FREEBSD OR LIBC_TARGET_OS_IS_GPU OR (LIBC_TARGET_OS_IS_LINUX AND (LIBC_TARGET_ARCHITECTURE_IS_AARCH64 OR LIBC_TARGET_ARCHITECTURE_IS_RISCV OR LIBC_TARGET_ARCHITECTURE_IS_X86_64)) OR LIBC_TARGET_OS_IS_WINDOWS)
+  list(APPEND PORTFOLIO_LIBC_STDLIB
+      libc.src.stdlib.calloc
+      libc.src.stdlib.realloc
+  )
+endif()
+
+if(LIBC_TARGET_OS_IS_BAREMETAL OR LIBC_TARGET_OS_IS_DARWIN OR LIBC_TARGET_OS_IS_GPU OR LIBC_TARGET_OS_IS_LINUX OR LIBC_TARGET_OS_IS_WINDOWS)
+  list(APPEND PORTFOLIO_LIBC_STDLIB
+      libc.src.stdlib.memalignment
+  )
+endif()
+
+if(LIBC_TARGET_OS_IS_BAREMETAL OR LIBC_TARGET_OS_IS_FREEBSD OR LIBC_TARGET_OS_IS_GPU OR LIBC_TARGET_OS_IS_LINUX OR LIBC_TARGET_OS_IS_WINDOWS)
+  list(APPEND PORTFOLIO_LIBC_STDLIB
+      libc.src.stdlib.aligned_alloc
+  )
+endif()
+
+if((LIBC_TARGET_OS_IS_BAREMETAL OR LIBC_TARGET_OS_IS_GPU OR (LIBC_TARGET_OS_IS_LINUX AND (LIBC_TARGET_ARCHITECTURE_IS_AARCH64 OR LIBC_TARGET_ARCHITECTURE_IS_RISCV OR LIBC_TARGET_ARCHITECTURE_IS_X86_64))) AND (LLVM_LIBC_FULL_BUILD))
+  list(APPEND PORTFOLIO_LIBC_STDLIB
+      libc.src.stdlib.abort
+      libc.src.stdlib.atexit
+      libc.src.stdlib.exit
+  )
+endif()
+
+if((LIBC_TARGET_OS_IS_BAREMETAL OR LIBC_TARGET_OS_IS_GPU OR (LIBC_TARGET_OS_IS_LINUX AND (LIBC_TARGET_ARCHITECTURE_IS_RISCV OR LIBC_TARGET_ARCHITECTURE_IS_X86_64))) AND (LLVM_LIBC_FULL_BUILD))
+  list(APPEND PORTFOLIO_LIBC_STDLIB
+      libc.src.stdlib.strtod_l
+      libc.src.stdlib.strtof_l
+      libc.src.stdlib.strtol_l
+      libc.src.stdlib.strtold_l
+      libc.src.stdlib.strtoll_l
+      libc.src.stdlib.strtoul_l
+      libc.src.stdlib.strtoull_l
+  )
+endif()
+
+if(LIBC_TARGET_OS_IS_BAREMETAL OR LIBC_TARGET_OS_IS_GPU OR LIBC_TARGET_OS_IS_LINUX)
+  list(APPEND PORTFOLIO_LIBC_STDLIB
+      libc.src.stdlib.qsort_r
+  )
+endif()
+
+if((LIBC_TARGET_OS_IS_GPU OR (LIBC_TARGET_OS_IS_LINUX AND (LIBC_TARGET_ARCHITECTURE_IS_AARCH64 OR LIBC_TARGET_ARCHITECTURE_IS_RISCV OR LIBC_TARGET_ARCHITECTURE_IS_X86_64))) AND (LLVM_LIBC_FULL_BUILD))
+  list(APPEND PORTFOLIO_LIBC_STDLIB
+      libc.src.stdlib.at_quick_exit
+      libc.src.stdlib.getenv
+      libc.src.stdlib.quick_exit
+  )
+endif()
+
+if(LIBC_TARGET_OS_IS_LINUX AND (LIBC_TARGET_ARCHITECTURE_IS_AARCH64 OR LIBC_TARGET_ARCHITECTURE_IS_RISCV OR LIBC_TARGET_ARCHITECTURE_IS_X86_64))
+  list(APPEND PORTFOLIO_LIBC_STDLIB
+      libc.src.stdlib.strfromd
+      libc.src.stdlib.strfromf
+  )
+endif()
+
+if((LIBC_TARGET_OS_IS_LINUX AND (LIBC_TARGET_ARCHITECTURE_IS_AARCH64 OR LIBC_TARGET_ARCHITECTURE_IS_RISCV OR LIBC_TARGET_ARCHITECTURE_IS_X86_64)) AND (LLVM_LIBC_FULL_BUILD))
+  list(APPEND PORTFOLIO_LIBC_STDLIB
+      libc.src.stdlib.setenv
+  )
+endif()
+
+if(LIBC_TARGET_OS_IS_LINUX AND (LIBC_TARGET_ARCHITECTURE_IS_AARCH64 OR LIBC_TARGET_ARCHITECTURE_IS_X86_64))
+  list(APPEND PORTFOLIO_LIBC_STDLIB
+      libc.src.stdlib.posix_memalign
+  )
+endif()
+
+if(LIBC_TARGET_OS_IS_LINUX AND (LIBC_TARGET_ARCHITECTURE_IS_RISCV OR LIBC_TARGET_ARCHITECTURE_IS_X86_64))
+  list(APPEND PORTFOLIO_LIBC_STDLIB
+      libc.src.stdlib.strfroml
+  )
+endif()
+
+if((LIBC_TARGET_OS_IS_LINUX AND LIBC_TARGET_ARCHITECTURE_IS_X86_64) AND (LLVM_LIBC_FULL_BUILD))
+  list(APPEND PORTFOLIO_LIBC_STDLIB
+      libc.src.stdlib.mblen
+      libc.src.stdlib.mbstowcs
+      libc.src.stdlib.mbtowc
+      libc.src.stdlib.wcstombs
+      libc.src.stdlib.wctomb
+  )
+endif()
+
+if(LIBC_TARGET_OS_IS_GPU)
+  list(APPEND PORTFOLIO_LIBC_STDLIB
+      libc.src.stdlib.system
+  )
+endif()
+
+if(LIBC_TARGET_OS_IS_LINUX AND (LLVM_LIBC_INCLUDE_SCUDO))
+  list(APPEND PORTFOLIO_LIBC_STDLIB
+      libc.src.stdlib.mallopt
+  )
+endif()

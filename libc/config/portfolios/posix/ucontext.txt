@@ -1,0 +1,10 @@
+# Portfolios for posix/ucontext (PORTFOLIO_LIBC_UCONTEXT)
+
+set(PORTFOLIO_LIBC_UCONTEXT)
+
+if(LLVM_LIBC_FULL_BUILD)
+  list(APPEND PORTFOLIO_LIBC_UCONTEXT
+      libc.src.ucontext.getcontext
+      libc.src.ucontext.setcontext
+  )
+endif()

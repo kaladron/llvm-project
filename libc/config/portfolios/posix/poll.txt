@@ -1,0 +1,5 @@
+# Portfolios for posix/poll (PORTFOLIO_LIBC_POLL)
+
+set(PORTFOLIO_LIBC_POLL
+    libc.src.poll.poll
+)

@@ -1,0 +1,9 @@
+# Portfolios for posix/sys/select (PORTFOLIO_LIBC_SYS_SELECT)
+
+set(PORTFOLIO_LIBC_SYS_SELECT)
+
+if(LLVM_LIBC_FULL_BUILD)
+  list(APPEND PORTFOLIO_LIBC_SYS_SELECT
+      libc.src.sys.select.select
+  )
+endif()

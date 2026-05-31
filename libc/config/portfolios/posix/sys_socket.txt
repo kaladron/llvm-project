@@ -1,0 +1,23 @@
+# Portfolios for posix/sys/socket (PORTFOLIO_LIBC_SYS_SOCKET)
+
+set(PORTFOLIO_LIBC_SYS_SOCKET
+    libc.src.sys.socket.accept
+    libc.src.sys.socket.accept4
+    libc.src.sys.socket.bind
+    libc.src.sys.socket.connect
+    libc.src.sys.socket.getpeername
+    libc.src.sys.socket.getsockname
+    libc.src.sys.socket.getsockopt
+    libc.src.sys.socket.listen
+    libc.src.sys.socket.recv
+    libc.src.sys.socket.recvfrom
+    libc.src.sys.socket.recvmsg
+    libc.src.sys.socket.send
+    libc.src.sys.socket.sendmmsg
+    libc.src.sys.socket.sendmsg
+    libc.src.sys.socket.sendto
+    libc.src.sys.socket.setsockopt
+    libc.src.sys.socket.shutdown
+    libc.src.sys.socket.socket
+    libc.src.sys.socket.socketpair
+)

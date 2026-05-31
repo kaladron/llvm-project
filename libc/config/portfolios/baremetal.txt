@@ -1,0 +1,7 @@
+# Meta-portfolio for baremetal (TARGET_LIBC_ENTRYPOINTS)
+
+include(${LIBC_SOURCE_DIR}/config/portfolios/baremetal/startup.txt)
+
+set(PORTFOLIO_LIBC_BAREMETAL
+    ${PORTFOLIO_LIBC_STARTUP}
+)

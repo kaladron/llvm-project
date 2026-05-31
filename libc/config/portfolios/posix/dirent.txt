@@ -1,0 +1,12 @@
+# Portfolios for posix/dirent (PORTFOLIO_LIBC_DIRENT)
+
+set(PORTFOLIO_LIBC_DIRENT)
+
+if(LLVM_LIBC_FULL_BUILD)
+  list(APPEND PORTFOLIO_LIBC_DIRENT
+      libc.src.dirent.closedir
+      libc.src.dirent.dirfd
+      libc.src.dirent.opendir
+      libc.src.dirent.readdir
+  )
+endif()

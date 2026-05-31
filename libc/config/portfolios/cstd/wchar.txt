@@ -1,0 +1,79 @@
+# Portfolios for wchar (PORTFOLIO_LIBC_WCHAR)
+
+set(PORTFOLIO_LIBC_WCHAR
+    libc.src.wchar.wcslen
+    libc.src.wchar.wctob
+)
+
+if(LIBC_TARGET_OS_IS_BAREMETAL OR (LIBC_TARGET_OS_IS_LINUX AND (LIBC_TARGET_ARCHITECTURE_IS_RISCV OR LIBC_TARGET_ARCHITECTURE_IS_X86_64)))
+  list(APPEND PORTFOLIO_LIBC_WCHAR
+      libc.src.wchar.btowc
+  )
+endif()
+
+if(LIBC_TARGET_OS_IS_LINUX AND LIBC_TARGET_ARCHITECTURE_IS_X86_64)
+  list(APPEND PORTFOLIO_LIBC_WCHAR
+      libc.src.wchar.wcpcpy
+      libc.src.wchar.wcpncpy
+      libc.src.wchar.wcscat
+      libc.src.wchar.wcschr
+      libc.src.wchar.wcscmp
+      libc.src.wchar.wcscoll
+      libc.src.wchar.wcscpy
+      libc.src.wchar.wcscspn
+      libc.src.wchar.wcsdup
+      libc.src.wchar.wcslcat
+      libc.src.wchar.wcslcpy
+      libc.src.wchar.wcsncat
+      libc.src.wchar.wcsncmp
+      libc.src.wchar.wcsncpy
+      libc.src.wchar.wcsnlen
+      libc.src.wchar.wcspbrk
+      libc.src.wchar.wcsrchr
+      libc.src.wchar.wcsspn
+      libc.src.wchar.wcsstr
+      libc.src.wchar.wcstod
+      libc.src.wchar.wcstof
+      libc.src.wchar.wcstok
+      libc.src.wchar.wcstol
+      libc.src.wchar.wcstold
+      libc.src.wchar.wcstoll
+      libc.src.wchar.wcstoul
+      libc.src.wchar.wcstoull
+      libc.src.wchar.wcsxfrm
+      libc.src.wchar.wmemchr
+      libc.src.wchar.wmemcmp
+      libc.src.wchar.wmemcpy
+      libc.src.wchar.wmemmove
+      libc.src.wchar.wmempcpy
+      libc.src.wchar.wmemset
+  )
+endif()
+
+if((LIBC_TARGET_OS_IS_LINUX AND LIBC_TARGET_ARCHITECTURE_IS_X86_64) AND (LLVM_LIBC_FULL_BUILD))
+  list(APPEND PORTFOLIO_LIBC_WCHAR
+      libc.src.wchar.mbrlen
+      libc.src.wchar.mbrtowc
+      libc.src.wchar.mbsinit
+      libc.src.wchar.mbsnrtowcs
+      libc.src.wchar.mbsrtowcs
+      libc.src.wchar.wcrtomb
+      libc.src.wchar.wcsnrtombs
+      libc.src.wchar.wcsrtombs
+  )
+endif()
+
+if(LIBC_TARGET_OS_IS_LINUX AND (LLVM_LIBC_FULL_BUILD))
+  list(APPEND PORTFOLIO_LIBC_WCHAR
+      libc.src.wchar.fgetwc
+      libc.src.wchar.fgetws
+      libc.src.wchar.fputwc
+      libc.src.wchar.fputws
+      libc.src.wchar.fwide
+      libc.src.wchar.getwc
+      libc.src.wchar.getwchar
+      libc.src.wchar.putwc
+      libc.src.wchar.putwchar
+      libc.src.wchar.ungetwc
+  )
+endif()

@@ -1,0 +1,12 @@
+# Portfolios for posix/sys/time (PORTFOLIO_LIBC_SYS_TIME)
+
+set(PORTFOLIO_LIBC_SYS_TIME
+    libc.src.sys.time.getitimer
+    libc.src.sys.time.setitimer
+)
+
+if(LIBC_TARGET_OS_IS_LINUX AND (LIBC_TARGET_ARCHITECTURE_IS_RISCV OR LIBC_TARGET_ARCHITECTURE_IS_X86_64))
+  list(APPEND PORTFOLIO_LIBC_SYS_TIME
+      libc.src.sys.time.utimes
+  )
+endif()

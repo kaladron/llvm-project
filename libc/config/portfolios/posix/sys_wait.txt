@@ -1,0 +1,7 @@
+# Portfolios for posix/sys/wait (PORTFOLIO_LIBC_SYS_WAIT)
+
+set(PORTFOLIO_LIBC_SYS_WAIT
+    libc.src.sys.wait.wait
+    libc.src.sys.wait.wait4
+    libc.src.sys.wait.waitpid
+)

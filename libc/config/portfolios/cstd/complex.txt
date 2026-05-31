@@ -1,0 +1,34 @@
+# Portfolios for complex (PORTFOLIO_LIBM_COMPLEX)
+
+set(PORTFOLIO_LIBM_COMPLEX
+    libc.src.complex.cimag
+    libc.src.complex.cimagf
+    libc.src.complex.cimagl
+    libc.src.complex.conj
+    libc.src.complex.conjf
+    libc.src.complex.conjl
+    libc.src.complex.cproj
+    libc.src.complex.cprojf
+    libc.src.complex.cprojl
+    libc.src.complex.creal
+    libc.src.complex.crealf
+    libc.src.complex.creall
+)
+
+if((LIBC_TARGET_OS_IS_BAREMETAL OR LIBC_TARGET_OS_IS_DARWIN OR (LIBC_TARGET_OS_IS_LINUX AND (LIBC_TARGET_ARCHITECTURE_IS_AARCH64 OR LIBC_TARGET_ARCHITECTURE_IS_RISCV OR LIBC_TARGET_ARCHITECTURE_IS_X86_64))) AND (LIBC_TYPES_HAS_CFLOAT128))
+  list(APPEND PORTFOLIO_LIBM_COMPLEX
+      libc.src.complex.cimagf128
+      libc.src.complex.conjf128
+      libc.src.complex.cprojf128
+      libc.src.complex.crealf128
+  )
+endif()
+
+if((LIBC_TARGET_OS_IS_BAREMETAL OR LIBC_TARGET_OS_IS_DARWIN OR (LIBC_TARGET_OS_IS_LINUX AND (LIBC_TARGET_ARCHITECTURE_IS_AARCH64 OR LIBC_TARGET_ARCHITECTURE_IS_RISCV OR LIBC_TARGET_ARCHITECTURE_IS_X86_64))) AND (LIBC_TYPES_HAS_CFLOAT16))
+  list(APPEND PORTFOLIO_LIBM_COMPLEX
+      libc.src.complex.cimagf16
+      libc.src.complex.conjf16
+      libc.src.complex.cprojf16
+      libc.src.complex.crealf16
+  )
+endif()

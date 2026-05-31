@@ -1,0 +1,63 @@
+# Portfolios for time (PORTFOLIO_LIBC_TIME)
+
+set(PORTFOLIO_LIBC_TIME)
+
+if((LIBC_TARGET_OS_IS_BAREMETAL OR (LIBC_TARGET_OS_IS_LINUX AND LIBC_TARGET_ARCHITECTURE_IS_X86_64)) AND (LLVM_LIBC_FULL_BUILD))
+  list(APPEND PORTFOLIO_LIBC_TIME
+      libc.src.time.localtime
+      libc.src.time.localtime_r
+  )
+endif()
+
+if((LIBC_TARGET_OS_IS_BAREMETAL OR LIBC_TARGET_OS_IS_GPU OR (LIBC_TARGET_OS_IS_LINUX AND (LIBC_TARGET_ARCHITECTURE_IS_RISCV OR LIBC_TARGET_ARCHITECTURE_IS_X86_64))) AND (LLVM_LIBC_FULL_BUILD))
+  list(APPEND PORTFOLIO_LIBC_TIME
+      libc.src.time.strftime
+      libc.src.time.strftime_l
+  )
+endif()
+
+if((LIBC_TARGET_OS_IS_BAREMETAL OR LIBC_TARGET_OS_IS_GPU OR LIBC_TARGET_OS_IS_LINUX) AND (LLVM_LIBC_FULL_BUILD))
+  list(APPEND PORTFOLIO_LIBC_TIME
+      libc.src.time.clock
+      libc.src.time.mktime
+      libc.src.time.timespec_get
+  )
+endif()
+
+if((LIBC_TARGET_OS_IS_BAREMETAL OR LIBC_TARGET_OS_IS_LINUX) AND (LLVM_LIBC_FULL_BUILD))
+  list(APPEND PORTFOLIO_LIBC_TIME
+      libc.src.time.asctime
+      libc.src.time.asctime_r
+      libc.src.time.ctime
+      libc.src.time.ctime_r
+      libc.src.time.difftime
+      libc.src.time.gmtime
+      libc.src.time.gmtime_r
+  )
+endif()
+
+if((LIBC_TARGET_OS_IS_GPU OR LIBC_TARGET_OS_IS_LINUX) AND (LLVM_LIBC_FULL_BUILD))
+  list(APPEND PORTFOLIO_LIBC_TIME
+      libc.src.time.clock_gettime
+      libc.src.time.nanosleep
+  )
+endif()
+
+if((LIBC_TARGET_OS_IS_LINUX OR LIBC_TARGET_OS_IS_WINDOWS) AND (LLVM_LIBC_FULL_BUILD))
+  list(APPEND PORTFOLIO_LIBC_TIME
+      libc.src.time.time
+  )
+endif()
+
+if(LIBC_TARGET_OS_IS_LINUX AND (LLVM_LIBC_FULL_BUILD))
+  list(APPEND PORTFOLIO_LIBC_TIME
+      libc.src.time.clock_settime
+      libc.src.time.gettimeofday
+  )
+endif()
+
+if(LIBC_TARGET_OS_IS_WINDOWS)
+  list(APPEND PORTFOLIO_LIBC_TIME
+      libc.src.time.clock_getres
+  )
+endif()

@@ -1,0 +1,36 @@
+# Portfolios for posix/strings (PORTFOLIO_LIBC_STRINGS)
+
+set(PORTFOLIO_LIBC_STRINGS
+    libc.src.strings.bcmp
+    libc.src.strings.bzero
+)
+
+if(LIBC_TARGET_OS_IS_BAREMETAL OR (LIBC_TARGET_OS_IS_DARWIN AND LIBC_TARGET_ARCHITECTURE_IS_AARCH64) OR LIBC_TARGET_OS_IS_FREEBSD OR LIBC_TARGET_OS_IS_GPU OR LIBC_TARGET_OS_IS_LINUX OR LIBC_TARGET_OS_IS_WINDOWS)
+  list(APPEND PORTFOLIO_LIBC_STRINGS
+      libc.src.strings.bcopy
+      libc.src.strings.strcasecmp
+      libc.src.strings.strncasecmp
+  )
+endif()
+
+if(LIBC_TARGET_OS_IS_BAREMETAL OR (LIBC_TARGET_OS_IS_LINUX AND (LIBC_TARGET_ARCHITECTURE_IS_AARCH64 OR LIBC_TARGET_ARCHITECTURE_IS_RISCV OR LIBC_TARGET_ARCHITECTURE_IS_X86_64)))
+  list(APPEND PORTFOLIO_LIBC_STRINGS
+      libc.src.strings.ffs
+      libc.src.strings.ffsl
+      libc.src.strings.ffsll
+  )
+endif()
+
+if((LIBC_TARGET_OS_IS_BAREMETAL OR (LIBC_TARGET_OS_IS_LINUX AND (LIBC_TARGET_ARCHITECTURE_IS_AARCH64 OR LIBC_TARGET_ARCHITECTURE_IS_RISCV OR LIBC_TARGET_ARCHITECTURE_IS_X86_64))) AND (LLVM_LIBC_FULL_BUILD))
+  list(APPEND PORTFOLIO_LIBC_STRINGS
+      libc.src.strings.strcasecmp_l
+      libc.src.strings.strncasecmp_l
+  )
+endif()
+
+if(LIBC_TARGET_OS_IS_BAREMETAL OR LIBC_TARGET_OS_IS_GPU OR LIBC_TARGET_OS_IS_LINUX)
+  list(APPEND PORTFOLIO_LIBC_STRINGS
+      libc.src.strings.index
+      libc.src.strings.rindex
+  )
+endif()

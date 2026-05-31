@@ -1,0 +1,5 @@
+# Portfolios for posix/sys/ipc (PORTFOLIO_LIBC_SYS_IPC)
+
+set(PORTFOLIO_LIBC_SYS_IPC
+    libc.src.sys.ipc.ftok
+)

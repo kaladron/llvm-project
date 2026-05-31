@@ -1,0 +1,17 @@
+# Portfolios for setjmp (PORTFOLIO_LIBC_SETJMP)
+
+set(PORTFOLIO_LIBC_SETJMP)
+
+if((LIBC_TARGET_OS_IS_DARWIN OR LIBC_TARGET_OS_IS_LINUX) AND (LLVM_LIBC_FULL_BUILD))
+  list(APPEND PORTFOLIO_LIBC_SETJMP
+      libc.src.setjmp.siglongjmp
+      libc.src.setjmp.sigsetjmp
+  )
+endif()
+
+if(LLVM_LIBC_FULL_BUILD)
+  list(APPEND PORTFOLIO_LIBC_SETJMP
+      libc.src.setjmp.longjmp
+      libc.src.setjmp.setjmp
+  )
+endif()

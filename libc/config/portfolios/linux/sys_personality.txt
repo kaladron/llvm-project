@@ -1,0 +1,5 @@
+# Portfolios for linux/sys/personality (PORTFOLIO_LIBC_SYS_PERSONALITY)
+
+set(PORTFOLIO_LIBC_SYS_PERSONALITY
+    libc.src.sys.personality.personality
+)

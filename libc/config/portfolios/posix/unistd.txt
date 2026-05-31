@@ -1,0 +1,87 @@
+# Portfolios for posix/unistd (PORTFOLIO_LIBC_UNISTD)
+
+set(PORTFOLIO_LIBC_UNISTD
+    libc.src.unistd.getentropy
+)
+
+if(LIBC_TARGET_OS_IS_LINUX AND (LIBC_TARGET_ARCHITECTURE_IS_AARCH64 OR LIBC_TARGET_ARCHITECTURE_IS_X86_64))
+  list(APPEND PORTFOLIO_LIBC_UNISTD
+      libc.src.unistd.fchown
+  )
+endif()
+
+if(LIBC_TARGET_OS_IS_LINUX AND (LIBC_TARGET_ARCHITECTURE_IS_RISCV OR LIBC_TARGET_ARCHITECTURE_IS_X86_64))
+  list(APPEND PORTFOLIO_LIBC_UNISTD
+      libc.src.unistd.chown
+  )
+endif()
+
+if(LIBC_TARGET_OS_IS_LINUX AND LIBC_TARGET_ARCHITECTURE_IS_X86_64)
+  list(APPEND PORTFOLIO_LIBC_UNISTD
+      libc.src.unistd.getgid
+  )
+endif()
+
+if(LIBC_TARGET_OS_IS_LINUX)
+  list(APPEND PORTFOLIO_LIBC_UNISTD
+      libc.src.unistd.access
+      libc.src.unistd.alarm
+      libc.src.unistd.chdir
+      libc.src.unistd.close
+      libc.src.unistd.dup
+      libc.src.unistd.dup2
+      libc.src.unistd.dup3
+      libc.src.unistd.execve
+      libc.src.unistd.faccessat
+      libc.src.unistd.fchdir
+      libc.src.unistd.fpathconf
+      libc.src.unistd.fsync
+      libc.src.unistd.ftruncate
+      libc.src.unistd.getcwd
+      libc.src.unistd.geteuid
+      libc.src.unistd.gethostname
+      libc.src.unistd.getpagesize
+      libc.src.unistd.getpid
+      libc.src.unistd.getppid
+      libc.src.unistd.getsid
+      libc.src.unistd.gettid
+      libc.src.unistd.getuid
+      libc.src.unistd.isatty
+      libc.src.unistd.link
+      libc.src.unistd.linkat
+      libc.src.unistd.lseek
+      libc.src.unistd.pathconf
+      libc.src.unistd.pipe
+      libc.src.unistd.pipe2
+      libc.src.unistd.pread
+      libc.src.unistd.pwrite
+      libc.src.unistd.read
+      libc.src.unistd.readlink
+      libc.src.unistd.readlinkat
+      libc.src.unistd.rmdir
+      libc.src.unistd.setsid
+      libc.src.unistd.symlink
+      libc.src.unistd.symlinkat
+      libc.src.unistd.sysconf
+      libc.src.unistd.truncate
+      libc.src.unistd.unlink
+      libc.src.unistd.unlinkat
+      libc.src.unistd.write
+  )
+endif()
+
+if(LIBC_TARGET_OS_IS_LINUX AND (LLVM_LIBC_FULL_BUILD))
+  list(APPEND PORTFOLIO_LIBC_UNISTD
+      libc.src.unistd.__llvm_libc_syscall
+      libc.src.unistd._exit
+      libc.src.unistd.environ
+      libc.src.unistd.execv
+      libc.src.unistd.fork
+      libc.src.unistd.getopt
+      libc.src.unistd.optarg
+      libc.src.unistd.opterr
+      libc.src.unistd.optind
+      libc.src.unistd.optopt
+      libc.src.unistd.swab
+  )
+endif()

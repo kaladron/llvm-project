@@ -1,0 +1,90 @@
+# Portfolios for stdfix (PORTFOLIO_LIBM_STDFIX)
+
+set(PORTFOLIO_LIBM_STDFIX)
+
+if(((LIBC_TARGET_OS_IS_BAREMETAL AND (LIBC_TARGET_ARCHITECTURE_IS_ARM OR LIBC_TARGET_ARCHITECTURE_IS_RISCV)) OR LIBC_TARGET_OS_IS_LINUX) AND (LIBC_COMPILER_HAS_FIXED_POINT))
+  list(APPEND PORTFOLIO_LIBM_STDFIX
+      libc.src.stdfix.idivk
+      libc.src.stdfix.idivlk
+      libc.src.stdfix.idivlr
+      libc.src.stdfix.idivr
+      libc.src.stdfix.idivuk
+      libc.src.stdfix.idivulk
+      libc.src.stdfix.idivulr
+      libc.src.stdfix.idivur
+  )
+endif()
+
+if(LIBC_COMPILER_HAS_FIXED_POINT)
+  list(APPEND PORTFOLIO_LIBM_STDFIX
+      libc.src.stdfix.abshk
+      libc.src.stdfix.abshr
+      libc.src.stdfix.absk
+      libc.src.stdfix.abslk
+      libc.src.stdfix.abslr
+      libc.src.stdfix.absr
+      libc.src.stdfix.bitshk
+      libc.src.stdfix.bitshr
+      libc.src.stdfix.bitsk
+      libc.src.stdfix.bitslk
+      libc.src.stdfix.bitslr
+      libc.src.stdfix.bitsr
+      libc.src.stdfix.bitsuhk
+      libc.src.stdfix.bitsuhr
+      libc.src.stdfix.bitsuk
+      libc.src.stdfix.bitsulk
+      libc.src.stdfix.bitsulr
+      libc.src.stdfix.bitsur
+      libc.src.stdfix.countlshk
+      libc.src.stdfix.countlshr
+      libc.src.stdfix.countlsk
+      libc.src.stdfix.countlslk
+      libc.src.stdfix.countlslr
+      libc.src.stdfix.countlsr
+      libc.src.stdfix.countlsuhk
+      libc.src.stdfix.countlsuhr
+      libc.src.stdfix.countlsuk
+      libc.src.stdfix.countlsulk
+      libc.src.stdfix.countlsulr
+      libc.src.stdfix.countlsur
+      libc.src.stdfix.exphk
+      libc.src.stdfix.expk
+      libc.src.stdfix.hkbits
+      libc.src.stdfix.hrbits
+      libc.src.stdfix.kbits
+      libc.src.stdfix.lkbits
+      libc.src.stdfix.lrbits
+      libc.src.stdfix.rbits
+      libc.src.stdfix.roundhk
+      libc.src.stdfix.roundhr
+      libc.src.stdfix.roundk
+      libc.src.stdfix.roundlk
+      libc.src.stdfix.roundlr
+      libc.src.stdfix.roundr
+      libc.src.stdfix.rounduhk
+      libc.src.stdfix.rounduhr
+      libc.src.stdfix.rounduk
+      libc.src.stdfix.roundulk
+      libc.src.stdfix.roundulr
+      libc.src.stdfix.roundur
+      libc.src.stdfix.sqrtuhk
+      libc.src.stdfix.sqrtuhr
+      libc.src.stdfix.sqrtuk
+      libc.src.stdfix.sqrtulr
+      libc.src.stdfix.sqrtur
+      libc.src.stdfix.uhkbits
+      libc.src.stdfix.uhksqrtus
+      libc.src.stdfix.uhrbits
+      libc.src.stdfix.ukbits
+      libc.src.stdfix.uksqrtui
+      libc.src.stdfix.ulkbits
+      libc.src.stdfix.ulrbits
+      libc.src.stdfix.urbits
+  )
+endif()
+
+if(LIBC_TARGET_OS_IS_LINUX AND (LIBC_COMPILER_HAS_FIXED_POINT))
+  list(APPEND PORTFOLIO_LIBM_STDFIX
+      libc.src.stdfix.rdivi
+  )
+endif()

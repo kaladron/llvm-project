@@ -1,0 +1,89 @@
+# Portfolios for stdio (PORTFOLIO_LIBC_STDIO)
+
+set(PORTFOLIO_LIBC_STDIO
+    libc.src.stdio.asprintf
+    libc.src.stdio.fprintf
+    libc.src.stdio.fscanf
+    libc.src.stdio.printf
+    libc.src.stdio.remove
+    libc.src.stdio.scanf
+    libc.src.stdio.snprintf
+    libc.src.stdio.sprintf
+    libc.src.stdio.sscanf
+    libc.src.stdio.vasprintf
+    libc.src.stdio.vfprintf
+    libc.src.stdio.vfscanf
+    libc.src.stdio.vprintf
+    libc.src.stdio.vscanf
+    libc.src.stdio.vsnprintf
+    libc.src.stdio.vsprintf
+    libc.src.stdio.vsscanf
+)
+
+if(((LIBC_TARGET_OS_IS_BAREMETAL AND (LIBC_TARGET_ARCHITECTURE_IS_AARCH64 OR LIBC_TARGET_ARCHITECTURE_IS_ARM)) OR LIBC_TARGET_OS_IS_GPU OR LIBC_TARGET_OS_IS_LINUX) AND (LLVM_LIBC_FULL_BUILD))
+  list(APPEND PORTFOLIO_LIBC_STDIO
+      libc.src.stdio.fflush
+      libc.src.stdio.getc
+      libc.src.stdio.ungetc
+  )
+endif()
+
+if(LIBC_TARGET_OS_IS_GPU OR LIBC_TARGET_OS_IS_LINUX)
+  list(APPEND PORTFOLIO_LIBC_STDIO
+      libc.src.stdio.rename
+  )
+endif()
+
+if((LIBC_TARGET_OS_IS_GPU OR LIBC_TARGET_OS_IS_LINUX) AND (LLVM_LIBC_FULL_BUILD))
+  list(APPEND PORTFOLIO_LIBC_STDIO
+      libc.src.stdio.clearerr
+      libc.src.stdio.fclose
+      libc.src.stdio.fopen
+      libc.src.stdio.fseek
+      libc.src.stdio.ftell
+  )
+endif()
+
+if(LIBC_TARGET_OS_IS_LINUX AND (LLVM_LIBC_FULL_BUILD))
+  list(APPEND PORTFOLIO_LIBC_STDIO
+      libc.src.stdio.clearerr_unlocked
+      libc.src.stdio.fdopen
+      libc.src.stdio.feof_unlocked
+      libc.src.stdio.ferror_unlocked
+      libc.src.stdio.fgetc_unlocked
+      libc.src.stdio.fileno
+      libc.src.stdio.flockfile
+      libc.src.stdio.fopencookie
+      libc.src.stdio.fread_unlocked
+      libc.src.stdio.fseeko
+      libc.src.stdio.ftello
+      libc.src.stdio.funlockfile
+      libc.src.stdio.fwrite_unlocked
+      libc.src.stdio.getc_unlocked
+      libc.src.stdio.getchar_unlocked
+      libc.src.stdio.perror
+      libc.src.stdio.rewind
+      libc.src.stdio.setbuf
+      libc.src.stdio.setvbuf
+  )
+endif()
+
+if(LLVM_LIBC_FULL_BUILD)
+  list(APPEND PORTFOLIO_LIBC_STDIO
+      libc.src.stdio.feof
+      libc.src.stdio.ferror
+      libc.src.stdio.fgetc
+      libc.src.stdio.fgets
+      libc.src.stdio.fputc
+      libc.src.stdio.fputs
+      libc.src.stdio.fread
+      libc.src.stdio.fwrite
+      libc.src.stdio.getchar
+      libc.src.stdio.putc
+      libc.src.stdio.putchar
+      libc.src.stdio.puts
+      libc.src.stdio.stderr
+      libc.src.stdio.stdin
+      libc.src.stdio.stdout
+  )
+endif()

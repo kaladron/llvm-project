@@ -1,0 +1,9 @@
+# Portfolios for linux/sys/epoll (PORTFOLIO_LIBC_SYS_EPOLL)
+
+set(PORTFOLIO_LIBC_SYS_EPOLL
+    libc.src.sys.epoll.epoll_create
+    libc.src.sys.epoll.epoll_create1
+    libc.src.sys.epoll.epoll_ctl
+    libc.src.sys.epoll.epoll_pwait
+    libc.src.sys.epoll.epoll_wait
+)

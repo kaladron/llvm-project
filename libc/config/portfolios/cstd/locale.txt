@@ -1,0 +1,14 @@
+# Portfolios for locale (PORTFOLIO_LIBC_LOCALE)
+
+set(PORTFOLIO_LIBC_LOCALE)
+
+if(LLVM_LIBC_FULL_BUILD)
+  list(APPEND PORTFOLIO_LIBC_LOCALE
+      libc.src.locale.duplocale
+      libc.src.locale.freelocale
+      libc.src.locale.localeconv
+      libc.src.locale.newlocale
+      libc.src.locale.setlocale
+      libc.src.locale.uselocale
+  )
+endif()

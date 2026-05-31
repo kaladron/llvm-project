@@ -1,0 +1,6 @@
+# Portfolios for startup (PORTFOLIO_LIBC_STARTUP)
+
+set(PORTFOLIO_LIBC_STARTUP
+    libc.startup.baremetal.fini
+    libc.startup.baremetal.init
+)

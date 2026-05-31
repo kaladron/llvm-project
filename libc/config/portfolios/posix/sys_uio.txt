@@ -1,0 +1,6 @@
+# Portfolios for posix/sys/uio (PORTFOLIO_LIBC_SYS_UIO)
+
+set(PORTFOLIO_LIBC_SYS_UIO
+    libc.src.sys.uio.readv
+    libc.src.sys.uio.writev
+)

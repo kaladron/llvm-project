@@ -1,0 +1,15 @@
+# Portfolios for posix/termios (PORTFOLIO_LIBC_TERMIOS)
+
+set(PORTFOLIO_LIBC_TERMIOS
+    libc.src.termios.cfgetispeed
+    libc.src.termios.cfgetospeed
+    libc.src.termios.cfsetispeed
+    libc.src.termios.cfsetospeed
+    libc.src.termios.tcdrain
+    libc.src.termios.tcflow
+    libc.src.termios.tcflush
+    libc.src.termios.tcgetattr
+    libc.src.termios.tcgetsid
+    libc.src.termios.tcsendbreak
+    libc.src.termios.tcsetattr
+)

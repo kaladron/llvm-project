@@ -1,0 +1,5 @@
+# Portfolios for linux/sys/random (PORTFOLIO_LIBC_SYS_RANDOM)
+
+set(PORTFOLIO_LIBC_SYS_RANDOM
+    libc.src.sys.random.getrandom
+)

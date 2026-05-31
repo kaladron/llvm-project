@@ -1,0 +1,5 @@
+# Portfolios for linux/sys/ioctl (PORTFOLIO_LIBC_SYS_IOCTL)
+
+set(PORTFOLIO_LIBC_SYS_IOCTL
+    libc.src.sys.ioctl.ioctl
+)

@@ -1,0 +1,9 @@
+# Portfolios for mathvec (PORTFOLIO_LIBMVEC_MATHVEC)
+
+set(PORTFOLIO_LIBMVEC_MATHVEC)
+
+if(LIBC_COMPILER_HAS_EXT_VECTOR_TYPE)
+  list(APPEND PORTFOLIO_LIBMVEC_MATHVEC
+      libc.src.mathvec.expf
+  )
+endif()

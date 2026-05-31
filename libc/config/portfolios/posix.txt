@@ -1,0 +1,61 @@
+# Meta-portfolio for posix (TARGET_LIBC_ENTRYPOINTS)
+
+include(${LIBC_SOURCE_DIR}/config/portfolios/posix/arpa_inet.txt)
+include(${LIBC_SOURCE_DIR}/config/portfolios/posix/dirent.txt)
+include(${LIBC_SOURCE_DIR}/config/portfolios/posix/dlfcn.txt)
+include(${LIBC_SOURCE_DIR}/config/portfolios/posix/fcntl.txt)
+include(${LIBC_SOURCE_DIR}/config/portfolios/posix/link.txt)
+include(${LIBC_SOURCE_DIR}/config/portfolios/posix/nl_types.txt)
+include(${LIBC_SOURCE_DIR}/config/portfolios/posix/poll.txt)
+include(${LIBC_SOURCE_DIR}/config/portfolios/posix/pthread.txt)
+include(${LIBC_SOURCE_DIR}/config/portfolios/posix/regex.txt)
+include(${LIBC_SOURCE_DIR}/config/portfolios/posix/sched.txt)
+include(${LIBC_SOURCE_DIR}/config/portfolios/posix/search.txt)
+include(${LIBC_SOURCE_DIR}/config/portfolios/posix/spawn.txt)
+include(${LIBC_SOURCE_DIR}/config/portfolios/posix/strings.txt)
+include(${LIBC_SOURCE_DIR}/config/portfolios/posix/sys_ipc.txt)
+include(${LIBC_SOURCE_DIR}/config/portfolios/posix/sys_mman.txt)
+include(${LIBC_SOURCE_DIR}/config/portfolios/posix/sys_resource.txt)
+include(${LIBC_SOURCE_DIR}/config/portfolios/posix/sys_select.txt)
+include(${LIBC_SOURCE_DIR}/config/portfolios/posix/sys_sem.txt)
+include(${LIBC_SOURCE_DIR}/config/portfolios/posix/sys_socket.txt)
+include(${LIBC_SOURCE_DIR}/config/portfolios/posix/sys_stat.txt)
+include(${LIBC_SOURCE_DIR}/config/portfolios/posix/sys_statvfs.txt)
+include(${LIBC_SOURCE_DIR}/config/portfolios/posix/sys_time.txt)
+include(${LIBC_SOURCE_DIR}/config/portfolios/posix/sys_uio.txt)
+include(${LIBC_SOURCE_DIR}/config/portfolios/posix/sys_utsname.txt)
+include(${LIBC_SOURCE_DIR}/config/portfolios/posix/sys_wait.txt)
+include(${LIBC_SOURCE_DIR}/config/portfolios/posix/termios.txt)
+include(${LIBC_SOURCE_DIR}/config/portfolios/posix/ucontext.txt)
+include(${LIBC_SOURCE_DIR}/config/portfolios/posix/unistd.txt)
+
+set(PORTFOLIO_LIBC_POSIX
+    ${PORTFOLIO_LIBC_ARPA_INET}
+    ${PORTFOLIO_LIBC_DIRENT}
+    ${PORTFOLIO_LIBC_DLFCN}
+    ${PORTFOLIO_LIBC_FCNTL}
+    ${PORTFOLIO_LIBC_LINK}
+    ${PORTFOLIO_LIBC_NL_TYPES}
+    ${PORTFOLIO_LIBC_POLL}
+    ${PORTFOLIO_LIBC_PTHREAD}
+    ${PORTFOLIO_LIBC_REGEX}
+    ${PORTFOLIO_LIBC_SCHED}
+    ${PORTFOLIO_LIBC_SEARCH}
+    ${PORTFOLIO_LIBC_SPAWN}
+    ${PORTFOLIO_LIBC_STRINGS}
+    ${PORTFOLIO_LIBC_SYS_IPC}
+    ${PORTFOLIO_LIBC_SYS_MMAN}
+    ${PORTFOLIO_LIBC_SYS_RESOURCE}
+    ${PORTFOLIO_LIBC_SYS_SELECT}
+    ${PORTFOLIO_LIBC_SYS_SEM}
+    ${PORTFOLIO_LIBC_SYS_SOCKET}
+    ${PORTFOLIO_LIBC_SYS_STAT}
+    ${PORTFOLIO_LIBC_SYS_STATVFS}
+    ${PORTFOLIO_LIBC_SYS_TIME}
+    ${PORTFOLIO_LIBC_SYS_UIO}
+    ${PORTFOLIO_LIBC_SYS_UTSNAME}
+    ${PORTFOLIO_LIBC_SYS_WAIT}
+    ${PORTFOLIO_LIBC_TERMIOS}
+    ${PORTFOLIO_LIBC_UCONTEXT}
+    ${PORTFOLIO_LIBC_UNISTD}
+)

@@ -1,0 +1,5 @@
+# Portfolios for linux/sys/sendfile (PORTFOLIO_LIBC_SYS_SENDFILE)
+
+set(PORTFOLIO_LIBC_SYS_SENDFILE
+    libc.src.sys.sendfile.sendfile
+)

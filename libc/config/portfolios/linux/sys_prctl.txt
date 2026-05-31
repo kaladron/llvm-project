@@ -1,0 +1,5 @@
+# Portfolios for linux/sys/prctl (PORTFOLIO_LIBC_SYS_PRCTL)
+
+set(PORTFOLIO_LIBC_SYS_PRCTL
+    libc.src.sys.prctl.prctl
+)

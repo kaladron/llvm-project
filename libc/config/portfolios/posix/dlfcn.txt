@@ -1,0 +1,14 @@
+# Portfolios for posix/dlfcn (PORTFOLIO_LIBC_DLFCN)
+
+set(PORTFOLIO_LIBC_DLFCN
+    libc.src.dlfcn.dlclose
+    libc.src.dlfcn.dlerror
+    libc.src.dlfcn.dlopen
+    libc.src.dlfcn.dlsym
+)
+
+if(LIBC_TARGET_OS_IS_LINUX AND LIBC_TARGET_ARCHITECTURE_IS_X86_64)
+  list(APPEND PORTFOLIO_LIBC_DLFCN
+      libc.src.dlfcn.dladdr
+  )
+endif()

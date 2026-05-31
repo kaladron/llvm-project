@@ -1,0 +1,34 @@
+# Portfolios for posix/search (PORTFOLIO_LIBC_SEARCH)
+
+set(PORTFOLIO_LIBC_SEARCH)
+
+if((LIBC_TARGET_OS_IS_LINUX AND (LIBC_TARGET_ARCHITECTURE_IS_AARCH64 OR LIBC_TARGET_ARCHITECTURE_IS_RISCV OR LIBC_TARGET_ARCHITECTURE_IS_X86_64)) AND (LLVM_LIBC_FULL_BUILD))
+  list(APPEND PORTFOLIO_LIBC_SEARCH
+      libc.src.search.hcreate
+      libc.src.search.hcreate_r
+      libc.src.search.hdestroy
+      libc.src.search.hdestroy_r
+      libc.src.search.hsearch
+      libc.src.search.hsearch_r
+      libc.src.search.insque
+      libc.src.search.lsearch
+      libc.src.search.remque
+  )
+endif()
+
+if((LIBC_TARGET_OS_IS_LINUX AND (LIBC_TARGET_ARCHITECTURE_IS_AARCH64 OR LIBC_TARGET_ARCHITECTURE_IS_X86_64)) AND (LLVM_LIBC_FULL_BUILD))
+  list(APPEND PORTFOLIO_LIBC_SEARCH
+      libc.src.search.tdelete
+      libc.src.search.tdestroy
+      libc.src.search.tfind
+      libc.src.search.tsearch
+      libc.src.search.twalk
+      libc.src.search.twalk_r
+  )
+endif()
+
+if(LLVM_LIBC_FULL_BUILD)
+  list(APPEND PORTFOLIO_LIBC_SEARCH
+      libc.src.search.lfind
+  )
+endif()

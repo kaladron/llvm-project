@@ -1,0 +1,37 @@
+# Meta-portfolio for cstd (TARGET_LIBC_ENTRYPOINTS)
+
+include(${LIBC_SOURCE_DIR}/config/portfolios/cstd/assert.txt)
+include(${LIBC_SOURCE_DIR}/config/portfolios/cstd/compiler.txt)
+include(${LIBC_SOURCE_DIR}/config/portfolios/cstd/ctype.txt)
+include(${LIBC_SOURCE_DIR}/config/portfolios/cstd/errno.txt)
+include(${LIBC_SOURCE_DIR}/config/portfolios/cstd/inttypes.txt)
+include(${LIBC_SOURCE_DIR}/config/portfolios/cstd/locale.txt)
+include(${LIBC_SOURCE_DIR}/config/portfolios/cstd/setjmp.txt)
+include(${LIBC_SOURCE_DIR}/config/portfolios/cstd/signal.txt)
+include(${LIBC_SOURCE_DIR}/config/portfolios/cstd/stdbit.txt)
+include(${LIBC_SOURCE_DIR}/config/portfolios/cstd/stdio.txt)
+include(${LIBC_SOURCE_DIR}/config/portfolios/cstd/stdlib.txt)
+include(${LIBC_SOURCE_DIR}/config/portfolios/cstd/string.txt)
+include(${LIBC_SOURCE_DIR}/config/portfolios/cstd/threads.txt)
+include(${LIBC_SOURCE_DIR}/config/portfolios/cstd/time.txt)
+include(${LIBC_SOURCE_DIR}/config/portfolios/cstd/wchar.txt)
+include(${LIBC_SOURCE_DIR}/config/portfolios/cstd/wctype.txt)
+
+set(PORTFOLIO_LIBC_CSTD
+    ${PORTFOLIO_LIBC_ASSERT}
+    ${PORTFOLIO_LIBC_COMPILER}
+    ${PORTFOLIO_LIBC_CTYPE}
+    ${PORTFOLIO_LIBC_ERRNO}
+    ${PORTFOLIO_LIBC_INTTYPES}
+    ${PORTFOLIO_LIBC_LOCALE}
+    ${PORTFOLIO_LIBC_SETJMP}
+    ${PORTFOLIO_LIBC_SIGNAL}
+    ${PORTFOLIO_LIBC_STDBIT}
+    ${PORTFOLIO_LIBC_STDIO}
+    ${PORTFOLIO_LIBC_STDLIB}
+    ${PORTFOLIO_LIBC_STRING}
+    ${PORTFOLIO_LIBC_THREADS}
+    ${PORTFOLIO_LIBC_TIME}
+    ${PORTFOLIO_LIBC_WCHAR}
+    ${PORTFOLIO_LIBC_WCTYPE}
+)

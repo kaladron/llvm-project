@@ -1,0 +1,14 @@
+# Portfolios for posix/arpa/inet (PORTFOLIO_LIBC_ARPA_INET)
+
+set(PORTFOLIO_LIBC_ARPA_INET)
+
+if(LLVM_LIBC_FULL_BUILD)
+  list(APPEND PORTFOLIO_LIBC_ARPA_INET
+      libc.src.arpa.inet.htonl
+      libc.src.arpa.inet.htons
+      libc.src.arpa.inet.inet_addr
+      libc.src.arpa.inet.inet_aton
+      libc.src.arpa.inet.ntohl
+      libc.src.arpa.inet.ntohs
+  )
+endif()

@@ -1,0 +1,7 @@
+# Portfolios for posix/sys/sem (PORTFOLIO_LIBC_SYS_SEM)
+
+set(PORTFOLIO_LIBC_SYS_SEM
+    libc.src.sys.sem.semctl
+    libc.src.sys.sem.semget
+    libc.src.sys.sem.semop
+)

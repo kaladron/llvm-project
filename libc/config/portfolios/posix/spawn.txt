@@ -1,0 +1,14 @@
+# Portfolios for posix/spawn (PORTFOLIO_LIBC_SPAWN)
+
+set(PORTFOLIO_LIBC_SPAWN)
+
+if(LLVM_LIBC_FULL_BUILD)
+  list(APPEND PORTFOLIO_LIBC_SPAWN
+      libc.src.spawn.posix_spawn
+      libc.src.spawn.posix_spawn_file_actions_addclose
+      libc.src.spawn.posix_spawn_file_actions_adddup2
+      libc.src.spawn.posix_spawn_file_actions_addopen
+      libc.src.spawn.posix_spawn_file_actions_destroy
+      libc.src.spawn.posix_spawn_file_actions_init
+  )
+endif()

@@ -1,0 +1,8 @@
+# Portfolios for inttypes (PORTFOLIO_LIBC_INTTYPES)
+
+set(PORTFOLIO_LIBC_INTTYPES
+    libc.src.inttypes.imaxabs
+    libc.src.inttypes.imaxdiv
+    libc.src.inttypes.strtoimax
+    libc.src.inttypes.strtoumax
+)

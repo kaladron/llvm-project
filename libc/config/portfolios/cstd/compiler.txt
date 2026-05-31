@@ -1,0 +1,9 @@
+# Portfolios for compiler (PORTFOLIO_LIBC_COMPILER)
+
+set(PORTFOLIO_LIBC_COMPILER)
+
+if(LLVM_LIBC_FULL_BUILD)
+  list(APPEND PORTFOLIO_LIBC_COMPILER
+      libc.src.compiler.__stack_chk_fail
+  )
+endif()

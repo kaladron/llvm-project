@@ -1,0 +1,11 @@
+# Portfolios for posix/nl/types (PORTFOLIO_LIBC_NL_TYPES)
+
+set(PORTFOLIO_LIBC_NL_TYPES)
+
+if(LLVM_LIBC_FULL_BUILD)
+  list(APPEND PORTFOLIO_LIBC_NL_TYPES
+      libc.src.nl_types.catclose
+      libc.src.nl_types.catgets
+      libc.src.nl_types.catopen
+  )
+endif()

@@ -1,0 +1,30 @@
+# Portfolios for wctype (PORTFOLIO_LIBC_WCTYPE)
+
+set(PORTFOLIO_LIBC_WCTYPE
+    libc.src.wctype.iswpunct
+)
+
+if((LIBC_TARGET_OS_IS_BAREMETAL AND (LIBC_TARGET_ARCHITECTURE_IS_ARM OR LIBC_TARGET_ARCHITECTURE_IS_RISCV)) OR LIBC_TARGET_OS_IS_DARWIN OR LIBC_TARGET_OS_IS_LINUX OR LIBC_TARGET_OS_IS_WINDOWS)
+  list(APPEND PORTFOLIO_LIBC_WCTYPE
+      libc.src.wctype.iswalnum
+      libc.src.wctype.iswalpha
+      libc.src.wctype.iswblank
+      libc.src.wctype.iswcntrl
+      libc.src.wctype.iswctype
+      libc.src.wctype.iswdigit
+      libc.src.wctype.iswgraph
+      libc.src.wctype.iswlower
+      libc.src.wctype.iswprint
+      libc.src.wctype.iswspace
+      libc.src.wctype.iswupper
+      libc.src.wctype.iswxdigit
+      libc.src.wctype.wctype
+  )
+endif()
+
+if(LIBC_TARGET_OS_IS_LINUX AND (LIBC_TARGET_ARCHITECTURE_IS_AARCH64 OR LIBC_TARGET_ARCHITECTURE_IS_RISCV OR LIBC_TARGET_ARCHITECTURE_IS_X86_64))
+  list(APPEND PORTFOLIO_LIBC_WCTYPE
+      libc.src.wctype.towlower
+      libc.src.wctype.towupper
+  )
+endif()

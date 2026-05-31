@@ -1,0 +1,5 @@
+# Portfolios for linux/sys/auxv (PORTFOLIO_LIBC_SYS_AUXV)
+
+set(PORTFOLIO_LIBC_SYS_AUXV
+    libc.src.sys.auxv.getauxval
+)

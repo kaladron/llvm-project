@@ -1,0 +1,30 @@
+# Portfolios for posix/sched (PORTFOLIO_LIBC_SCHED)
+
+set(PORTFOLIO_LIBC_SCHED
+    libc.src.sched.sched_get_priority_max
+    libc.src.sched.sched_get_priority_min
+    libc.src.sched.sched_getaffinity
+    libc.src.sched.sched_getcpu
+    libc.src.sched.sched_getparam
+    libc.src.sched.sched_getscheduler
+    libc.src.sched.sched_rr_get_interval
+    libc.src.sched.sched_setaffinity
+    libc.src.sched.sched_setparam
+    libc.src.sched.sched_setscheduler
+    libc.src.sched.sched_yield
+)
+
+if(LIBC_TARGET_OS_IS_LINUX AND LIBC_TARGET_ARCHITECTURE_IS_X86_64)
+  list(APPEND PORTFOLIO_LIBC_SCHED
+      libc.src.sched.getcpu
+  )
+endif()
+
+if(LLVM_LIBC_FULL_BUILD)
+  list(APPEND PORTFOLIO_LIBC_SCHED
+      libc.src.sched.__sched_getcpucount
+      libc.src.sched.__sched_getcpuisset
+      libc.src.sched.__sched_setcpuset
+      libc.src.sched.__sched_setcpuzero
+  )
+endif()

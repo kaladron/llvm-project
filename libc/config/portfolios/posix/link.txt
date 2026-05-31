@@ -1,0 +1,9 @@
+# Portfolios for posix/link (PORTFOLIO_LIBC_LINK)
+
+set(PORTFOLIO_LIBC_LINK)
+
+if(LLVM_LIBC_FULL_BUILD)
+  list(APPEND PORTFOLIO_LIBC_LINK
+      libc.src.link.dl_iterate_phdr
+  )
+endif()

@@ -360,6 +360,12 @@ set(TARGET_LLVMLIBC_REMOVED_ENTRYPOINTS "")
 
 # Check entrypoints.txt
 if(EXISTS "${LIBC_CONFIG_PATH}/entrypoints.txt")
+    include(${LIBC_SOURCE_DIR}/config/portfolios/cstd.txt)
+    include(${LIBC_SOURCE_DIR}/config/portfolios/posix.txt)
+    include(${LIBC_SOURCE_DIR}/config/portfolios/linux.txt)
+    include(${LIBC_SOURCE_DIR}/config/portfolios/baremetal.txt)
+    include(${LIBC_SOURCE_DIR}/config/portfolios/cstd_libm.txt)
+    include(${LIBC_SOURCE_DIR}/config/portfolios/cstd_libmvec.txt)
     include("${LIBC_CONFIG_PATH}/entrypoints.txt")
 else()
   message(FATAL_ERROR "${LIBC_CONFIG_PATH}/entrypoints.txt file not found.")

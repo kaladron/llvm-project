@@ -1,0 +1,5 @@
+# Portfolios for errno (PORTFOLIO_LIBC_ERRNO)
+
+set(PORTFOLIO_LIBC_ERRNO
+    libc.src.errno.errno
+)

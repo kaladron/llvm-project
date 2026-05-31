@@ -1,0 +1,6 @@
+# Portfolios for posix/sys/statvfs (PORTFOLIO_LIBC_SYS_STATVFS)
+
+set(PORTFOLIO_LIBC_SYS_STATVFS
+    libc.src.sys.statvfs.fstatvfs
+    libc.src.sys.statvfs.statvfs
+)

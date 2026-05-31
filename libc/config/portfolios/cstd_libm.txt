@@ -1,0 +1,13 @@
+# Meta-portfolio for cstd (TARGET_LIBM_ENTRYPOINTS)
+
+include(${LIBC_SOURCE_DIR}/config/portfolios/cstd/complex.txt)
+include(${LIBC_SOURCE_DIR}/config/portfolios/cstd/fenv.txt)
+include(${LIBC_SOURCE_DIR}/config/portfolios/cstd/math.txt)
+include(${LIBC_SOURCE_DIR}/config/portfolios/cstd/stdfix.txt)
+
+set(PORTFOLIO_LIBM_CSTD
+    ${PORTFOLIO_LIBM_COMPLEX}
+    ${PORTFOLIO_LIBM_FENV}
+    ${PORTFOLIO_LIBM_MATH}
+    ${PORTFOLIO_LIBM_STDFIX}
+)

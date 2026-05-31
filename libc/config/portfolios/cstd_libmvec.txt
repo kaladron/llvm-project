@@ -1,0 +1,7 @@
+# Meta-portfolio for cstd (TARGET_LIBMVEC_ENTRYPOINTS)
+
+include(${LIBC_SOURCE_DIR}/config/portfolios/cstd/mathvec.txt)
+
+set(PORTFOLIO_LIBMVEC_CSTD
+    ${PORTFOLIO_LIBMVEC_MATHVEC}
+)

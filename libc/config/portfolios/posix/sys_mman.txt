@@ -1,0 +1,36 @@
+# Portfolios for posix/sys/mman (PORTFOLIO_LIBC_SYS_MMAN)
+
+set(PORTFOLIO_LIBC_SYS_MMAN
+    libc.src.sys.mman.memfd_create
+    libc.src.sys.mman.mmap
+    libc.src.sys.mman.munmap
+)
+
+if(LIBC_TARGET_OS_IS_LINUX AND (LIBC_TARGET_ARCHITECTURE_IS_AARCH64 OR LIBC_TARGET_ARCHITECTURE_IS_RISCV OR LIBC_TARGET_ARCHITECTURE_IS_X86_64))
+  list(APPEND PORTFOLIO_LIBC_SYS_MMAN
+      libc.src.sys.mman.madvise
+      libc.src.sys.mman.mincore
+      libc.src.sys.mman.mlock
+      libc.src.sys.mman.mlock2
+      libc.src.sys.mman.mlockall
+      libc.src.sys.mman.mprotect
+      libc.src.sys.mman.mremap
+      libc.src.sys.mman.msync
+      libc.src.sys.mman.munlock
+      libc.src.sys.mman.munlockall
+      libc.src.sys.mman.posix_madvise
+      libc.src.sys.mman.remap_file_pages
+      libc.src.sys.mman.shm_open
+      libc.src.sys.mman.shm_unlink
+  )
+endif()
+
+if(LIBC_TARGET_OS_IS_LINUX AND LIBC_TARGET_ARCHITECTURE_IS_X86_64)
+  list(APPEND PORTFOLIO_LIBC_SYS_MMAN
+      libc.src.sys.mman.pkey_alloc
+      libc.src.sys.mman.pkey_free
+      libc.src.sys.mman.pkey_get
+      libc.src.sys.mman.pkey_mprotect
+      libc.src.sys.mman.pkey_set
+  )
+endif()

@@ -1,0 +1,8 @@
+# Portfolios for posix/fcntl (PORTFOLIO_LIBC_FCNTL)
+
+set(PORTFOLIO_LIBC_FCNTL
+    libc.src.fcntl.creat
+    libc.src.fcntl.fcntl
+    libc.src.fcntl.open
+    libc.src.fcntl.openat
+)

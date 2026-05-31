@@ -1,0 +1,12 @@
+# Portfolios for posix/regex (PORTFOLIO_LIBC_REGEX)
+
+set(PORTFOLIO_LIBC_REGEX)
+
+if(LLVM_LIBC_FULL_BUILD AND LLVM_LIBC_ENABLE_EXPERIMENTAL_ENTRYPOINTS)
+  list(APPEND PORTFOLIO_LIBC_REGEX
+      libc.src.regex.regcomp
+      libc.src.regex.regerror
+      libc.src.regex.regexec
+      libc.src.regex.regfree
+  )
+endif()

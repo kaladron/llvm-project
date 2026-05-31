@@ -1,0 +1,87 @@
+# Portfolios for string (PORTFOLIO_LIBC_STRING)
+
+set(PORTFOLIO_LIBC_STRING
+    libc.src.string.memccpy
+    libc.src.string.memchr
+    libc.src.string.memcmp
+    libc.src.string.memcpy
+    libc.src.string.memmem
+    libc.src.string.memmove
+    libc.src.string.mempcpy
+    libc.src.string.memrchr
+    libc.src.string.memset
+    libc.src.string.stpcpy
+    libc.src.string.stpncpy
+    libc.src.string.strcat
+    libc.src.string.strchr
+    libc.src.string.strchrnul
+    libc.src.string.strcmp
+    libc.src.string.strcpy
+    libc.src.string.strcspn
+    libc.src.string.strlcat
+    libc.src.string.strlcpy
+    libc.src.string.strlen
+    libc.src.string.strncat
+    libc.src.string.strncmp
+    libc.src.string.strncpy
+    libc.src.string.strnlen
+    libc.src.string.strpbrk
+    libc.src.string.strrchr
+    libc.src.string.strspn
+    libc.src.string.strstr
+    libc.src.string.strtok
+    libc.src.string.strtok_r
+)
+
+if(LIBC_TARGET_OS_IS_BAREMETAL OR (LIBC_TARGET_OS_IS_DARWIN AND LIBC_TARGET_ARCHITECTURE_IS_AARCH64) OR LIBC_TARGET_OS_IS_FREEBSD OR LIBC_TARGET_OS_IS_GPU OR LIBC_TARGET_OS_IS_LINUX OR LIBC_TARGET_OS_IS_WINDOWS)
+  list(APPEND PORTFOLIO_LIBC_STRING
+      libc.src.string.strcasestr
+  )
+endif()
+
+if(LIBC_TARGET_OS_IS_BAREMETAL OR (LIBC_TARGET_OS_IS_LINUX AND (LIBC_TARGET_ARCHITECTURE_IS_AARCH64 OR LIBC_TARGET_ARCHITECTURE_IS_RISCV OR LIBC_TARGET_ARCHITECTURE_IS_X86_64)))
+  list(APPEND PORTFOLIO_LIBC_STRING
+      libc.src.string.memset_explicit
+      libc.src.string.strerror_r
+  )
+endif()
+
+if(LIBC_TARGET_OS_IS_BAREMETAL OR LIBC_TARGET_OS_IS_DARWIN OR LIBC_TARGET_OS_IS_FREEBSD OR LIBC_TARGET_OS_IS_GPU OR (LIBC_TARGET_OS_IS_LINUX AND (LIBC_TARGET_ARCHITECTURE_IS_AARCH64 OR LIBC_TARGET_ARCHITECTURE_IS_RISCV OR LIBC_TARGET_ARCHITECTURE_IS_X86_64)) OR LIBC_TARGET_OS_IS_WINDOWS)
+  list(APPEND PORTFOLIO_LIBC_STRING
+      libc.src.string.strdup
+      libc.src.string.strndup
+  )
+endif()
+
+if(LIBC_TARGET_OS_IS_BAREMETAL OR LIBC_TARGET_OS_IS_DARWIN OR LIBC_TARGET_OS_IS_GPU OR LIBC_TARGET_OS_IS_LINUX OR LIBC_TARGET_OS_IS_WINDOWS)
+  list(APPEND PORTFOLIO_LIBC_STRING
+      libc.src.string.strnlen_s
+  )
+endif()
+
+if(LIBC_TARGET_OS_IS_BAREMETAL OR LIBC_TARGET_OS_IS_GPU OR (LIBC_TARGET_OS_IS_LINUX AND (LIBC_TARGET_ARCHITECTURE_IS_AARCH64 OR LIBC_TARGET_ARCHITECTURE_IS_RISCV OR LIBC_TARGET_ARCHITECTURE_IS_X86_64)))
+  list(APPEND PORTFOLIO_LIBC_STRING
+      libc.src.string.strcoll
+      libc.src.string.strerror
+      libc.src.string.strxfrm
+  )
+endif()
+
+if((LIBC_TARGET_OS_IS_BAREMETAL OR LIBC_TARGET_OS_IS_GPU OR (LIBC_TARGET_OS_IS_LINUX AND (LIBC_TARGET_ARCHITECTURE_IS_RISCV OR LIBC_TARGET_ARCHITECTURE_IS_X86_64))) AND (LLVM_LIBC_FULL_BUILD))
+  list(APPEND PORTFOLIO_LIBC_STRING
+      libc.src.string.strcoll_l
+      libc.src.string.strxfrm_l
+  )
+endif()
+
+if(LIBC_TARGET_OS_IS_BAREMETAL OR LIBC_TARGET_OS_IS_GPU OR LIBC_TARGET_OS_IS_LINUX)
+  list(APPEND PORTFOLIO_LIBC_STRING
+      libc.src.string.strsep
+  )
+endif()
+
+if(LIBC_TARGET_OS_IS_LINUX AND (LIBC_TARGET_ARCHITECTURE_IS_AARCH64 OR LIBC_TARGET_ARCHITECTURE_IS_RISCV OR LIBC_TARGET_ARCHITECTURE_IS_X86_64))
+  list(APPEND PORTFOLIO_LIBC_STRING
+      libc.src.string.strsignal
+  )
+endif()
