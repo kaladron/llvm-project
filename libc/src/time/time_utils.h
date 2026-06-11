@@ -90,6 +90,9 @@ LIBC_INLINE tm *gmtime_internal(const time_t *timer, tm *result) {
     return nullptr;
   }
 
+  result->tm_gmtoff = 0;
+  result->tm_zone = "GMT";
+
   return result;
 }
 
@@ -102,6 +105,8 @@ LIBC_INLINE tm *localtime_internal(const time_t *timer, tm *result) {
   }
 
   // TODO(zimirza): implement timezone database
+  result->tm_gmtoff = 0;
+  result->tm_zone = "UTC";
 
   return result;
 }
@@ -173,8 +178,7 @@ public:
   }
 
   LIBC_INLINE constexpr cpp::string_view get_timezone_name() const {
-    // TODO: timezone support
-    return "UTC";
+    return timeptr->tm_zone ? timeptr->tm_zone : "";
   }
 
   // Numbers
@@ -348,8 +352,10 @@ public:
   // This means that a shift of -4:30 is returned as -430, simplifying
   // conversion.
   LIBC_INLINE constexpr int get_timezone_offset() const {
-    // TODO: timezone support
-    return 0;
+    int64_t seconds = timeptr->tm_gmtoff;
+    int64_t hours = seconds / 3600;
+    int64_t minutes = (seconds % 3600) / 60;
+    return static_cast<int>((hours * 100) + minutes);
   }
 };
 

@@ -19,7 +19,14 @@ struct tm {
   int tm_wday;  // days since Sunday
   int tm_yday;  // days since January
   int tm_isdst; // Daylight Saving Time flag
-  // TODO: add tm_gmtoff and tm_zone? (posix extensions)
+  __extension__ union {
+    long tm_gmtoff;
+    long __tm_gmtoff;
+  };
+  __extension__ union {
+    const char *tm_zone;
+    const char *__tm_zone;
+  };
 };
 
 #endif // LLVM_LIBC_TYPES_STRUCT_TM_H

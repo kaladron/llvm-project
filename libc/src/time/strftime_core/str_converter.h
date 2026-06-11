@@ -56,9 +56,7 @@ LIBC_INLINE int convert_str(printf_core::Writer<write_mode> *writer,
     str = time_reader.get_am_pm();
     break;
   case 'Z': // Timezone name
-    // the standard says if no time zone is determinable, write no characters.
-    return WRITE_OK;
-    // str = time_reader.get_timezone_name();
+    str = time_reader.get_timezone_name();
     break;
   default:
     __builtin_trap(); // this should be unreachable, but trap if you hit it.
