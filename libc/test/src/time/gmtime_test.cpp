@@ -37,6 +37,10 @@ TEST_F(LlvmLibcGmTime, OutOfRange) {
   ASSERT_ERRNO_EQ(EOVERFLOW);
 }
 
+TEST_F(LlvmLibcGmTime, NullPtr) {
+  EXPECT_DEATH([] { LIBC_NAMESPACE::gmtime(nullptr); }, WITH_SIGNAL(4));
+}
+
 TEST_F(LlvmLibcGmTime, InvalidSeconds) {
   time_t seconds = 0;
   struct tm *tm_data = nullptr;

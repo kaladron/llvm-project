@@ -23,10 +23,7 @@ static inline char *call_asctime(struct tm *tm_data, int year, int month,
 }
 
 TEST_F(LlvmLibcAsctime, Nullptr) {
-  char *result;
-  result = LIBC_NAMESPACE::asctime(nullptr);
-  ASSERT_ERRNO_EQ(EINVAL);
-  ASSERT_STREQ(nullptr, result);
+  EXPECT_DEATH([] { LIBC_NAMESPACE::asctime(nullptr); }, WITH_SIGNAL(4));
 }
 
 // Weekdays are in the range 0 to 6. Test passing invalid value in wday.

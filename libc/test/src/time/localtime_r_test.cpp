@@ -34,9 +34,12 @@ TEST(LlvmLibcLocaltimeR, ValidUnixTimestamp0) {
   ASSERT_EQ(0, result->tm_isdst);
 }
 
-TEST(LlvmLibcLocaltime, NullPtr) {
-  EXPECT_DEATH([] { LIBC_NAMESPACE::localtime_r(nullptr, nullptr); },
-               WITH_SIGNAL(4));
+TEST(LlvmLibcLocaltimeR, NullPtr) {
+  struct tm input;
+  time_t timer = 0;
+  EXPECT_DEATH([] { LIBC_NAMESPACE::localtime_r(nullptr, nullptr); }, WITH_SIGNAL(4));
+  EXPECT_DEATH([&] { LIBC_NAMESPACE::localtime_r(nullptr, &input); }, WITH_SIGNAL(4));
+  EXPECT_DEATH([&] { LIBC_NAMESPACE::localtime_r(&timer, nullptr); }, WITH_SIGNAL(4));
 }
 
 // TODO(zimirza): These tests does not expect the correct output of localtime as

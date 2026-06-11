@@ -13,6 +13,8 @@
 #include "src/time/time_constants.h"
 #include "test/UnitTest/Test.h"
 
+namespace LIBC_NAMESPACE {
+
 // Copied from sprintf_test.cpp.
 // TODO: put this somewhere more reusable, it's handy.
 // Subtract 1 from sizeof(expected_str) to account for the null byte.
@@ -2356,7 +2358,18 @@ TEST(LlvmLibcStrftimeTest, TimezoneTest) {
   written = LIBC_NAMESPACE::strftime(buffer, sizeof(buffer), "%z", &time);
   EXPECT_STREQ_LEN(written, buffer, "-0430");
 
+  // Test null tm_zone
   time.tm_zone = nullptr;
+  time.tm_isdst = 0;
+  written = LIBC_NAMESPACE::strftime(buffer, sizeof(buffer), "%Z", &time);
+  EXPECT_STREQ_LEN(written, buffer, "");
+
+  // Test negative tm_isdst (should write no characters)
+  time.tm_isdst = -1;
+  time.tm_gmtoff = 3600;
+  time.tm_zone = "BST";
+  written = LIBC_NAMESPACE::strftime(buffer, sizeof(buffer), "%z", &time);
+  EXPECT_STREQ_LEN(written, buffer, "");
   written = LIBC_NAMESPACE::strftime(buffer, sizeof(buffer), "%Z", &time);
   EXPECT_STREQ_LEN(written, buffer, "");
 }
@@ -2381,3 +2394,5 @@ TEST(LlvmLibcStrftimeTest, BufferTooSmall) {
       LIBC_NAMESPACE::strftime(small_buffer, sizeof(small_buffer), "%F", &time);
   EXPECT_EQ(written, size_t{0});
 }
+
+} // namespace LIBC_NAMESPACE

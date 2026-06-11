@@ -14,9 +14,7 @@
 using LlvmLibcCtime = LIBC_NAMESPACE::testing::ErrnoCheckingTest;
 
 TEST_F(LlvmLibcCtime, nullptr) {
-  char *result;
-  result = LIBC_NAMESPACE::ctime(nullptr);
-  ASSERT_STREQ(nullptr, result);
+  EXPECT_DEATH([] { LIBC_NAMESPACE::ctime(nullptr); }, WITH_SIGNAL(4));
 }
 
 TEST_F(LlvmLibcCtime, ValidUnixTimestamp0) {
@@ -40,5 +38,6 @@ TEST_F(LlvmLibcCtime, InvalidArgument) {
   char *result;
   t = 2147483648;
   result = LIBC_NAMESPACE::ctime(&t);
+  ASSERT_ERRNO_EQ(EOVERFLOW);
   ASSERT_STREQ(nullptr, result);
 }
