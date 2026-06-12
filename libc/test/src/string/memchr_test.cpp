@@ -140,4 +140,19 @@ TEST(LlvmLibcMemChrTest, CrashOnNullPtr) {
 
 #endif // defined(LIBC_ADD_NULL_CHECKS)
 
+TEST(LlvmLibcMemChrTest, FindsCharacterAtOddOffset) {
+  unsigned char buf[64];
+  for (int i = 0; i < 64; ++i) buf[i] = 'a';
+  buf[33] = 'b';
+  buf[63] = '\0';
+  ASSERT_EQ(call_memchr(buf, 'b', 64), reinterpret_cast<const char*>(buf + 33));
+}
+
+TEST(LlvmLibcMemChrTest, NoFalsePositiveFromNullByte) {
+  unsigned char buf[64];
+  for (int i = 0; i < 64; ++i) buf[i] = 'a';
+  buf[33] = '\0';
+  ASSERT_EQ(call_memchr(buf, 'b', 64), static_cast<const char*>(nullptr));
+}
+
 } // namespace
