@@ -1,9 +1,14 @@
-//===-- Implementation header for raise -------------------------*- C++ -*-===//
+//===----------------------------------------------------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
+//===----------------------------------------------------------------------===//
+///
+/// \file
+/// Implementation header for raise.
+///
 //===----------------------------------------------------------------------===//
 
 #ifndef LLVM_LIBC_SRC___SUPPORT_OSUTIL_LINUX_SYSCALL_WRAPPERS_RAISE_H
@@ -22,7 +27,14 @@
 
 namespace LIBC_NAMESPACE_DECL {
 namespace linux_syscalls {
+/// Sends a signal to the calling thread.
+///
+/// \param sig The signal to send.
+/// \return A ErrorOr wrapper containing 0 on success, or the error code on failure.
 LIBC_INLINE ErrorOr<int> raise(int sig) {
+  /// RAII guard to temporarily block all signals.
+  /// This ensures that the signal sent by tgkill is delivered to the calling
+  /// thread without being interrupted by other signals.
   class SigMaskGuard {
     [[maybe_unused]] sigset_t old_set;
     [[maybe_unused]] ErrorOr<int> &status;
