@@ -314,6 +314,8 @@ add_header_library(
   DEPENDS
     libc.src.__support.OSUtil.osutil
     libc.src.__support.OSUtil.linux.syscall_wrappers.rt_sigprocmask
+    libc.src.__support.OSUtil.linux.syscall_wrappers.getpid
+    libc.src.__support.OSUtil.linux.syscall_wrappers.gettid
     libc.src.__support.common
     libc.src.__support.error_or
     libc.src.__support.macros.config
@@ -819,6 +821,19 @@ add_header_library(
     libc.hdr.types.pid_t
     libc.include.sys_syscall
 )
+
+add_header_library(
+  gettid
+  HDRS
+    gettid.h
+  DEPENDS
+    libc.src.__support.OSUtil.osutil
+    libc.src.__support.common
+    libc.src.__support.macros.config
+    libc.hdr.types.pid_t
+    libc.include.sys_syscall
+)
+
 
 
 

@@ -16,14 +16,21 @@
 #include "hdr/types/pid_t.h"
 #include "src/__support/OSUtil/syscall.h"
 #include "src/__support/macros/optimization.h"
+#include "src/__support/macros/properties/os.h"
 #include <sys/syscall.h>
+
+#ifdef LIBC_TARGET_OS_IS_LINUX
+#include "src/__support/OSUtil/linux/syscall_wrappers/gettid.h"
+#endif
 
 namespace LIBC_NAMESPACE_DECL {
 namespace internal {
 
 LIBC_INLINE pid_t *get_tid_cache() {
 #ifdef LIBC_FULL_BUILD
-  return &self.attrib->tid;
+  if (LIBC_LIKELY(self.attrib != nullptr))
+    return &self.attrib->tid;
+  return nullptr;
 #else
   // in non-full build mode, we do not control the fork routine. Therefore,
   // we do not cache tid at all.
@@ -33,8 +40,13 @@ LIBC_INLINE pid_t *get_tid_cache() {
 
 LIBC_INLINE pid_t gettid() {
   pid_t *cache = get_tid_cache();
-  if (LIBC_UNLIKELY(!cache || *cache <= 0))
+  if (LIBC_UNLIKELY(!cache || *cache <= 0)) {
+#ifdef LIBC_TARGET_OS_IS_LINUX
+    return linux_syscalls::gettid();
+#else
     return syscall_impl<pid_t>(SYS_gettid);
+#endif
+  }
   return *cache;
 }
 

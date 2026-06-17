@@ -12,6 +12,8 @@
 #include "hdr/signal_macros.h"
 #include "hdr/types/sigset_t.h"
 #include "src/__support/OSUtil/linux/syscall.h" // syscall_impl
+#include "src/__support/OSUtil/linux/syscall_wrappers/getpid.h"
+#include "src/__support/OSUtil/linux/syscall_wrappers/gettid.h"
 #include "src/__support/OSUtil/linux/syscall_wrappers/rt_sigprocmask.h"
 #include "src/__support/common.h"
 #include "src/__support/error_or.h"
@@ -46,13 +48,8 @@ LIBC_INLINE ErrorOr<int> raise(int sig) {
     if (!status.has_value())
       return status;
 
-    long pid = syscall_impl<long>(SYS_getpid);
-    if (pid < 0)
-      return Error(-static_cast<int>(pid));
-
-    long tid = syscall_impl<long>(SYS_gettid);
-    if (tid < 0)
-      return Error(-static_cast<int>(tid));
+    pid_t pid = linux_syscalls::getpid();
+    pid_t tid = linux_syscalls::gettid();
 
     int result = syscall_impl<int>(SYS_tgkill, pid, tid, sig);
     if (result < 0)

@@ -8,7 +8,8 @@
 
 #include "src/unistd/fork.h"
 
-#include "src/__support/OSUtil/syscall.h" // For internal syscall function.
+#include "src/__support/OSUtil/linux/syscall_wrappers/gettid.h"
+#include "src/__support/OSUtil/syscall.h"
 #include "src/__support/common.h"
 #include "src/__support/macros/config.h"
 #include "src/__support/threads/fork_callbacks.h"
@@ -44,7 +45,7 @@ LLVM_LIBC_FUNCTION(pid_t, fork, (void)) {
     // The child is created with a single thread whose self object will be a
     // copy of parent process' thread which called fork. So, we have to fix up
     // the child process' self object with the new process' tid.
-    internal::force_set_tid(syscall_impl<pid_t>(SYS_gettid));
+    internal::force_set_tid(linux_syscalls::gettid());
     invoke_child_callbacks();
     return 0;
   }
