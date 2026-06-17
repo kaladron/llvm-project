@@ -35,9 +35,8 @@ LLVM_LIBC_FUNCTION(int, gethostname, (char *name, size_t size)) {
   }
 
   // Guarantee that the name will be null terminated.
-  // The amount of bytes copied is min(size + 1, strlen(nodename) + 1)
-  // +1 to account for the null terminator (the last copied byte is a NULL).
-  internal::strlcpy(name, uname_data.nodename, size + 1);
+  // The amount of bytes written is at most |size|.
+  internal::strlcpy(name, uname_data.nodename, size);
 
   // Checks if the length of the hostname was greater than or equal to size
   if (internal::string_length(uname_data.nodename) >= size) {
