@@ -759,3 +759,16 @@ add_header_library(
     libc.hdr.types.off_t
     libc.include.sys_syscall
 )
+
+add_header_library(
+  geteuid
+  HDRS
+    geteuid.h
+  DEPENDS
+    libc.src.__support.OSUtil.osutil
+    libc.src.__support.common
+    libc.src.__support.macros.config
+    libc.hdr.types.uid_t
+    libc.include.sys_syscall
+)
+
