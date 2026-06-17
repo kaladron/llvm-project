@@ -7,37 +7,34 @@
 //===----------------------------------------------------------------------===//
 
 #include "src/time/nanosleep.h"
-#include "hdr/stdint_proxy.h" // For int64_t.
 #include "hdr/time_macros.h"
-#include "src/__support/OSUtil/syscall.h" // For syscall functions.
+#include "src/__support/OSUtil/linux/syscall_wrappers/clock_nanosleep.h"
+#include "src/__support/OSUtil/linux/syscall_wrappers/nanosleep.h"
 #include "src/__support/common.h"
 #include "src/__support/libc_errno.h"
 #include "src/__support/macros/config.h"
-
-#include <sys/syscall.h> // For syscall numbers.
 
 namespace LIBC_NAMESPACE_DECL {
 
 LLVM_LIBC_FUNCTION(int, nanosleep, (const timespec *req, timespec *rem)) {
 #if defined(SYS_clock_nanosleep_time64)
-  int ret = LIBC_NAMESPACE::syscall_impl<int>(SYS_clock_nanosleep_time64,
-                                              CLOCK_REALTIME, 0, req, rem);
+  auto result = linux_syscalls::clock_nanosleep(CLOCK_REALTIME, 0, req, rem);
 #elif defined(SYS_nanosleep)
   static_assert(
       sizeof(timespec::tv_nsec) == sizeof(long),
       "This legacy syscall fallback is only safe on platforms where tv_nsec "
       "matches the register size (long). It is unsafe on 32-bit platforms "
       "with 64-bit tv_nsec.");
-  int ret = LIBC_NAMESPACE::syscall_impl<int>(SYS_nanosleep, req, rem);
+  auto result = linux_syscalls::nanosleep(req, rem);
 #else
 #error "SYS_nanosleep and SYS_clock_nanosleep_time64 syscalls not available."
 #endif
 
-  if (ret < 0) {
-    libc_errno = -ret;
+  if (!result) {
+    libc_errno = result.error();
     return -1;
   }
-  return ret;
+  return result.value();
 }
 
 } // namespace LIBC_NAMESPACE_DECL
