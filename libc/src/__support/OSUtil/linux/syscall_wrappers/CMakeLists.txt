@@ -860,3 +860,18 @@ add_header_library(
     libc.hdr.types.struct_timespec
     libc.include.sys_syscall
 )
+
+add_header_library(
+  pread
+  HDRS
+    pread.h
+  DEPENDS
+    libc.src.__support.OSUtil.osutil
+    libc.src.__support.common
+    libc.src.__support.error_or
+    libc.src.__support.macros.config
+    libc.src.__support.CPP.bit
+    libc.hdr.types.off_t
+    libc.hdr.types.ssize_t
+    libc.include.sys_syscall
+)
