@@ -312,10 +312,7 @@ add_entrypoint_object(
     ../getgid.h
   DEPENDS
     libc.hdr.types.gid_t
-    libc.hdr.fcntl_macros
-    libc.include.unistd
-    libc.include.sys_syscall
-    libc.src.__support.OSUtil.osutil
+    libc.src.__support.OSUtil.linux.syscall_wrappers.getgid
 )
 
 add_entrypoint_object(
