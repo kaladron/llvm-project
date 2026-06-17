@@ -808,6 +808,19 @@ add_header_library(
     libc.include.sys_syscall
 )
 
+add_header_library(
+  getppid
+  HDRS
+    getppid.h
+  DEPENDS
+    libc.src.__support.OSUtil.osutil
+    libc.src.__support.common
+    libc.src.__support.macros.config
+    libc.hdr.types.pid_t
+    libc.include.sys_syscall
+)
+
+
 
 
 
