@@ -32,8 +32,8 @@ LIBC_INLINE ErrorOr<ssize_t> pwrite(int fd, const void *buf, size_t count,
     const uint32_t hi = bits >> 32;
     const long offset_low = cpp::bit_cast<long>(static_cast<long>(lo));
     const long offset_high = cpp::bit_cast<long>(static_cast<long>(hi));
-    return syscall_checked<ssize_t>(SYS_pwrite64, fd, buf, count, offset_low,
-                                    offset_high);
+    return syscall_checked<ssize_t>(SYS_pwrite64, fd, buf, count,
+                                    offset_low, offset_high);
   } else {
     return syscall_checked<ssize_t>(SYS_pwrite64, fd, buf, count, offset);
   }

@@ -27,8 +27,8 @@ LLVM_LIBC_FUNCTION(int, gethostname, (char *name, size_t size)) {
 
   // Because there is no SYS_gethostname syscall, we use uname to get the
   // hostname.
-  utsname unameData;
-  auto result = linux_syscalls::uname(&unameData);
+  utsname uname_data;
+  auto result = linux_syscalls::uname(&uname_data);
   if (!result) {
     libc_errno = result.error();
     return -1;
@@ -37,10 +37,10 @@ LLVM_LIBC_FUNCTION(int, gethostname, (char *name, size_t size)) {
   // Guarantee that the name will be null terminated.
   // The amount of bytes copied is min(size + 1, strlen(nodename) + 1)
   // +1 to account for the null terminator (the last copied byte is a NULL).
-  internal::strlcpy(name, unameData.nodename, size + 1);
+  internal::strlcpy(name, uname_data.nodename, size + 1);
 
   // Checks if the length of the hostname was greater than or equal to size
-  if (internal::string_length(unameData.nodename) >= size) {
+  if (internal::string_length(uname_data.nodename) >= size) {
     libc_errno = ENAMETOOLONG;
     return -1;
   }

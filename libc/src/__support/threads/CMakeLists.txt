@@ -172,7 +172,8 @@ if (LLVM_LIBC_FULL_BUILD)
 endif()
 
 if(LIBC_TARGET_OS STREQUAL "linux")
-  set(identifier_platform_depends libc.src.__support.OSUtil.linux.syscall_wrappers.gettid)
+  set(identifier_platform_depends
+      libc.src.__support.OSUtil.linux.syscall_wrappers.gettid)
 endif()
 
 add_header_library(
