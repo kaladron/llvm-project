@@ -890,3 +890,31 @@ add_header_library(
     libc.hdr.types.ssize_t
     libc.include.sys_syscall
 )
+
+add_header_library(
+  chown
+  HDRS
+    chown.h
+  DEPENDS
+    libc.src.__support.OSUtil.osutil
+    libc.src.__support.common
+    libc.src.__support.error_or
+    libc.src.__support.macros.config
+    libc.hdr.types.gid_t
+    libc.hdr.types.uid_t
+    libc.include.sys_syscall
+)
+
+add_header_library(
+  fchownat
+  HDRS
+    fchownat.h
+  DEPENDS
+    libc.src.__support.OSUtil.osutil
+    libc.src.__support.common
+    libc.src.__support.error_or
+    libc.src.__support.macros.config
+    libc.hdr.types.gid_t
+    libc.hdr.types.uid_t
+    libc.include.sys_syscall
+)
