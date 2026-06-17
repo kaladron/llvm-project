@@ -772,3 +772,16 @@ add_header_library(
     libc.include.sys_syscall
 )
 
+add_header_library(
+  getuid
+  HDRS
+    getuid.h
+  DEPENDS
+    libc.src.__support.OSUtil.osutil
+    libc.src.__support.common
+    libc.src.__support.macros.config
+    libc.hdr.types.uid_t
+    libc.include.sys_syscall
+)
+
+
