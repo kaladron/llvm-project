@@ -13,7 +13,8 @@ if(MSVC)
   set(LIBC_TARGET_ARCHITECTURE ${CMAKE_HOST_SYSTEM_PROCESSOR})
   if(LIBC_TARGET_TRIPLE)
     message(WARNING "libc build: Detected MSVC or equivalent compiler; "
-                    "LIBC_TARGET_TRIPLE is ignored and a host build is assumed.")
+                    "LIBC_TARGET_TRIPLE is ignored and a host build is "
+                    "assumed.")
   endif()
   return()
 endif()
@@ -75,7 +76,9 @@ function(get_arch_and_system_from_triple triple arch_var sys_var)
 
   # Setting OS name for GPU architectures.
   list(GET triple_comps 2 gpu_target_sys)
-  if(gpu_target_sys MATCHES "^amdhsa" OR gpu_target_sys MATCHES "^cuda" OR target_arch MATCHES "^spirv")
+  if(gpu_target_sys MATCHES "^amdhsa" OR
+     gpu_target_sys MATCHES "^cuda" OR
+     target_arch MATCHES "^spirv")
     set(target_sys "gpu")
   endif()
 
@@ -102,9 +105,9 @@ string(SUBSTRING ${libc_compiler_target_info} 8 -1 libc_compiler_triple)
 # One should not set LLVM_RUNTIMES_TARGET and LIBC_TARGET_TRIPLE
 if(LLVM_RUNTIMES_TARGET AND LIBC_TARGET_TRIPLE)
   message(FATAL_ERROR
-          "libc build: Specify only LLVM_DEFAULT_TARGET_TRIPLE if you are doing a "
-          "runtimes/bootstrap build. If you are doing a standalone build, "
-          "specify only LIBC_TARGET_TRIPLE.")
+          "libc build: Specify only LLVM_DEFAULT_TARGET_TRIPLE if you are "
+          "doing a runtimes/bootstrap build. If you are doing a standalone "
+          "build, specify only LIBC_TARGET_TRIPLE.")
 endif()
 
 set(explicit_target_triple)
@@ -117,8 +120,8 @@ endif()
 
 # The libc's target architecture and OS are set to match the compiler's default
 # target triple above. However, one can explicitly set LIBC_TARGET_TRIPLE or
-# LLVM_DEFAULT_TARGET_TRIPLE (for runtimes/bootstrap build). If one of them is set,
-# then we will use that target triple to deduce libc's target OS and
+# LLVM_DEFAULT_TARGET_TRIPLE (for runtimes/bootstrap build). If one of them is
+# set, then we will use that target triple to deduce libc's target OS and
 # architecture.
 if(explicit_target_triple)
   get_arch_and_system_from_triple(${explicit_target_triple} libc_arch libc_sys)
@@ -129,15 +132,16 @@ if(explicit_target_triple)
   set(LIBC_TARGET_ARCHITECTURE ${libc_arch})
   set(LIBC_TARGET_OS ${libc_sys})
   # If the compiler target triple is not the same as the triple specified by
-  # LIBC_TARGET_TRIPLE or LLVM_DEFAULT_TARGET_TRIPLE, we will add a --target option
-  # if the compiler is clang. If the compiler is GCC we just error out as there
-  # is no equivalent of an option like --target.
+  # LIBC_TARGET_TRIPLE or LLVM_DEFAULT_TARGET_TRIPLE, we will add a --target
+  # option if the compiler is clang. If the compiler is GCC we just error out
+  # as there is no equivalent of an option like --target.
   if(NOT libc_compiler_triple STREQUAL explicit_target_triple)
     set(LIBC_CROSSBUILD TRUE)
     if(CMAKE_COMPILER_IS_GNUCXX)
       message(FATAL_ERROR
               "GCC target triple (${libc_compiler_triple}) and the explicity "
-              "specified target triple (${explicit_target_triple}) do not match.")
+              "specified target triple (${explicit_target_triple}) do not "
+              "match.")
     else()
       list(APPEND
            LIBC_COMPILE_OPTIONS_DEFAULT "--target=${explicit_target_triple}")
@@ -226,9 +230,9 @@ else()
 endif()
 
 # If the compiler target triple is not the same as the triple specified by
-# LIBC_TARGET_TRIPLE or LLVM_DEFAULT_TARGET_TRIPLE, we will add a --target option
-# if the compiler is clang. If the compiler is GCC we just error out as there
-# is no equivalent of an option like --target.
+# LIBC_TARGET_TRIPLE or LLVM_DEFAULT_TARGET_TRIPLE, we will add a --target
+# option if the compiler is clang. If the compiler is GCC we just error out
+# as there is no equivalent of an option like --target.
 if(explicit_target_triple AND
    (NOT (libc_compiler_triple STREQUAL explicit_target_triple)))
   set(LIBC_CROSSBUILD TRUE)
@@ -250,17 +254,56 @@ if(LIBC_TARGET_OS_IS_DARWIN)
     OUTPUT_STRIP_TRAILING_WHITESPACE
   )
   if(MACOSX_SDK_PATH_RESULT EQUAL 0)
-    list(APPEND LIBC_COMPILE_OPTIONS_DEFAULT "-I" "${MACOSX_SDK_PATH}/usr/include")
+    list(APPEND LIBC_COMPILE_OPTIONS_DEFAULT
+         "-I" "${MACOSX_SDK_PATH}/usr/include")
   else()
-    message(WARNING "Could not find macOS SDK path. `xcrun --sdk macosx --show-sdk-path` failed.")
+    message(WARNING "Could not find macOS SDK path. "
+                    "`xcrun --sdk macosx --show-sdk-path` failed.")
   endif()
 endif()
 
 # Windows does not support full mode build.
-if (LIBC_TARGET_OS_IS_WINDOWS AND LLVM_LIBC_FULL_BUILD)
+if(LIBC_TARGET_OS_IS_WINDOWS AND LLVM_LIBC_FULL_BUILD)
   message(FATAL_ERROR "Windows does not support full mode build.")
 endif ()
 
+# Detect support for aliasing long double functions.
+set(LIBC_SUPPORT_LONG_DOUBLE_ALIAS FALSE)
+if((CMAKE_CXX_COMPILER_ID MATCHES "Clang" OR
+    CMAKE_CXX_COMPILER_ID STREQUAL "GNU") AND
+   NOT LIBC_TARGET_OS_IS_DARWIN AND
+   NOT LIBC_TARGET_OS_IS_WINDOWS)
+  set(LIBC_SUPPORT_LONG_DOUBLE_ALIAS TRUE)
+endif()
+
+if(LIBC_SUPPORT_LONG_DOUBLE_ALIAS)
+  include(CheckCXXSourceCompiles)
+
+  # Check if long double is same as double (53 bits mantissa)
+  check_cxx_source_compiles("
+    #include <float.h>
+    #if LDBL_MANT_DIG != 53
+    #error \"not 53\"
+    #endif
+    int main() { return 0; }
+  " LIBC_COPT_LONG_DOUBLE_MANT_DIG_IS_53)
+
+  # Check if long double is float128 (113 bits mantissa)
+  check_cxx_source_compiles("
+    #include <float.h>
+    #if LDBL_MANT_DIG != 113
+    #error \"not 113\"
+    #endif
+    int main() { return 0; }
+  " LIBC_COPT_LONG_DOUBLE_MANT_DIG_IS_113)
+
+  if(LIBC_COPT_LONG_DOUBLE_MANT_DIG_IS_53)
+    set(LIBC_TARGET_LONG_DOUBLE_IS_DOUBLE TRUE)
+  elseif(LIBC_COPT_LONG_DOUBLE_MANT_DIG_IS_113)
+    set(LIBC_TARGET_LONG_DOUBLE_IS_FLOAT128 TRUE)
+  endif()
+endif()
+
 message(STATUS
-        "Building libc for ${LIBC_TARGET_ARCHITECTURE} on ${LIBC_TARGET_OS} with "
-        "LIBC_COMPILE_OPTIONS_DEFAULT: ${LIBC_COMPILE_OPTIONS_DEFAULT}")
+        "Building libc for ${LIBC_TARGET_ARCHITECTURE} on ${LIBC_TARGET_OS} "
+        "with LIBC_COMPILE_OPTIONS_DEFAULT: ${LIBC_COMPILE_OPTIONS_DEFAULT}")

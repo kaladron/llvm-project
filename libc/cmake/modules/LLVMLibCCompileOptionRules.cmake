@@ -1,11 +1,11 @@
 if(NOT DEFINED LLVM_LIBC_COMPILER_IS_GCC_COMPATIBLE)
   if(CMAKE_COMPILER_IS_GNUCXX)
     set(LLVM_LIBC_COMPILER_IS_GCC_COMPATIBLE ON)
-  elseif( MSVC )
+  elseif(MSVC)
     set(LLVM_LIBC_COMPILER_IS_GCC_COMPATIBLE OFF)
-  elseif( "${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang" )
+  elseif("${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang")
     set(LLVM_LIBC_COMPILER_IS_GCC_COMPATIBLE ON)
-  elseif( "${CMAKE_CXX_COMPILER_ID}" MATCHES "Intel" )
+  elseif("${CMAKE_CXX_COMPILER_ID}" MATCHES "Intel")
     set(LLVM_LIBC_COMPILER_IS_GCC_COMPATIBLE ON)
   endif()
 endif()
@@ -43,7 +43,8 @@ function(_get_compile_options_from_flags output_var)
   endif()
   check_flag(ADD_ROUND_OPT_FLAG ${ROUND_OPT_FLAG} ${ARGN})
   check_flag(ADD_EXPLICIT_SIMD_OPT_FLAG ${EXPLICIT_SIMD_OPT_FLAG} ${ARGN})
-  check_flag(ADD_MISC_MATH_BASIC_OPS_OPT_FLAG ${MISC_MATH_BASIC_OPS_OPT_FLAG} ${ARGN})
+  check_flag(ADD_MISC_MATH_BASIC_OPS_OPT_FLAG
+             ${MISC_MATH_BASIC_OPS_OPT_FLAG} ${ARGN})
 
   if(LLVM_LIBC_COMPILER_IS_GCC_COMPATIBLE)
     if(ADD_FMA_FLAG)
@@ -104,26 +105,35 @@ function(_get_compile_options_from_config output_var)
   set(config_options "")
 
   if(LIBC_CONF_STRTOFLOAT_DISABLE_EISEL_LEMIRE)
-    libc_add_definition(config_options "LIBC_COPT_STRTOFLOAT_DISABLE_EISEL_LEMIRE")
+    libc_add_definition(
+      config_options "LIBC_COPT_STRTOFLOAT_DISABLE_EISEL_LEMIRE")
   endif()
 
   if(LIBC_CONF_STRTOFLOAT_DISABLE_SIMPLE_DECIMAL_CONVERSION)
-    libc_add_definition(config_options "LIBC_COPT_STRTOFLOAT_DISABLE_SIMPLE_DECIMAL_CONVERSION")
+    libc_add_definition(
+      config_options
+      "LIBC_COPT_STRTOFLOAT_DISABLE_SIMPLE_DECIMAL_CONVERSION")
   endif()
 
   if(LIBC_CONF_STRTOFLOAT_DISABLE_CLINGER_FAST_PATH)
-    libc_add_definition(config_options "LIBC_COPT_STRTOFLOAT_DISABLE_CLINGER_FAST_PATH")
+    libc_add_definition(
+      config_options "LIBC_COPT_STRTOFLOAT_DISABLE_CLINGER_FAST_PATH")
   endif()
 
   if(LIBC_CONF_QSORT_IMPL)
     libc_add_definition(config_options "LIBC_QSORT_IMPL=${LIBC_CONF_QSORT_IMPL}")
   endif()
 
-  libc_add_definition(config_options "LIBC_COPT_STRING_LENGTH_IMPL=${LIBC_CONF_STRING_LENGTH_IMPL}")
-  libc_add_definition(config_options "LIBC_COPT_FIND_FIRST_CHARACTER_IMPL=${LIBC_CONF_FIND_FIRST_CHARACTER_IMPL}")
+  libc_add_definition(
+    config_options
+    "LIBC_COPT_STRING_LENGTH_IMPL=${LIBC_CONF_STRING_LENGTH_IMPL}")
+  libc_add_definition(
+    config_options
+    "LIBC_COPT_FIND_FIRST_CHARACTER_IMPL=${LIBC_CONF_FIND_FIRST_CHARACTER_IMPL}")
 
   if(LIBC_CONF_MEMSET_X86_USE_SOFTWARE_PREFETCHING)
-    libc_add_definition(config_options "LIBC_COPT_MEMSET_X86_USE_SOFTWARE_PREFETCHING")
+    libc_add_definition(
+      config_options "LIBC_COPT_MEMSET_X86_USE_SOFTWARE_PREFETCHING")
   endif()
 
   if(LIBC_CONF_COPT_MEMCPY_X86_USE_NTA_STORES)
@@ -139,11 +149,14 @@ function(_get_compile_options_from_config output_var)
   endif()
 
   if(NOT "${LIBC_CONF_FREXP_INF_NAN_EXPONENT}" STREQUAL "")
-    libc_add_definition(config_options "LIBC_FREXP_INF_NAN_EXPONENT=${LIBC_CONF_FREXP_INF_NAN_EXPONENT}")
+    libc_add_definition(
+      config_options
+      "LIBC_FREXP_INF_NAN_EXPONENT=${LIBC_CONF_FREXP_INF_NAN_EXPONENT}")
   endif()
 
   if(LIBC_CONF_MATH_OPTIMIZATIONS)
-    libc_add_definition(config_options "LIBC_MATH=(${LIBC_CONF_MATH_OPTIMIZATIONS})")
+    libc_add_definition(
+      config_options "LIBC_MATH=(${LIBC_CONF_MATH_OPTIMIZATIONS})")
     if(LIBC_CONF_MATH_OPTIMIZATIONS MATCHES "LIBC_MATH_NO_ERRNO")
       list(APPEND config_options "-fno-math-errno")
     endif()
@@ -170,7 +183,10 @@ function(_get_compile_options_from_config output_var)
   endif()
 
   if(LIBC_CONF_RAW_MUTEX_DEFAULT_SPIN_COUNT)
-    libc_add_definition(config_options "LIBC_COPT_RAW_MUTEX_DEFAULT_SPIN_COUNT=${LIBC_CONF_RAW_MUTEX_DEFAULT_SPIN_COUNT}")
+    set(spin_count_val ${LIBC_CONF_RAW_MUTEX_DEFAULT_SPIN_COUNT})
+    libc_add_definition(
+      config_options
+      "LIBC_COPT_RAW_MUTEX_DEFAULT_SPIN_COUNT=${spin_count_val}")
   endif()
 
   if(LIBC_CONF_MATH_USE_SYSTEM_FENV)
@@ -197,18 +213,19 @@ function(_get_compile_options_from_config output_var)
 endfunction(_get_compile_options_from_config)
 
 function(_get_compile_options_from_arch output_var)
-  # Set options that are not found in src/__support/macros/properties/architectures.h
-  # and src/__support/macros/properties/os.h
+  # Set options that are not found in
+  # src/__support/macros/properties/architectures.h and
+  # src/__support/macros/properties/os.h
   # TODO: we probably want to unify these at some point for consistency
   set(config_options "")
 
-  if (LIBC_TARGET_OS_IS_BAREMETAL)
+  if(LIBC_TARGET_OS_IS_BAREMETAL)
     libc_add_definition(config_options "LIBC_TARGET_OS_IS_BAREMETAL")
   endif()
-  if (LIBC_TARGET_OS_IS_GPU)
+  if(LIBC_TARGET_OS_IS_GPU)
     libc_add_definition(config_options "LIBC_TARGET_OS_IS_GPU")
   endif()
-  if (LIBC_TARGET_OS_IS_UEFI)
+  if(LIBC_TARGET_OS_IS_UEFI)
     libc_add_definition(config_options "LIBC_TARGET_OS_IS_UEFI")
   endif()
 
@@ -220,10 +237,17 @@ function(_get_common_compile_options output_var flags)
   _get_compile_options_from_config(config_flags)
   _get_compile_options_from_arch(arch_flags)
 
-  set(compile_options ${LIBC_COMPILE_OPTIONS_DEFAULT} ${compile_flags} ${config_flags} ${arch_flags})
+  set(compile_options
+      ${LIBC_COMPILE_OPTIONS_DEFAULT}
+      ${compile_flags}
+      ${config_flags}
+      ${arch_flags})
 
   if(LLVM_LIBC_COMPILER_IS_GCC_COMPATIBLE)
     list(APPEND compile_options "-fpie")
+    if(LIBC_SUPPORT_LONG_DOUBLE_ALIAS)
+      list(APPEND compile_options "-DLIBC_ALIAS_LONG_DOUBLE")
+    endif()
 
     if(LLVM_LIBC_FULL_BUILD)
       # Only add -ffreestanding flag in non-GPU full build mode.
@@ -266,16 +290,16 @@ function(_get_common_compile_options output_var flags)
     list(APPEND compile_options "-fno-unwind-tables")
     list(APPEND compile_options "-fno-asynchronous-unwind-tables")
     list(APPEND compile_options "-fno-rtti")
-    if (LIBC_CC_SUPPORTS_PATTERN_INIT)
+    if(LIBC_CC_SUPPORTS_PATTERN_INIT)
       list(APPEND compile_options "-ftrivial-auto-var-init=pattern")
     endif()
-    if (LIBC_CONF_KEEP_FRAME_POINTER)
+    if(LIBC_CONF_KEEP_FRAME_POINTER)
       list(APPEND compile_options "-fno-omit-frame-pointer")
-      if (LIBC_TARGET_ARCHITECTURE_IS_X86_64)
+      if(LIBC_TARGET_ARCHITECTURE_IS_X86_64)
         list(APPEND compile_options "-mno-omit-leaf-frame-pointer")
       endif()
     endif()
-    if (LIBC_CONF_ENABLE_STRONG_STACK_PROTECTOR)
+    if(LIBC_CONF_ENABLE_STRONG_STACK_PROTECTOR)
       list(APPEND compile_options "-fstack-protector-strong")
     endif()
     list(APPEND compile_options "-Wall")
@@ -284,7 +308,8 @@ function(_get_common_compile_options output_var flags)
     if(NOT LIBC_WNO_ERROR)
       list(APPEND compile_options "-Werror")
     endif()
-    if(NOT (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS "13.0.0"))
+    if(NOT (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND
+            CMAKE_CXX_COMPILER_VERSION VERSION_LESS "13.0.0"))
       list(APPEND compile_options "-Wconversion")
     else()
       list(APPEND compile_options "-Wno-type-limits")
@@ -313,9 +338,11 @@ function(_get_common_compile_options output_var flags)
       list(APPEND compile_options "-Wglobal-constructors")
     endif()
 
-    # Older Clang versions emit false positive shadow warnings for lambda captures
-    # inside static member functions (fixed in Clang 22, see PR #157667 and #165919).
-    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL "22.0.0")
+    # Older Clang versions emit false positive shadow warnings for lambda
+    # captures inside static member functions (fixed in Clang 22, see PR
+    # #157667 and #165919).
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND
+       CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL "22.0.0")
       list(APPEND compile_options "-Wshadow")
     endif()
 
@@ -326,7 +353,7 @@ function(_get_common_compile_options output_var flags)
     list(APPEND compile_options "/EHs-c-")
     list(APPEND compile_options "/GR-")
   endif()
-  if (LIBC_TARGET_OS_IS_GPU)
+  if(LIBC_TARGET_OS_IS_GPU)
     list(APPEND compile_options "-nogpulib")
     list(APPEND compile_options "-fvisibility=hidden")
     list(APPEND compile_options "-fconvergent-functions")

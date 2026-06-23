@@ -1,18 +1,23 @@
-//===-- Types support -------------------------------------------*- C++ -*-===//
+//===----------------------------------------------------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
-// Types detection and support.
+///
+/// \file
+/// Types detection and support.
+///
+//===----------------------------------------------------------------------===//
 
 #ifndef LLVM_LIBC_SRC___SUPPORT_MACROS_PROPERTIES_TYPES_H
 #define LLVM_LIBC_SRC___SUPPORT_MACROS_PROPERTIES_TYPES_H
 
 #include "hdr/float_macros.h" // LDBL_MANT_DIG
 #include "hdr/stdint_proxy.h" // UINT64_MAX, __SIZEOF_INT128__
-#include "include/llvm-libc-macros/float16-macros.h" // LIBC_TYPES_HAS_FLOAT16
+// LIBC_TYPES_HAS_FLOAT16
+#include "include/llvm-libc-macros/float16-macros.h"
 #include "include/llvm-libc-types/float128.h"        // float128
 #include "src/__support/macros/config.h"             // LIBC_NAMESPACE_DECL
 #include "src/__support/macros/properties/architectures.h"
@@ -67,5 +72,14 @@ struct BFloat16;
 } // namespace LIBC_NAMESPACE_DECL
 
 using bfloat16 = LIBC_NAMESPACE::fputil::BFloat16;
+
+// Alias long double functions if requested.
+#ifdef LIBC_ALIAS_LONG_DOUBLE
+#if defined(LIBC_TYPES_LONG_DOUBLE_IS_FLOAT64)
+#define LIBC_ALIAS_LONG_DOUBLE_TO_DOUBLE
+#elif defined(LIBC_TYPES_LONG_DOUBLE_IS_FLOAT128)
+#define LIBC_ALIAS_LONG_DOUBLE_TO_FLOAT128
+#endif
+#endif // LIBC_ALIAS_LONG_DOUBLE
 
 #endif // LLVM_LIBC_SRC___SUPPORT_MACROS_PROPERTIES_TYPES_H

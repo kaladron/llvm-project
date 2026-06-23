@@ -1,9 +1,14 @@
-//===-- Common internal contructs -------------------------------*- C++ -*-===//
+//===----------------------------------------------------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
+//===----------------------------------------------------------------------===//
+///
+/// \file
+/// Common internal constructs.
+///
 //===----------------------------------------------------------------------===//
 
 #ifndef LLVM_LIBC_SRC___SUPPORT_COMMON_H
@@ -33,7 +38,8 @@
 //
 // For examples:
 // #define LLVM_LIBC_FUNCTION_ATTR_memcpy LLVM_LIBC_EMPTY, [[gnu::weak]]
-// #define LLVM_LIBC_FUNCTION_ATTR_memchr LLVM_LIBC_EMPTY, [[gnu::weak]] [[gnu::visibility("default")]]
+// #define LLVM_LIBC_FUNCTION_ATTR_memchr LLVM_LIBC_EMPTY, [[gnu::weak]] \
+//         [[gnu::visibility("default")]]
 // clang-format on
 #define LLVM_LIBC_EMPTY
 
@@ -48,26 +54,50 @@
 // to cleanly export and alias the C++ symbol `LIBC_NAMESPACE::func` with the C
 // symbol `func`.  So for public packaging on MacOS, we will only export the C
 // symbol.  Moreover, a C symbol `func` in macOS is mangled as `_func`.
-#if defined(LIBC_COPT_PUBLIC_PACKAGING) && !defined(LIBC_COMPILER_IS_MSVC)
-#ifndef __APPLE__
+#if !defined(LIBC_COMPILER_IS_MSVC) && !defined(__APPLE__)
+
+#if defined(LIBC_COPT_PUBLIC_PACKAGING)
 #define LLVM_LIBC_FUNCTION_IMPL_4(type, name, arglist, c_alias)                \
   LLVM_LIBC_ATTR(name)                                                         \
   LLVM_LIBC_FUNCTION_ATTR decltype(LIBC_NAMESPACE::name)                       \
       __##name##_impl__ asm(c_alias);                                          \
   decltype(LIBC_NAMESPACE::name) name [[gnu::alias(c_alias)]];                 \
   type __##name##_impl__ arglist
-#else // __APPLE__
+
+#define LLVM_LIBC_ALIAS(name, func)                                            \
+  decltype(LIBC_NAMESPACE::name) LIBC_NAMESPACE::name [[gnu::alias(#func)]];   \
+  extern "C" decltype(LIBC_NAMESPACE::name) name [[gnu::alias(#func)]];        \
+  static_assert(true, "Require semicolon")
+#else // NOT LIBC_COPT_PUBLIC_PACKAGING
+#define LLVM_LIBC_FUNCTION_IMPL_4(type, name, arglist, c_alias)                \
+  LLVM_LIBC_ATTR(name)                                                         \
+  LLVM_LIBC_FUNCTION_ATTR decltype(LIBC_NAMESPACE::name)                       \
+      __##name##_impl__ asm("__" #name "_impl__");                             \
+  decltype(LIBC_NAMESPACE::name) name [[gnu::alias("__" #name "_impl__")]];    \
+  type __##name##_impl__ arglist
+
+#define LLVM_LIBC_ALIAS(name, func)                                            \
+  decltype(LIBC_NAMESPACE::name) LIBC_NAMESPACE::name                          \
+      [[gnu::alias("__" #func "_impl__")]];                                    \
+  static_assert(true, "Require semicolon")
+#endif // LIBC_COPT_PUBLIC_PACKAGING
+
+#else // MSVC or Apple (no [[gnu::alias]] support)
+
+#if defined(LIBC_COPT_PUBLIC_PACKAGING) && defined(__APPLE__)
 #define LLVM_LIBC_FUNCTION_IMPL_4(type, name, arglist, c_alias)                \
   LLVM_LIBC_ATTR(name)                                                         \
   LLVM_LIBC_FUNCTION_ATTR decltype(LIBC_NAMESPACE::name) name asm(             \
       "_" c_alias);                                                            \
   type name arglist
-#endif // __APPLE__
-
-#else  // LIBC_COPT_PUBLIC_PACKAGING
+#else
 #define LLVM_LIBC_FUNCTION_IMPL_4(type, name, arglist, c_alias)                \
   type name arglist
-#endif // LIBC_COPT_PUBLIC_PACKAGING
+#endif
+
+#define LLVM_LIBC_ALIAS(name, func) static_assert(true, "Require semicolon")
+
+#endif
 
 #define LLVM_LIBC_FUNCTION_IMPL_3(type, name, arglist)                         \
   LLVM_LIBC_FUNCTION_IMPL_4(type, name, arglist, #name)
