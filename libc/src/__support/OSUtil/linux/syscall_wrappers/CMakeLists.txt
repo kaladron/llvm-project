@@ -704,7 +704,6 @@ add_header_library(
     libc.include.sys_syscall
 )
 
-
 add_header_library(
   dup
   HDRS
@@ -859,4 +858,18 @@ add_header_library(
     libc.src.__support.error_or
     libc.src.__support.macros.config
     libc.include.sys_syscall
+)
+
+add_header_library(
+  nanosleep
+  HDRS
+    nanosleep.h
+  DEPENDS
+    libc.hdr.types.struct_timespec
+    libc.hdr.time_macros
+    libc.hdr.sys_syscall_macros
+    libc.src.__support.OSUtil.osutil
+    libc.src.__support.common
+    libc.src.__support.error_or
+    libc.src.__support.macros.config
 )
