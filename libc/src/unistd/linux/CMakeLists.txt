@@ -144,6 +144,7 @@ add_entrypoint_object(
     libc.include.sys_syscall
     libc.src.__support.threads.fork_callbacks
     libc.src.__support.OSUtil.osutil
+    libc.src.__support.OSUtil.linux.syscall_wrappers.gettid
     libc.src.__support.threads.thread
     libc.src.errno.errno
     libc.src.__support.threads.identifier
@@ -260,10 +261,7 @@ add_entrypoint_object(
     ../geteuid.h
   DEPENDS
     libc.hdr.types.uid_t
-    libc.hdr.fcntl_macros
-    libc.include.unistd
-    libc.include.sys_syscall
-    libc.src.__support.OSUtil.osutil
+    libc.src.__support.OSUtil.linux.syscall_wrappers.geteuid
 )
 
 add_entrypoint_object(
@@ -274,10 +272,7 @@ add_entrypoint_object(
     ../getpid.h
   DEPENDS
     libc.hdr.types.pid_t
-    libc.hdr.fcntl_macros
-    libc.include.unistd
-    libc.include.sys_syscall
-    libc.src.__support.OSUtil.osutil
+    libc.src.__support.OSUtil.linux.syscall_wrappers.getpid
 )
 
 add_entrypoint_object(
@@ -288,10 +283,7 @@ add_entrypoint_object(
     ../getppid.h
   DEPENDS
     libc.hdr.types.pid_t
-    libc.hdr.fcntl_macros
-    libc.include.unistd
-    libc.include.sys_syscall
-    libc.src.__support.OSUtil.osutil
+    libc.src.__support.OSUtil.linux.syscall_wrappers.getppid
 )
 
 add_entrypoint_object(
@@ -315,10 +307,7 @@ add_entrypoint_object(
     ../getgid.h
   DEPENDS
     libc.hdr.types.gid_t
-    libc.hdr.fcntl_macros
-    libc.include.unistd
-    libc.include.sys_syscall
-    libc.src.__support.OSUtil.osutil
+    libc.src.__support.OSUtil.linux.syscall_wrappers.getgid
 )
 
 add_entrypoint_object(
@@ -329,10 +318,7 @@ add_entrypoint_object(
     ../getuid.h
   DEPENDS
     libc.hdr.types.uid_t
-    libc.hdr.fcntl_macros
-    libc.include.unistd
-    libc.include.sys_syscall
-    libc.src.__support.OSUtil.osutil
+    libc.src.__support.OSUtil.linux.syscall_wrappers.getuid
 )
 
 add_entrypoint_object(
