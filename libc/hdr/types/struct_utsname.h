@@ -7,18 +7,21 @@
 //===----------------------------------------------------------------------===//
 ///
 /// \file
-/// Linux implementation of geteuid.
+/// Proxy for struct utsname.
 ///
 //===----------------------------------------------------------------------===//
 
-#include "src/unistd/geteuid.h"
+#ifndef LLVM_LIBC_HDR_TYPES_STRUCT_UTSNAME_H
+#define LLVM_LIBC_HDR_TYPES_STRUCT_UTSNAME_H
 
-#include "src/__support/OSUtil/linux/syscall_wrappers/geteuid.h"
-#include "src/__support/common.h"
-#include "src/__support/macros/config.h"
+#ifdef LIBC_FULL_BUILD
 
-namespace LIBC_NAMESPACE_DECL {
+#include "include/llvm-libc-types/struct_utsname.h"
 
-LLVM_LIBC_FUNCTION(uid_t, geteuid, ()) { return linux_syscalls::geteuid(); }
+#else // Overlay mode
 
-} // namespace LIBC_NAMESPACE_DECL
+#include <sys/utsname.h>
+
+#endif // LIBC_FULL_BUILD
+
+#endif // LLVM_LIBC_HDR_TYPES_STRUCT_UTSNAME_H

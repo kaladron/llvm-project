@@ -7,18 +7,14 @@
 //===----------------------------------------------------------------------===//
 ///
 /// \file
-/// Linux implementation of geteuid.
+/// Unittests for gettid.
 ///
 //===----------------------------------------------------------------------===//
 
-#include "src/unistd/geteuid.h"
+#include "src/unistd/gettid.h"
+#include "test/UnitTest/Test.h"
 
-#include "src/__support/OSUtil/linux/syscall_wrappers/geteuid.h"
-#include "src/__support/common.h"
-#include "src/__support/macros/config.h"
-
-namespace LIBC_NAMESPACE_DECL {
-
-LLVM_LIBC_FUNCTION(uid_t, geteuid, ()) { return linux_syscalls::geteuid(); }
-
-} // namespace LIBC_NAMESPACE_DECL
+TEST(LlvmLibcGetTidTest, SmokeTest) {
+  // gettid always succeeds. So, we just call it as a smoke test.
+  LIBC_NAMESPACE::gettid();
+}

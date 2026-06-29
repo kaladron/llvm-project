@@ -7,18 +7,25 @@
 //===----------------------------------------------------------------------===//
 ///
 /// \file
-/// Linux implementation of geteuid.
+/// Linux implementation of getgid wrapper.
 ///
 //===----------------------------------------------------------------------===//
 
-#include "src/unistd/geteuid.h"
+#ifndef LLVM_LIBC_SRC___SUPPORT_OSUTIL_LINUX_SYSCALL_WRAPPERS_GETGID_H
+#define LLVM_LIBC_SRC___SUPPORT_OSUTIL_LINUX_SYSCALL_WRAPPERS_GETGID_H
 
-#include "src/__support/OSUtil/linux/syscall_wrappers/geteuid.h"
+#include "hdr/types/gid_t.h"
+#include "src/__support/OSUtil/linux/syscall.h" // For syscall_impl
 #include "src/__support/common.h"
 #include "src/__support/macros/config.h"
+#include <sys/syscall.h> // For syscall numbers
 
 namespace LIBC_NAMESPACE_DECL {
+namespace linux_syscalls {
 
-LLVM_LIBC_FUNCTION(uid_t, geteuid, ()) { return linux_syscalls::geteuid(); }
+LIBC_INLINE gid_t getgid() { return syscall_impl<gid_t>(SYS_getgid); }
 
+} // namespace linux_syscalls
 } // namespace LIBC_NAMESPACE_DECL
+
+#endif // LLVM_LIBC_SRC___SUPPORT_OSUTIL_LINUX_SYSCALL_WRAPPERS_GETGID_H

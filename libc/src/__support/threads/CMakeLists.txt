@@ -171,6 +171,11 @@ if (LLVM_LIBC_FULL_BUILD)
   set(identifier_dependency_on_thread libc.src.__support.threads.thread)
 endif()
 
+if(LIBC_TARGET_OS STREQUAL "linux")
+  set(identifier_platform_depends
+      libc.src.__support.OSUtil.linux.syscall_wrappers.gettid)
+endif()
+
 add_header_library(
   identifier
   HDRS
@@ -180,5 +185,6 @@ add_header_library(
     libc.src.__support.common
     libc.include.sys_syscall
     libc.hdr.types.pid_t
-    ${identifier_dependency_on_thread}
+    ${identifier_platform_depends}
 )
+
