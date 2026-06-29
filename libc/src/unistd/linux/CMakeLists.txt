@@ -44,8 +44,8 @@ add_entrypoint_object(
     libc.hdr.fcntl_macros
     libc.hdr.types.uid_t
     libc.hdr.types.gid_t
-    libc.include.sys_syscall
-    libc.src.__support.OSUtil.osutil
+    libc.src.__support.OSUtil.linux.syscall_wrappers.chown
+    libc.src.__support.OSUtil.linux.syscall_wrappers.fchownat
     libc.src.errno.errno
 )
 
@@ -126,8 +126,7 @@ add_entrypoint_object(
   DEPENDS
     libc.hdr.types.uid_t
     libc.hdr.types.gid_t
-    libc.include.sys_syscall
-    libc.src.__support.OSUtil.osutil
+    libc.src.__support.OSUtil.linux.syscall_wrappers.fchown
     libc.src.errno.errno
 )
 
@@ -450,11 +449,8 @@ add_entrypoint_object(
     libc.hdr.types.off_t
     libc.hdr.types.size_t
     libc.hdr.types.ssize_t
-    libc.hdr.fcntl_macros
-    libc.hdr.stdint_proxy
     libc.include.unistd
-    libc.include.sys_syscall
-    libc.src.__support.OSUtil.osutil
+    libc.src.__support.OSUtil.linux.syscall_wrappers.pread
     libc.src.__support.macros.sanitizer
     libc.src.errno.errno
 )
@@ -469,11 +465,8 @@ add_entrypoint_object(
     libc.hdr.types.off_t
     libc.hdr.types.size_t
     libc.hdr.types.ssize_t
-    libc.hdr.fcntl_macros
-    libc.hdr.stdint_proxy
     libc.include.unistd
-    libc.include.sys_syscall
-    libc.src.__support.OSUtil.osutil
+    libc.src.__support.OSUtil.linux.syscall_wrappers.pwrite
     libc.src.errno.errno
 )
 

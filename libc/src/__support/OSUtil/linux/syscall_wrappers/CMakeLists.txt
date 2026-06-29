@@ -798,3 +798,75 @@ add_header_library(
     libc.src.__support.macros.config
     libc.include.sys_syscall
 )
+
+add_header_library(
+  pread
+  HDRS
+    pread.h
+  DEPENDS
+    libc.src.__support.OSUtil.osutil
+    libc.src.__support.common
+    libc.src.__support.error_or
+    libc.src.__support.macros.config
+    libc.src.__support.CPP.bit
+    libc.hdr.types.off_t
+    libc.hdr.types.ssize_t
+    libc.include.sys_syscall
+)
+
+add_header_library(
+  pwrite
+  HDRS
+    pwrite.h
+  DEPENDS
+    libc.src.__support.OSUtil.osutil
+    libc.src.__support.common
+    libc.src.__support.error_or
+    libc.src.__support.macros.config
+    libc.src.__support.CPP.bit
+    libc.hdr.types.off_t
+    libc.hdr.types.ssize_t
+    libc.include.sys_syscall
+)
+
+add_header_library(
+  chown
+  HDRS
+    chown.h
+  DEPENDS
+    libc.src.__support.OSUtil.osutil
+    libc.src.__support.common
+    libc.src.__support.error_or
+    libc.src.__support.macros.config
+    libc.hdr.types.gid_t
+    libc.hdr.types.uid_t
+    libc.include.sys_syscall
+)
+
+add_header_library(
+  fchownat
+  HDRS
+    fchownat.h
+  DEPENDS
+    libc.src.__support.OSUtil.osutil
+    libc.src.__support.common
+    libc.src.__support.error_or
+    libc.src.__support.macros.config
+    libc.hdr.types.gid_t
+    libc.hdr.types.uid_t
+    libc.include.sys_syscall
+)
+
+add_header_library(
+  fchown
+  HDRS
+    fchown.h
+  DEPENDS
+    libc.src.__support.OSUtil.osutil
+    libc.src.__support.common
+    libc.src.__support.error_or
+    libc.src.__support.macros.config
+    libc.hdr.types.gid_t
+    libc.hdr.types.uid_t
+    libc.include.sys_syscall
+)
