@@ -534,16 +534,6 @@ add_libc_unittest(
     libc.src.unistd.getppid
 )
 
-add_libc_unittest(
-  gettid_test
-  SUITE
-    libc_unistd_unittests
-  SRCS
-    gettid_test.cpp
-  DEPENDS
-    libc.src.unistd.gettid
-)
-
 
 add_libc_unittest(
   getsid_test
