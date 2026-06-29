@@ -8,29 +8,35 @@
 
 #include "src/unistd/pipe.h"
 
-#include "src/__support/OSUtil/syscall.h" // For internal syscall function.
 #include "src/__support/common.h"
 #include "src/__support/libc_errno.h"
 #include "src/__support/macros/config.h"
 #include "src/__support/macros/sanitizer.h" // for LIBC_MSAN_UNPOISON
 #include <sys/syscall.h>                    // For syscall numbers.
 
+#ifdef SYS_pipe
+#include "src/__support/OSUtil/linux/syscall_wrappers/pipe.h"
+#elif defined(SYS_pipe2)
+#include "src/__support/OSUtil/linux/syscall_wrappers/pipe2.h"
+#endif
+
 namespace LIBC_NAMESPACE_DECL {
 
 LLVM_LIBC_FUNCTION(int, pipe, (int pipefd[2])) {
 #ifdef SYS_pipe
-  int ret = LIBC_NAMESPACE::syscall_impl<int>(SYS_pipe,
-                                              reinterpret_cast<long>(pipefd));
+  auto result = linux_syscalls::pipe(pipefd);
 #elif defined(SYS_pipe2)
-  int ret = LIBC_NAMESPACE::syscall_impl<int>(
-      SYS_pipe2, reinterpret_cast<long>(pipefd), 0);
+  auto result = linux_syscalls::pipe2(pipefd, 0);
+#else
+#error "pipe implementation not available for this architecture"
 #endif
-  LIBC_MSAN_UNPOISON(pipefd, sizeof(int) * 2);
-  if (ret < 0) {
-    libc_errno = -ret;
+
+  if (!result) {
+    libc_errno = result.error();
     return -1;
   }
-  return ret;
+  LIBC_MSAN_UNPOISON(pipefd, sizeof(int) * 2);
+  return result.value();
 }
 
 } // namespace LIBC_NAMESPACE_DECL

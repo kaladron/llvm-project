@@ -9,22 +9,20 @@
 #include "src/unistd/setsid.h"
 
 #include "hdr/types/pid_t.h"
-#include "src/__support/OSUtil/syscall.h" // For internal syscall function.
+#include "src/__support/OSUtil/linux/syscall_wrappers/setsid.h"
 #include "src/__support/common.h"
 #include "src/__support/libc_errno.h"
 #include "src/__support/macros/config.h"
 
-#include <sys/syscall.h> // For syscall numbers.
-
 namespace LIBC_NAMESPACE_DECL {
 
 LLVM_LIBC_FUNCTION(pid_t, setsid, ()) {
-  pid_t ret = LIBC_NAMESPACE::syscall_impl<pid_t>(SYS_setsid);
-  if (ret < 0) {
-    libc_errno = static_cast<int>(-ret);
+  auto result = linux_syscalls::setsid();
+  if (!result) {
+    libc_errno = result.error();
     return -1;
   }
-  return ret;
+  return result.value();
 }
 
 } // namespace LIBC_NAMESPACE_DECL

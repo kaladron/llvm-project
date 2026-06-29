@@ -44,6 +44,6 @@ add_entrypoint_object(
     ../openat.h
   DEPENDS
     libc.hdr.types.mode_t
-    libc.src.__support.OSUtil.osutil
     libc.src.errno.errno
+    libc.src.__support.OSUtil.linux.syscall_wrappers.openat
 )
