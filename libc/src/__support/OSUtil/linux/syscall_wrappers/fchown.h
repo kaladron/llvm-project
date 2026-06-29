@@ -25,11 +25,9 @@
 namespace LIBC_NAMESPACE_DECL {
 namespace linux_syscalls {
 
-#ifdef SYS_fchown
 LIBC_INLINE ErrorOr<int> fchown(int fd, uid_t owner, gid_t group) {
   return syscall_checked<int>(SYS_fchown, fd, owner, group);
 }
-#endif
 
 } // namespace linux_syscalls
 } // namespace LIBC_NAMESPACE_DECL

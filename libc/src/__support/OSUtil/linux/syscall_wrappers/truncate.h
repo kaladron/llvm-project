@@ -25,17 +25,17 @@
 namespace LIBC_NAMESPACE_DECL {
 namespace linux_syscalls {
 
-#ifdef SYS_truncate
 LIBC_INLINE ErrorOr<int> truncate(const char *path, off_t len) {
+#if defined(SYS_truncate)
   return syscall_checked<int>(SYS_truncate, path, len);
-}
 #elif defined(SYS_truncate64)
-LIBC_INLINE ErrorOr<int> truncate(const char *path, off_t len) {
   static_assert(sizeof(off_t) == 8);
   return syscall_checked<int>(SYS_truncate64, path, (long)len,
                               (long)(((uint64_t)(len)) >> 32));
-}
+#else
+#error "truncate and truncate64 syscalls not available."
 #endif
+}
 
 } // namespace linux_syscalls
 } // namespace LIBC_NAMESPACE_DECL

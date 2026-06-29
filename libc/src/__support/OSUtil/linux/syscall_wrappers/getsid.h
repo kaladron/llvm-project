@@ -24,11 +24,9 @@
 namespace LIBC_NAMESPACE_DECL {
 namespace linux_syscalls {
 
-#ifdef SYS_getsid
 LIBC_INLINE ErrorOr<pid_t> getsid(pid_t pid) {
   return syscall_checked<pid_t>(SYS_getsid, pid);
 }
-#endif
 
 } // namespace linux_syscalls
 } // namespace LIBC_NAMESPACE_DECL

@@ -23,11 +23,9 @@
 namespace LIBC_NAMESPACE_DECL {
 namespace linux_syscalls {
 
-#ifdef SYS_pipe2
 LIBC_INLINE ErrorOr<int> pipe2(int pipefd[2], int flags) {
   return syscall_checked<int>(SYS_pipe2, pipefd, flags);
 }
-#endif
 
 } // namespace linux_syscalls
 } // namespace LIBC_NAMESPACE_DECL

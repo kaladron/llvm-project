@@ -23,12 +23,10 @@
 namespace LIBC_NAMESPACE_DECL {
 namespace linux_syscalls {
 
-#ifdef SYS_symlinkat
 LIBC_INLINE ErrorOr<int> symlinkat(const char *path1, int fd,
                                    const char *path2) {
   return syscall_checked<int>(SYS_symlinkat, path1, fd, path2);
 }
-#endif
 
 } // namespace linux_syscalls
 } // namespace LIBC_NAMESPACE_DECL

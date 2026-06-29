@@ -24,12 +24,10 @@
 namespace LIBC_NAMESPACE_DECL {
 namespace linux_syscalls {
 
-#ifdef SYS_openat
 LIBC_INLINE ErrorOr<int> openat(int dfd, const char *path, int flags,
                                 mode_t mode) {
   return syscall_checked<int>(SYS_openat, dfd, path, flags, mode);
 }
-#endif
 
 } // namespace linux_syscalls
 } // namespace LIBC_NAMESPACE_DECL
