@@ -7,9 +7,10 @@ add_entrypoint_object(
   DEPENDS
     libc.hdr.types.struct_itimerval
     libc.include.sys_syscall
-    libc.src.__support.OSUtil.osutil
     libc.src.__support.common
     libc.src.__support.macros.config
+    libc.src.__support.OSUtil.linux.syscall_wrappers.alarm
+    libc.src.__support.OSUtil.linux.syscall_wrappers.setitimer
 )
 
 add_entrypoint_object(

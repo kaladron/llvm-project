@@ -24,10 +24,9 @@ add_entrypoint_object(
     ../setitimer.h
   DEPENDS
     libc.hdr.types.struct_itimerval
-    libc.include.sys_syscall
-    libc.src.__support.OSUtil.osutil
     libc.src.__support.common 
     libc.src.errno.errno
+    libc.src.__support.OSUtil.linux.syscall_wrappers.setitimer
 )
 
 add_entrypoint_object(

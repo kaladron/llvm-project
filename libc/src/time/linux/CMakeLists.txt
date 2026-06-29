@@ -40,10 +40,9 @@ add_entrypoint_object(
     ../nanosleep.h
   DEPENDS
     libc.hdr.types.struct_timespec
-    libc.hdr.stdint_proxy
-    libc.include.sys_syscall
-    libc.src.__support.OSUtil.osutil
-    libc.src.__support.CPP.limits
+    libc.hdr.time_macros
+    libc.src.__support.OSUtil.linux.syscall_wrappers.nanosleep
+    libc.src.__support.OSUtil.linux.syscall_wrappers.clock_nanosleep
     libc.src.errno.errno
 )
 
