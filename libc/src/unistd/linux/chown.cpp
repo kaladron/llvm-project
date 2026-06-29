@@ -24,10 +24,10 @@
 namespace LIBC_NAMESPACE_DECL {
 
 LLVM_LIBC_FUNCTION(int, chown, (const char *path, uid_t owner, gid_t group)) {
-#if defined(SYS_chown)
-  auto result = linux_syscalls::chown(path, owner, group);
-#elif defined(SYS_fchownat)
+#if defined(SYS_fchownat)
   auto result = linux_syscalls::fchownat(AT_FDCWD, path, owner, group, 0);
+#elif defined(SYS_chown)
+  auto result = linux_syscalls::chown(path, owner, group);
 #else
 #error "chown and fchownat syscalls not available."
 #endif
