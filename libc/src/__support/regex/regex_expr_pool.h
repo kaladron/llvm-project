@@ -32,26 +32,22 @@ namespace regex {
 class ExprPool {
   /// Internal storage block for AST nodes.
   ///
-  /// Blocks are allocated on demand to avoid large contiguous allocations
-  /// and are linked together in a list for cleanup.
-  /// TODO: Consider adopting cpp::forward_list for block management once
-  /// it is available in LLVM-libc.
+  /// Blocks are allocated on demand to avoid large contiguous allocations.
   struct Block {
     /// Number of Expr nodes stored in each block.
     static constexpr size_t BLOCK_SIZE = 256;
     /// The actual storage for Expr nodes.
     Expr nodes[BLOCK_SIZE];
-    /// Pointer to the next block in the chain.
-    Block *next = nullptr;
-    /// Number of nodes currently used in this block.
-    size_t used = 0;
   };
 
-  /// The first block in the allocation chain.
-  Block *head = nullptr;
-  /// The block currently being used for new node allocations.
-  Block *current = nullptr;
-  /// Total number of nodes allocated across all blocks.
+  static constexpr size_t BLOCK_SIZE = Block::BLOCK_SIZE;
+  static constexpr size_t MAX_NODE_LIMIT = 10000;
+  static constexpr size_t MAX_BLOCKS =
+      (MAX_NODE_LIMIT + BLOCK_SIZE - 1) / BLOCK_SIZE; // 40
+
+  /// Array of block pointers for O(1) index resolution.
+  Block *blocks[MAX_BLOCKS];
+  size_t block_count = 0;
   size_t node_count = 0;
 
   /// The size of the hash table used for hash-consing (interning) expression
@@ -63,53 +59,63 @@ class ExprPool {
   /// time.
   static constexpr size_t HASH_TABLE_SIZE = 0x4000;
 
-  /// The maximum number of nodes allowed in the pool to prevent memory
-  /// exhaustion during compilation of highly complex or maliciously crafted
-  /// regular expressions. A limit of 10,000 nodes provides a sufficient budget
-  /// for most practical regexes while keeping the peak memory footprint
-  /// manageable (approx. 320KB-500KB depending on architecture).
-  static constexpr size_t MAX_NODE_LIMIT = 10000;
-
-  /// Hash table storing pointers to unique Expr nodes.
-  Expr **hashtable = nullptr;
+  /// Hash table storing ExprIds of unique Expr nodes.
+  /// 0 (INVALID_EXPR_ID) represents an empty bucket.
+  ExprId *hashtable = nullptr;
 
   /// Core hash-consing function (Interning).
   ///
   /// Guarantees that for any two identical structural definitions of an Expr,
-  /// this function will return the same pointer. This enables O(1) structural
-  /// equality via pointer comparison.
+  /// this function will return the same ExprId. This enables O(1) structural
+  /// equality via ID comparison.
   ///
   /// \param e A structural definition (proto-node) to intern.
-  /// \returns A pointer to the unique, stable instance in the arena,
+  /// \returns The ExprId of the unique, stable instance in the arena,
   ///          or REG_ESPACE on failure.
-  cpp::expected<Expr *, int> intern(const Expr &e);
+  cpp::expected<ExprId, int> intern(const Expr &e);
 
 public:
   ExprPool();
   ~ExprPool();
 
+  /// Resolves an ExprId to a reference.
+  const Expr &get(ExprId id) const {
+    // Index is 1-based, so subtract 1 for internal storage.
+    uint32_t internal_idx = id - 1;
+    uint32_t block_idx = internal_idx / BLOCK_SIZE;
+    uint32_t node_idx = internal_idx % BLOCK_SIZE;
+    return blocks[block_idx]->nodes[node_idx];
+  }
+
+  Expr &get(ExprId id) {
+    uint32_t internal_idx = id - 1;
+    uint32_t block_idx = internal_idx / BLOCK_SIZE;
+    uint32_t node_idx = internal_idx % BLOCK_SIZE;
+    return blocks[block_idx]->nodes[node_idx];
+  }
+
   // TODO: Use fluent interface (and_then, transform) for these factories once
   // implemented in cpp::expected.
 
   /// Returns an EmptySet node.
-  cpp::expected<Expr *, int> empty_set();
+  cpp::expected<ExprId, int> empty_set();
   /// Returns an EmptyStr node.
-  cpp::expected<Expr *, int> empty_str();
+  cpp::expected<ExprId, int> empty_str();
   /// Creates or returns an existing Literal node for the given character.
-  cpp::expected<Expr *, int> make_lit(char c);
+  cpp::expected<ExprId, int> make_lit(char c);
   /// Normalizing factory for Concatenation (L · R).
   ///
   /// Applies algebraic simplifications before interning:
   /// - (Ø · R) or (R · Ø) => Ø
   /// - (ε · R) or (R · ε) => R
-  cpp::expected<Expr *, int> make_concat(Expr *l, Expr *r);
+  cpp::expected<ExprId, int> make_concat(ExprId l, ExprId r);
 
   /// Normalizing factory for Alternation (L | R).
   ///
   /// Applies algebraic simplifications before interning:
   /// - (Ø | R) or (R | Ø) => R
   /// - (R | R) => R (Idempotency)
-  cpp::expected<Expr *, int> make_alt(Expr *l, Expr *r);
+  cpp::expected<ExprId, int> make_alt(ExprId l, ExprId r);
 };
 
 } // namespace regex

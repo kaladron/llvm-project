@@ -14,10 +14,14 @@
 #ifndef LLVM_LIBC_SRC___SUPPORT_REGEX_REGEX_AST_H
 #define LLVM_LIBC_SRC___SUPPORT_REGEX_REGEX_AST_H
 
+#include "hdr/stdint_proxy.h"
 #include "src/__support/macros/config.h"
 
 namespace LIBC_NAMESPACE_DECL {
 namespace regex {
+
+using ExprId = uint32_t;
+constexpr ExprId INVALID_EXPR_ID = 0;
 
 /// Enumeration of Regular Expression AST node types.
 enum class ExprKind {
@@ -38,6 +42,19 @@ enum class ExprKind {
 /// Expressions are represented as a hash-consed DAG to enable efficient
 /// derivative-based matching. This structure is intended to be managed by
 /// an ExprPool.
+///
+/// DESIGN NOTE: Tagged Union vs. Polymorphism
+/// This structure uses a tagged union (ExprKind + anonymous union) rather than
+/// C++ polymorphism (subclasses with virtual functions) for several reasons:
+/// 1. Memory Efficiency: Avoiding virtual functions saves the overhead of a
+///    vtable pointer (8 bytes on 64-bit) per node. This is critical for keeping
+///    leaf nodes small and improving cache locality during dense DAG traversal.
+/// 2. Fixed-Size Allocation: A single fixed-size type allows the ExprPool arena
+///    allocator to remain simple and fast, avoiding fragmentation or the need
+///    for heterogeneous size management.
+/// 3. Performance: Switch-on-kind avoids dynamic dispatch overhead in hot loops
+///    (e.g., recursive derivative computation) and simplifies equality checks
+///    required for hash-consing.
 struct Expr {
   /// The type of this expression node.
   ExprKind kind;
@@ -46,8 +63,8 @@ struct Expr {
     char ch;
     /// Sub-expressions for Concat and Alt nodes.
     struct {
-      Expr *left;
-      Expr *right;
+      ExprId left;
+      ExprId right;
     } bin;
   };
 
@@ -61,16 +78,16 @@ private:
   /// Create a Literal node.
   constexpr Expr(char c) : kind(ExprKind::Literal), ch(c) {}
   /// Create a binary node (Concat or Alt).
-  constexpr Expr(ExprKind k, Expr *l, Expr *r) : kind(k), bin{l, r} {}
+  constexpr Expr(ExprKind k, ExprId l, ExprId r) : kind(k), bin{l, r} {}
 
 public:
   static constexpr Expr make_empty_set() { return Expr(ExprKind::EmptySet); }
   static constexpr Expr make_empty_str() { return Expr(ExprKind::EmptyStr); }
   static constexpr Expr make_literal(char c) { return Expr(c); }
-  static constexpr Expr make_concat(Expr *l, Expr *r) {
+  static constexpr Expr make_concat(ExprId l, ExprId r) {
     return Expr(ExprKind::Concat, l, r);
   }
-  static constexpr Expr make_alt(Expr *l, Expr *r) {
+  static constexpr Expr make_alt(ExprId l, ExprId r) {
     return Expr(ExprKind::Alt, l, r);
   }
 

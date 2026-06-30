@@ -12,4 +12,5 @@ add_object_library(
     libc.src.__support.macros.null_check
     libc.src.__support.alloc_checker
     libc.hdr.regex_macros
+    libc.hdr.stdint_proxy
 )

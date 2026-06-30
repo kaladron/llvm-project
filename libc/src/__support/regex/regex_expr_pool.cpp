@@ -53,24 +53,22 @@ uint64_t hash_expr(const Expr &e) {
 
 ExprPool::ExprPool() {
   AllocChecker ac;
-  hashtable = new (ac) Expr *[HASH_TABLE_SIZE];
+  hashtable = new (ac) ExprId[HASH_TABLE_SIZE];
   if (ac) {
-    inline_memset(hashtable, 0, HASH_TABLE_SIZE * sizeof(Expr *));
+    inline_memset(hashtable, 0, HASH_TABLE_SIZE * sizeof(ExprId));
   }
+  inline_memset(blocks, 0, MAX_BLOCKS * sizeof(Block *));
 }
 
 ExprPool::~ExprPool() {
   if (hashtable)
     delete[] hashtable;
-  Block *b = head;
-  while (b) {
-    Block *next_b = b->next;
-    delete b;
-    b = next_b;
+  for (size_t i = 0; i < block_count; ++i) {
+    delete blocks[i];
   }
 }
 
-cpp::expected<Expr *, int> ExprPool::intern(const Expr &e) {
+cpp::expected<ExprId, int> ExprPool::intern(const Expr &e) {
   if (!hashtable)
     return cpp::unexpected(REG_ESPACE);
 
@@ -79,15 +77,14 @@ cpp::expected<Expr *, int> ExprPool::intern(const Expr &e) {
   size_t idx = h % HASH_TABLE_SIZE;
 
   // 2. Linear Probing: Search for an existing node with identical content.
-  //    Because pointers are unique, O(1) comparison is guaranteed if
-  //    sub-expressions are already interned.
+  //    Empty bucket is represented by 0 (INVALID_EXPR_ID).
   size_t start_idx = idx;
-  while (hashtable[idx]) {
-    if (*hashtable[idx] == e)
+  while (hashtable[idx] != INVALID_EXPR_ID) {
+    if (get(hashtable[idx]) == e)
       return hashtable[idx];
     idx = (idx + 1) % HASH_TABLE_SIZE;
     if (idx == start_idx) {
-      // Table full (invariant check: HASH_TABLE_SIZE >> MAX_NODE_LIMIT)
+      // Table full
       return cpp::unexpected(REG_ESPACE);
     }
   }
@@ -96,61 +93,73 @@ cpp::expected<Expr *, int> ExprPool::intern(const Expr &e) {
   if (node_count >= MAX_NODE_LIMIT)
     return cpp::unexpected(REG_ESPACE);
 
-  // 4. Arena Allocation: If no matching node found, allocate a stable slot.
-  if (!current || current->used == Block::BLOCK_SIZE) {
-    // New blocks are allocated on demand using AllocChecker.
+  // 4. Arena Allocation:
+  uint32_t internal_idx = static_cast<uint32_t>(node_count);
+  uint32_t block_idx = internal_idx / BLOCK_SIZE;
+  uint32_t node_idx = internal_idx % BLOCK_SIZE;
+
+  if (node_idx == 0) {
+    if (block_idx >= MAX_BLOCKS)
+      return cpp::unexpected(REG_ESPACE);
     AllocChecker ac;
-    Block *new_block = new (ac) Block();
+    blocks[block_idx] = new (ac) Block();
     if (!ac)
       return cpp::unexpected(REG_ESPACE);
-    if (!head)
-      head = new_block;
-    if (current)
-      current->next = new_block;
-    current = new_block;
+    block_count++;
   }
 
   // 5. Node Initialisation: Copy the structural definition into the arena.
-  Expr *new_node = &current->nodes[current->used];
-  ++current->used;
-  *new_node = e;
-  hashtable[idx] = new_node;
+  blocks[block_idx]->nodes[node_idx] = e;
+
+  // 1-based index for ID.
+  ExprId new_id = internal_idx + 1;
+  hashtable[idx] = new_id;
   node_count++;
-  return new_node;
+  return new_id;
 }
 
-cpp::expected<Expr *, int> ExprPool::empty_set() {
+cpp::expected<ExprId, int> ExprPool::empty_set() {
   return intern(Expr::make_empty_set());
 }
-cpp::expected<Expr *, int> ExprPool::empty_str() {
+cpp::expected<ExprId, int> ExprPool::empty_str() {
   return intern(Expr::make_empty_str());
 }
-cpp::expected<Expr *, int> ExprPool::make_lit(char c) {
+cpp::expected<ExprId, int> ExprPool::make_lit(char c) {
   return intern(Expr::make_literal(c));
 }
 
-cpp::expected<Expr *, int> ExprPool::make_concat(Expr *l, Expr *r) {
-  if (!l || !r)
+cpp::expected<ExprId, int> ExprPool::make_concat(ExprId l, ExprId r) {
+  if (l == INVALID_EXPR_ID || r == INVALID_EXPR_ID)
     return cpp::unexpected(REG_BADPAT);
+
+  const Expr &left_node = get(l);
+  const Expr &right_node = get(r);
+
   // Apply basic algebraic identities for concatenation:
   // 1. Ø · R = R · Ø = Ø (Identity: null set)
-  if (l->kind == ExprKind::EmptySet || r->kind == ExprKind::EmptySet)
+  if (left_node.kind == ExprKind::EmptySet ||
+      right_node.kind == ExprKind::EmptySet)
     return empty_set();
   // 2. ε · R = R · ε = R (Identity: empty string)
-  if (l->kind == ExprKind::EmptyStr)
+  if (left_node.kind == ExprKind::EmptyStr)
     return r;
-  if (r->kind == ExprKind::EmptyStr)
+  if (right_node.kind == ExprKind::EmptyStr)
     return l;
   return intern(Expr::make_concat(l, r));
 }
-cpp::expected<Expr *, int> ExprPool::make_alt(Expr *l, Expr *r) {
-  if (!l || !r)
+
+cpp::expected<ExprId, int> ExprPool::make_alt(ExprId l, ExprId r) {
+  if (l == INVALID_EXPR_ID || r == INVALID_EXPR_ID)
     return cpp::unexpected(REG_BADPAT);
+
+  const Expr &left_node = get(l);
+  const Expr &right_node = get(r);
+
   // Apply basic algebraic identities for alternation:
   // 1. Ø | R = R | Ø = R (Identity: null set)
-  if (l->kind == ExprKind::EmptySet)
+  if (left_node.kind == ExprKind::EmptySet)
     return r;
-  if (r->kind == ExprKind::EmptySet)
+  if (right_node.kind == ExprKind::EmptySet)
     return l;
   // 2. R | R = R (Idempotency)
   if (l == r)
