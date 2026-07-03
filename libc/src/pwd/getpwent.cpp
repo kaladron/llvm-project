@@ -27,6 +27,11 @@ static File *pwd_file = nullptr;
 static char line_buffer[1024];
 static struct passwd pwd_entry;
 
+// Helper implementations for setpwent and endpwent.
+// These are defined here because they need to access the static pwd_file state,
+// which is encapsulated in this file. The actual entrypoints are defined in
+// separate files (setpwent.cpp, endpwent.cpp) to comply with LLVM-libc's
+// one-function-per-file rule.
 void setpwent_impl() {
   if (pwd_file)
     pwd_file->seek(0, SEEK_SET);
