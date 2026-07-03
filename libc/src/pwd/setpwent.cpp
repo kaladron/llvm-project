@@ -13,11 +13,16 @@
 
 #include "src/pwd/setpwent.h"
 #include "src/__support/common.h"
+#include "src/__support/libc_errno.h"
 #include "src/__support/macros/config.h"
 #include "src/pwd/pwd_utils.h"
 
 namespace LIBC_NAMESPACE_DECL {
 
-LLVM_LIBC_FUNCTION(void, setpwent, ()) { setpwent_impl(); }
+LLVM_LIBC_FUNCTION(void, setpwent, ()) {
+  int result = setpwent_impl();
+  if (result != 0)
+    libc_errno = result;
+}
 
 } // namespace LIBC_NAMESPACE_DECL

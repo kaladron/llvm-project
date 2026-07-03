@@ -15,8 +15,24 @@ add_libc_unittest(
   SRCS
     getpwent_test.cpp
   DEPENDS
+    libc.include.pwd
+    libc.hdr.types.struct_passwd
     libc.src.pwd.getpwent
     libc.src.pwd.setpwent
     libc.src.pwd.endpwent
+    libc.src.pwd.pwd_utils
+    libc.src.__support.File.file
+    libc.src.__support.File.platform_file
     libc.src.string.strcmp
+)
+
+add_libc_unittest(
+  pwd_utils_test
+  SUITE
+    libc_pwd_unittests
+  SRCS
+    pwd_utils_test.cpp
+  DEPENDS
+    libc.hdr.types.struct_passwd
+    libc.src.pwd.pwd_utils
 )

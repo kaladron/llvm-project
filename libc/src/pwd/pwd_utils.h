@@ -21,11 +21,12 @@ namespace LIBC_NAMESPACE_DECL {
 namespace internal {
 
 bool parse_passwd_line(char *line, struct passwd *pwd);
+void set_passwd_path(const char *path);
 
 } // namespace internal
 
-void setpwent_impl();
-void endpwent_impl();
+int setpwent_impl();
+int endpwent_impl();
 
 } // namespace LIBC_NAMESPACE_DECL
 

@@ -28,6 +28,8 @@ add_entrypoint_object(
     libc.include.pwd
     libc.hdr.types.struct_passwd
     libc.src.errno.errno
+    libc.src.__support.common
+    libc.src.__support.macros.config
     libc.src.__support.File.file
     libc.src.__support.File.platform_file
     libc.src.string.string_utils
@@ -43,6 +45,9 @@ add_entrypoint_object(
     setpwent.h
   DEPENDS
     libc.include.pwd
+    libc.src.errno.errno
+    libc.src.__support.common
+    libc.src.__support.macros.config
     .getpwent
     .pwd_utils
 )
@@ -55,6 +60,9 @@ add_entrypoint_object(
     endpwent.h
   DEPENDS
     libc.include.pwd
+    libc.src.errno.errno
+    libc.src.__support.common
+    libc.src.__support.macros.config
     .getpwent
     .pwd_utils
 )

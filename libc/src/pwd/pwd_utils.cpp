@@ -39,18 +39,20 @@ bool parse_passwd_line(char *line, struct passwd *pwd) {
   if (!uid_str)
     return false;
   auto uid_res = LIBC_NAMESPACE::internal::strtointeger<uid_t>(uid_str, 10);
-  if (uid_res.has_error())
+  if (uid_res.has_error() || uid_res.parsed_len == 0 ||
+      uid_str[uid_res.parsed_len] != '\0')
     return false;
-  pwd->pw_uid = uid_res;
+  pwd->pw_uid = uid_res.value;
 
   char *gid_str =
       LIBC_NAMESPACE::internal::string_token<false>(nullptr, ":", &context);
   if (!gid_str)
     return false;
   auto gid_res = LIBC_NAMESPACE::internal::strtointeger<gid_t>(gid_str, 10);
-  if (gid_res.has_error())
+  if (gid_res.has_error() || gid_res.parsed_len == 0 ||
+      gid_str[gid_res.parsed_len] != '\0')
     return false;
-  pwd->pw_gid = gid_res;
+  pwd->pw_gid = gid_res.value;
 
   pwd->pw_gecos =
       LIBC_NAMESPACE::internal::string_token<false>(nullptr, ":", &context);
@@ -62,7 +64,6 @@ bool parse_passwd_line(char *line, struct passwd *pwd) {
   if (!pwd->pw_dir)
     return false;
 
-  // shell
   pwd->pw_shell =
       LIBC_NAMESPACE::internal::string_token<false>(nullptr, ":", &context);
   if (!pwd->pw_shell)
