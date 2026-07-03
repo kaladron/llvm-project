@@ -11,8 +11,8 @@
 ///
 //===----------------------------------------------------------------------===//
 
-#ifndef __LLVM_LIBC_TYPES_STRUCT_PASSWD_H__
-#define __LLVM_LIBC_TYPES_STRUCT_PASSWD_H__
+#ifndef LLVM_LIBC_TYPES_STRUCT_PASSWD_H
+#define LLVM_LIBC_TYPES_STRUCT_PASSWD_H
 
 #include "gid_t.h"
 #include "uid_t.h"
@@ -27,4 +27,4 @@ struct passwd {
   char *pw_shell;
 };
 
-#endif // __LLVM_LIBC_TYPES_STRUCT_PASSWD_H__
+#endif // LLVM_LIBC_TYPES_STRUCT_PASSWD_H

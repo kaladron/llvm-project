@@ -28,10 +28,8 @@ add_entrypoint_object(
     libc.include.pwd
     libc.hdr.types.struct_passwd
     libc.src.errno.errno
-    libc.src.stdio.fopen
-    libc.src.stdio.fclose
-    libc.src.stdio.fgets
-    libc.src.stdio.fseek
+    libc.src.__support.File.file
+    libc.src.__support.File.platform_file
     libc.src.string.string_utils
     libc.hdr.stdio_macros
     .pwd_utils
