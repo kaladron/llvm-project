@@ -137,8 +137,8 @@ ErrorOr<int> update_from_seconds(time_t total_seconds, tm *tm) {
 
   // Pseudocode lines 9-11: Adjust for 100/400 leap year rule (Julian Map).
   int64_t rev = D_SHIFT - unix_days;
-  uint64_t cen = static_cast<uint64_t>((static_cast<UInt128>(rev) * C1) >> 64);
-  int64_t jul = rev + static_cast<int64_t>(cen) - static_cast<int64_t>(cen / 4);
+  int64_t cen = static_cast<int64_t>((static_cast<UInt128>(rev) * C1) >> 64);
+  int64_t jul = rev + cen - (cen / 4);
 
   // Pseudocode lines 14-17: Determine year and year-part.
   UInt128 num = static_cast<UInt128>(jul) * C2;

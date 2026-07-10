@@ -131,8 +131,8 @@ LIBC_INLINE ErrorOr<tm *> localtime(const time_t *t_ptr) {
 // from & 3 when the year truly is a century year, and non-century years
 // that happen to be divisible by 25 always pass both checks identically.
 LIBC_INLINE constexpr bool is_leap_year(const int64_t year) {
-  const bool is_cen = (year % 25 == 0);
-  return (year & (is_cen ? 15 : 3)) == 0;
+  const bool is_mul_25 = (year % 25 == 0);
+  return (year & (is_mul_25 ? 15 : 3)) == 0;
 }
 
 LIBC_INLINE constexpr int get_days_in_year(const int year) {
