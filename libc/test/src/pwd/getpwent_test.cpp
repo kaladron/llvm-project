@@ -13,18 +13,21 @@
 
 #include "hdr/types/struct_passwd.h"
 #include "src/__support/File/file.h"
+#include "src/__support/libc_errno.h"
 #include "src/pwd/endpwent.h"
 #include "src/pwd/getpwent.h"
 #include "src/pwd/pwd_utils.h"
 #include "src/pwd/setpwent.h"
-#include "test/UnitTest/LibcTest.h"
 #include "test/UnitTest/Test.h"
 
-static const char *test_passwd_data =
+static const char *valid_passwd_data =
     "root:x:0:0:root:/root:/bin/bash\n"
     "daemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin\n"
-    "baduser:x:invalid:invalid:::\n" // Should be skipped due to parse error
     "user2:x:3:3:user2:/home/user2:/bin/sh\n";
+
+static const char *bad_passwd_data = "root:x:0:0:root:/root:/bin/bash\n"
+                                     "baduser:x:invalid:invalid:::\n"
+                                     "user2:x:3:3:user2:/home/user2:/bin/sh\n";
 
 static bool create_test_file(const char *path, const char *data) {
   auto result = LIBC_NAMESPACE::openfile(path, "w");
@@ -43,9 +46,9 @@ static bool create_test_file(const char *path, const char *data) {
   return true;
 }
 
-TEST(LlvmLibcPwdTest, GetPwentTestHermetic) {
-  auto TEST_FILE = libc_make_test_file_path("getpwent_hermetic.test");
-  ASSERT_TRUE(create_test_file(TEST_FILE, test_passwd_data));
+TEST(LlvmLibcPwdTest, GetPwentTestSuccess) {
+  auto TEST_FILE = libc_make_test_file_path("getpwent_success.test");
+  ASSERT_TRUE(create_test_file(TEST_FILE, valid_passwd_data));
 
   LIBC_NAMESPACE::internal::set_passwd_path(TEST_FILE);
 
@@ -60,13 +63,13 @@ TEST(LlvmLibcPwdTest, GetPwentTestHermetic) {
   EXPECT_STREQ(pw->pw_dir, "/root");
   EXPECT_STREQ(pw->pw_shell, "/bin/bash");
 
-  // Second entry: daemon (skip baduser)
+  // Second entry: daemon
   pw = LIBC_NAMESPACE::getpwent();
   ASSERT_TRUE(pw != nullptr);
   EXPECT_STREQ(pw->pw_name, "daemon");
   EXPECT_EQ(pw->pw_uid, 1u);
 
-  // Third entry: user2 (skip baduser because of parse error)
+  // Third entry: user2
   pw = LIBC_NAMESPACE::getpwent();
   ASSERT_TRUE(pw != nullptr);
   EXPECT_STREQ(pw->pw_name, "user2");
@@ -79,9 +82,29 @@ TEST(LlvmLibcPwdTest, GetPwentTestHermetic) {
   LIBC_NAMESPACE::endpwent();
 }
 
+TEST(LlvmLibcPwdTest, GetPwentTestFailure) {
+  auto TEST_FILE = libc_make_test_file_path("getpwent_failure.test");
+  ASSERT_TRUE(create_test_file(TEST_FILE, bad_passwd_data));
+
+  LIBC_NAMESPACE::internal::set_passwd_path(TEST_FILE);
+
+  // First entry: root (valid)
+  struct passwd *pw = LIBC_NAMESPACE::getpwent();
+  ASSERT_TRUE(pw != nullptr);
+  EXPECT_STREQ(pw->pw_name, "root");
+
+  // Second entry: baduser (invalid) -> should fail
+  libc_errno = 0;
+  pw = LIBC_NAMESPACE::getpwent();
+  ASSERT_TRUE(pw == nullptr);
+  EXPECT_EQ(static_cast<int>(libc_errno), EINVAL);
+
+  LIBC_NAMESPACE::endpwent();
+}
+
 TEST(LlvmLibcPwdTest, SetPwentTestHermetic) {
   auto TEST_FILE = libc_make_test_file_path("setpwent_hermetic.test");
-  ASSERT_TRUE(create_test_file(TEST_FILE, test_passwd_data));
+  ASSERT_TRUE(create_test_file(TEST_FILE, valid_passwd_data));
 
   LIBC_NAMESPACE::internal::set_passwd_path(TEST_FILE);
 
@@ -132,25 +155,46 @@ TEST(LlvmLibcPwdTest, GetPwentTruncationTest) {
   for (size_t i = 0; suffix[i] != '\0'; ++i)
     test_data[idx++] = suffix[i];
 
-  // "nextuser:x:5:5:next:/home/next:/bin/sh\n"
-  const char *next = "nextuser:x:5:5:next:/home/next:/bin/sh\n";
-  for (size_t i = 0; next[i] != '\0'; ++i)
-    test_data[idx++] = next[i];
-
   test_data[idx] = '\0';
 
   ASSERT_TRUE(create_test_file(TEST_FILE, test_data));
   LIBC_NAMESPACE::internal::set_passwd_path(TEST_FILE);
 
-  // The long line should be truncated, discarded, and skipped.
-  // We should directly get "nextuser".
+  // The long line should be truncated and cause failure
+  libc_errno = 0;
   struct passwd *pw = LIBC_NAMESPACE::getpwent();
-  ASSERT_TRUE(pw != nullptr);
-  EXPECT_STREQ(pw->pw_name, "nextuser");
-  EXPECT_EQ(pw->pw_uid, 5u);
-
-  pw = LIBC_NAMESPACE::getpwent();
   ASSERT_TRUE(pw == nullptr);
+  EXPECT_EQ(static_cast<int>(libc_errno), EINVAL);
 
   LIBC_NAMESPACE::endpwent();
+}
+
+TEST(LlvmLibcPwdTest, ReopenAfterEndpwent) {
+  auto TEST_FILE = libc_make_test_file_path("getpwent_reopen.test");
+  ASSERT_TRUE(create_test_file(TEST_FILE, valid_passwd_data));
+  LIBC_NAMESPACE::internal::set_passwd_path(TEST_FILE);
+
+  // Read first entry
+  struct passwd *pw = LIBC_NAMESPACE::getpwent();
+  ASSERT_TRUE(pw != nullptr);
+  EXPECT_STREQ(pw->pw_name, "root");
+
+  // Close database
+  LIBC_NAMESPACE::endpwent();
+
+  // Read again -> should reopen and start from root again
+  pw = LIBC_NAMESPACE::getpwent();
+  ASSERT_TRUE(pw != nullptr);
+  EXPECT_STREQ(pw->pw_name, "root");
+
+  LIBC_NAMESPACE::endpwent();
+}
+
+TEST(LlvmLibcPwdTest, FileOpenFailure) {
+  LIBC_NAMESPACE::internal::set_passwd_path("/nonexistent_file_pwd_test");
+
+  libc_errno = 0;
+  struct passwd *pw = LIBC_NAMESPACE::getpwent();
+  ASSERT_TRUE(pw == nullptr);
+  EXPECT_EQ(static_cast<int>(libc_errno), ENOENT);
 }

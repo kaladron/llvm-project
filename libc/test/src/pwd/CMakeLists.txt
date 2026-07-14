@@ -23,7 +23,7 @@ add_libc_unittest(
     libc.src.pwd.pwd_utils
     libc.src.__support.File.file
     libc.src.__support.File.platform_file
-    libc.src.string.strcmp
+    libc.src.__support.libc_errno
 )
 
 add_libc_unittest(

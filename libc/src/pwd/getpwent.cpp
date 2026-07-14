@@ -13,13 +13,16 @@
 
 #include "src/pwd/getpwent.h"
 #include "src/__support/File/file.h"
+#include "src/__support/File/linux/file.h" // For create_file_from_fd
+#include "src/__support/OSUtil/linux/syscall_wrappers/close.h"
+#include "src/__support/OSUtil/linux/syscall_wrappers/open.h"
 #include "src/__support/common.h"
 #include "src/__support/libc_errno.h"
 #include "src/__support/macros/config.h"
 #include "src/pwd/pwd_utils.h"
-#include "src/string/string_utils.h"
 
-#include "hdr/stdio_macros.h"
+#include "hdr/fcntl_macros.h" // For O_RDONLY, O_CLOEXEC
+#include "hdr/stdio_macros.h" // For SEEK_SET
 
 #ifndef LIBC_COPT_PWD_FILE_PATH
 #define LIBC_COPT_PWD_FILE_PATH "/etc/passwd"
@@ -42,16 +45,17 @@ void set_passwd_path(const char *path) {
 }
 } // namespace internal
 
-// Helper implementations for setpwent and endpwent.
-// These are defined here because they need to access the static pwd_file state,
-// which is encapsulated in this file. The actual entrypoints are defined in
-// separate files (setpwent.cpp, endpwent.cpp) to comply with LLVM-libc's
-// one-function-per-file rule.
 int setpwent_impl() {
   if (!pwd_file) {
-    auto result = LIBC_NAMESPACE::openfile(pwd_file_path, "r");
-    if (!result.has_value())
+    auto fd = LIBC_NAMESPACE::linux_syscalls::open(pwd_file_path,
+                                                   O_RDONLY | O_CLOEXEC, 0);
+    if (!fd.has_value())
+      return fd.error();
+    auto result = LIBC_NAMESPACE::create_file_from_fd(fd.value(), "r");
+    if (!result.has_value()) {
+      LIBC_NAMESPACE::linux_syscalls::close(fd.value());
       return result.error();
+    }
     pwd_file = result.value();
   } else {
     auto result = pwd_file->seek(0, SEEK_SET);
@@ -130,8 +134,15 @@ static ErrorOr<ReadLineResult> read_line(File *f, char *buf, size_t max_len) {
 
 LLVM_LIBC_FUNCTION(struct passwd *, getpwent, ()) {
   if (!pwd_file) {
-    auto result = LIBC_NAMESPACE::openfile(pwd_file_path, "r");
+    auto fd = LIBC_NAMESPACE::linux_syscalls::open(pwd_file_path,
+                                                   O_RDONLY | O_CLOEXEC, 0);
+    if (!fd.has_value()) {
+      libc_errno = fd.error();
+      return nullptr;
+    }
+    auto result = LIBC_NAMESPACE::create_file_from_fd(fd.value(), "r");
     if (!result.has_value()) {
+      LIBC_NAMESPACE::linux_syscalls::close(fd.value());
       libc_errno = result.error();
       return nullptr;
     }
@@ -149,8 +160,10 @@ LLVM_LIBC_FUNCTION(struct passwd *, getpwent, ()) {
     if (res.bytes_read == 0)
       return nullptr;
 
-    if (res.truncated)
-      continue;
+    if (res.truncated) {
+      libc_errno = EINVAL;
+      return nullptr;
+    }
 
     // Remove newline
     size_t len = res.bytes_read;
@@ -159,7 +172,11 @@ LLVM_LIBC_FUNCTION(struct passwd *, getpwent, ()) {
 
     if (internal::parse_passwd_line(line_buffer, &pwd_entry))
       return &pwd_entry;
+
+    libc_errno = EINVAL;
+    return nullptr;
   }
 }
 
 } // namespace LIBC_NAMESPACE_DECL
+

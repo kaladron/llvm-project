@@ -16,6 +16,7 @@ add_object_library(
     libc.hdr.types.struct_passwd
     libc.src.__support.str_to_integer
     libc.src.string.string_utils
+    libc.src.__support.macros.config
 )
 
 add_entrypoint_object(
@@ -32,7 +33,9 @@ add_entrypoint_object(
     libc.src.__support.macros.config
     libc.src.__support.File.file
     libc.src.__support.File.platform_file
-    libc.src.string.string_utils
+    libc.src.__support.OSUtil.linux.syscall_wrappers.open
+    libc.src.__support.OSUtil.linux.syscall_wrappers.close
+    libc.hdr.fcntl_macros
     libc.hdr.stdio_macros
     .pwd_utils
 )
