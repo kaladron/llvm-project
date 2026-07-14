@@ -52,7 +52,6 @@ add_entrypoint_object(
   HDRS
     ../putenv.h
   DEPENDS
-    libc.src.__support.CPP.string_view
     libc.src.__support.common
     libc.src.__support.libc_errno
     libc.src.__support.macros.config

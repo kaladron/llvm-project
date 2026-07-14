@@ -91,25 +91,45 @@ TEST_MAIN([[maybe_unused]] int argc, [[maybe_unused]] char **argv,
     ASSERT_TRUE(found);
   }
 
-  // Test: Invalid inputs (defense-in-depth)
+  // Test: Pathological inputs (empty names, empty string) are allowed to match
+  // glibc.
   {
-    // Empty string (attempt to unset empty name)
-    static char empty_string[] = "";
-    errno = 0;
-    ASSERT_EQ(LIBC_NAMESPACE::putenv(empty_string), -1);
-    ASSERT_ERRNO_EQ(EINVAL);
-
-    // Empty name with value
+    // Empty name with value (=value) should succeed and be found in environ.
     static char empty_name[] = "=value";
-    errno = 0;
-    ASSERT_EQ(LIBC_NAMESPACE::putenv(empty_name), -1);
-    ASSERT_ERRNO_EQ(EINVAL);
+    ASSERT_EQ(LIBC_NAMESPACE::putenv(empty_name), 0);
+    bool found = false;
+    for (char **env = LIBC_NAMESPACE::environ; *env != nullptr; ++env) {
+      if (*env == empty_name) {
+        found = true;
+        break;
+      }
+    }
+    ASSERT_TRUE(found);
 
-    // Just "=" (empty name, empty value)
+    // Just "=" should succeed and be found in environ.
     static char just_equals[] = "=";
-    errno = 0;
-    ASSERT_EQ(LIBC_NAMESPACE::putenv(just_equals), -1);
-    ASSERT_ERRNO_EQ(EINVAL);
+    ASSERT_EQ(LIBC_NAMESPACE::putenv(just_equals), 0);
+    found = false;
+    for (char **env = LIBC_NAMESPACE::environ; *env != nullptr; ++env) {
+      if (*env == just_equals) {
+        found = true;
+        break;
+      }
+    }
+    ASSERT_TRUE(found);
+
+    // Empty string unsets the empty name.
+    static char empty_string[] = "";
+    ASSERT_EQ(LIBC_NAMESPACE::putenv(empty_string), 0);
+    // Verify "=value" is no longer in environ (it should have been unset).
+    found = false;
+    for (char **env = LIBC_NAMESPACE::environ; *env != nullptr; ++env) {
+      if (*env == empty_name) {
+        found = true;
+        break;
+      }
+    }
+    ASSERT_FALSE(found);
   }
 
   return 0;
