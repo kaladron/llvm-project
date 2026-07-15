@@ -144,3 +144,50 @@ TEST(LlvmLibcUniquePtrTest, CustomDeleter) {
   }
   ASSERT_EQ(deleter_count, 1);
 }
+
+struct ReentrancyTracker {
+  unique_ptr<ReentrancyTracker> *owner;
+  bool *checked;
+  ReentrancyTracker(unique_ptr<ReentrancyTracker> *o, bool *c)
+      : owner(o), checked(c) {}
+  ~ReentrancyTracker() {
+    if (owner)
+      *checked = (owner->get() == nullptr);
+  }
+};
+
+// Test that reset() clears the pointer before invoking the deleter.
+TEST(LlvmLibcUniquePtrTest, ResetSequencing) {
+  bool checked = false;
+  unique_ptr<ReentrancyTracker> ptr;
+  ptr.reset(new ReentrancyTracker(&ptr, &checked));
+  ptr.reset(); // trigger destructor
+  ASSERT_TRUE(checked);
+}
+
+// Test conversion constructor for const types.
+TEST(LlvmLibcUniquePtrTest, ConstConversion) {
+  unique_ptr<int> ptr1(new int(42));
+  unique_ptr<const int> ptr2(LIBC_NAMESPACE::cpp::move(ptr1));
+  ASSERT_FALSE(static_cast<bool>(ptr1));
+  ASSERT_TRUE(static_cast<bool>(ptr2));
+  ASSERT_EQ(*ptr2, 42);
+}
+
+struct Base {
+  int val;
+  virtual ~Base() = default;
+  Base(int v) : val(v) {}
+};
+struct Derived : public Base {
+  Derived(int v) : Base(v) {}
+};
+
+// Test conversion constructor for base/derived types.
+TEST(LlvmLibcUniquePtrTest, BaseDerivedConversion) {
+  unique_ptr<Derived> derived_ptr(new Derived(100));
+  unique_ptr<Base> base_ptr(LIBC_NAMESPACE::cpp::move(derived_ptr));
+  ASSERT_FALSE(static_cast<bool>(derived_ptr));
+  ASSERT_TRUE(static_cast<bool>(base_ptr));
+  ASSERT_EQ(base_ptr->val, 100);
+}
