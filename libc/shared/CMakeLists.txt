@@ -14,3 +14,13 @@ if(LIBC_TARGET_OS_IS_GPU)
             COMPONENT libc-headers)
   endforeach()
 endif()
+
+add_header_library(
+  rpc
+  HDRS
+    rpc.h
+    rpc_util.h
+    rpc_dispatch.h
+    rpc_server.h
+    rpc_opcodes.h
+)
