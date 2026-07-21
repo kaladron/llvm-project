@@ -6,7 +6,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "shared/rpc.h"
+#include "src/__support/RPC/rpc.h"
 
 #include "test/UnitTest/Test.h"
 
