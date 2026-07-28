@@ -1,0 +1,33 @@
+add_custom_target(libc_pwd_unittests)
+
+add_libc_unittest(
+  pwd_utils_test
+  SUITE
+    libc_pwd_unittests
+  SRCS
+    pwd_utils_test.cpp
+  DEPENDS
+    libc.hdr.types.struct_passwd
+    libc.src.pwd.pwd_utils
+)
+
+add_libc_unittest(
+  getpwent_test
+  SUITE
+    libc_pwd_unittests
+  SRCS
+    getpwent_test.cpp
+  DEPENDS
+    libc.hdr.fcntl_macros
+    libc.hdr.types.struct_passwd
+    libc.src.__support.CPP.stringstream
+    libc.src.__support.OSUtil.linux.syscall_wrappers.close
+    libc.src.__support.OSUtil.linux.syscall_wrappers.open
+    libc.src.__support.OSUtil.linux.syscall_wrappers.unlink
+    libc.src.__support.OSUtil.linux.syscall_wrappers.write
+    libc.src.errno.errno
+    libc.src.pwd.endpwent
+    libc.src.pwd.getpwent
+    libc.src.pwd.pwd_utils
+    libc.src.pwd.setpwent
+)
