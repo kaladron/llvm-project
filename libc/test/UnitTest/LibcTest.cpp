@@ -194,13 +194,14 @@ int Test::runTests(const TestOptions &Options) {
 
     tlog << green << "[ RUN      ] " << reset << TestName << '\n';
     RunContext Ctx;
+    RunContext *OldCtx = internal::current_context;
     internal::current_context = &Ctx;
     [[maybe_unused]] const uint64_t start_time = static_cast<uint64_t>(clock());
     T->SetUp();
     T->Run();
     T->TearDown();
     [[maybe_unused]] const uint64_t end_time = static_cast<uint64_t>(clock());
-    internal::current_context = nullptr;
+    internal::current_context = OldCtx;
     switch (Ctx.status()) {
     case RunContext::RunResult::Fail:
       tlog << red << "[  FAILED  ] " << reset << TestName << '\n';

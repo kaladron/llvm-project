@@ -20,24 +20,27 @@
 #include "test/UnitTest/ErrnoCheckingTest.h"
 #include "test/UnitTest/Test.h"
 
-class LlvmLibcPthreadSigmaskTest
-    : public LIBC_NAMESPACE::testing::ErrnoCheckingTest {
+// RAII helper to restore the pthread signal mask on destruction.
+class ScopedSigmask {
   sigset_t old_set;
 
 public:
-  void SetUp() override {
-    ErrnoCheckingTest::SetUp();
-    LIBC_NAMESPACE::pthread_sigmask(0, nullptr, &old_set);
+  ScopedSigmask() { LIBC_NAMESPACE::pthread_sigmask(0, nullptr, &old_set); }
+
+  ~ScopedSigmask() {
+    LIBC_NAMESPACE::pthread_sigmask(SIG_SETMASK, &old_set, nullptr);
   }
 
-  void TearDown() override {
-    LIBC_NAMESPACE::pthread_sigmask(SIG_SETMASK, &old_set, nullptr);
-    ErrnoCheckingTest::TearDown();
-  }
+  ScopedSigmask(const ScopedSigmask &) = delete;
+  ScopedSigmask &operator=(const ScopedSigmask &) = delete;
 };
+
+class LlvmLibcPthreadSigmaskTest
+    : public LIBC_NAMESPACE::testing::ErrnoCheckingTest {};
 
 // This tests for invalid input.
 TEST_F(LlvmLibcPthreadSigmaskTest, PthreadSigmaskInvalid) {
+  ScopedSigmask sigmask_guard;
   sigset_t valid;
   // 17 and -4 are out of the range for pthread_sigmask's how parameter.
   EXPECT_EQ(LIBC_NAMESPACE::pthread_sigmask(17, &valid, nullptr), EINVAL);
@@ -54,6 +57,7 @@ TEST_F(LlvmLibcPthreadSigmaskTest, PthreadSigmaskInvalid) {
 // This tests that when nothing is blocked, a process gets killed and also tests
 // that when signals are blocked they are not delivered to the process.
 TEST_F(LlvmLibcPthreadSigmaskTest, BlockUnblock) {
+  ScopedSigmask sigmask_guard;
   sigset_t sigset;
   EXPECT_EQ(LIBC_NAMESPACE::sigemptyset(&sigset), 0);
   EXPECT_EQ(LIBC_NAMESPACE::pthread_sigmask(SIG_SETMASK, &sigset, nullptr), 0);

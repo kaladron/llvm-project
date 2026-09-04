@@ -194,21 +194,23 @@ cpp::string unique_id() {
   return id;
 }
 
+// RAII helper to restore the working directory on destruction.
+class ScopedWorkingDir {
+  char start_dir[PATH_MAX];
+
+public:
+  ScopedWorkingDir() {
+    (void)LIBC_NAMESPACE::getcwd(start_dir, sizeof(start_dir));
+  }
+
+  ~ScopedWorkingDir() { (void)LIBC_NAMESPACE::chdir(start_dir); }
+
+  ScopedWorkingDir(const ScopedWorkingDir &) = delete;
+  ScopedWorkingDir &operator=(const ScopedWorkingDir &) = delete;
+};
+
 class LlvmLibcRealpathTest : public ErrnoCheckingTest {
 public:
-  void SetUp() override {
-    ErrnoCheckingTest::SetUp();
-
-    (void)LIBC_NAMESPACE::getcwd(start_dir, sizeof(start_dir));
-    ASSERT_ERRNO_SUCCESS();
-  }
-
-  void TearDown() override {
-    ASSERT_THAT(LIBC_NAMESPACE::chdir(start_dir), Succeeds());
-
-    ErrnoCheckingTest::TearDown();
-  }
-
   char *realpath_buffered(const char *path) {
     return LIBC_NAMESPACE::realpath(path, realpath_buf);
   }
@@ -253,9 +255,6 @@ public:
 private:
   // Buffer for storing realpath output.
   char realpath_buf[PATH_MAX];
-
-  // Current working dir at test SetUp.
-  char start_dir[PATH_MAX];
 };
 
 TEST_F(LlvmLibcRealpathTest, ErrorsWithInvalidArgIfNullPath) {
@@ -452,6 +451,7 @@ TEST_F(LlvmLibcRealpathTest, ErrorsWithNoAccessWhenDirectoryNotSearchable) {
 }
 
 TEST_F(LlvmLibcRealpathTest, RelativePathResolvesToCurrentWorkingDir) {
+  ScopedWorkingDir scoped_working_dir;
   TestDir test_dir;
   ASSERT_TRUE(
       create_test_dir("RelativePathResolvesToCurrentWorkingDir", test_dir));
@@ -486,6 +486,7 @@ TEST_F(LlvmLibcRealpathTest, RelativePathResolvesToCurrentWorkingDir) {
 }
 
 TEST_F(LlvmLibcRealpathTest, RelativeRealpathAcceptsPathExactlyMaxSize) {
+  ScopedWorkingDir scoped_working_dir;
   TestDir test_dir;
   ASSERT_TRUE(
       create_test_dir("RelativeRealpathAcceptsPathExactlyMaxSize", test_dir));
@@ -497,6 +498,7 @@ TEST_F(LlvmLibcRealpathTest, RelativeRealpathAcceptsPathExactlyMaxSize) {
 }
 
 TEST_F(LlvmLibcRealpathTest, RelativeRealpathRejectsPathExceedingMaxSize) {
+  ScopedWorkingDir scoped_working_dir;
   TestDir test_dir;
   ASSERT_TRUE(
       create_test_dir("RelativeRealpathRejectsPathExceedingMaxSize", test_dir));

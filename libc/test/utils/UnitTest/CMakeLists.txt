@@ -15,3 +15,14 @@ add_libc_test(
     # tests must have at least one dependancy.
     libc.src.__support.CPP.bit
 )
+
+add_libc_test(
+  errno_checking_test_test
+  SUITE
+    libc_unittest_tests
+  SRCS
+    errno_checking_test_test.cpp
+  DEPENDS
+    libc.test.UnitTest.ErrnoCheckingTest
+    libc.src.errno.errno
+)

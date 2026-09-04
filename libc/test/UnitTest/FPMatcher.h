@@ -208,11 +208,10 @@ template <typename T> struct FPTest : public ErrnoCheckingTest {
   };
 #endif // LIBC_MATH_HAS_ASSUME_ROUND_NEAREST_ONLY
 
-  void TearDown() override {
+  void OnTearDown() override {
     // TODO (PR 135320): Remove this override once all FPTest instances are
     // updated to validate or ignore errno.
     libc_errno = 0;
-    ErrnoCheckingTest::TearDown();
   }
 };
 
@@ -270,7 +269,7 @@ private:
           FP_INT_UPWARD,     FP_INT_DOWNWARD,                                  \
           FP_INT_TOWARDZERO, FP_INT_TONEARESTFROMZERO,                         \
           FP_INT_TONEAREST,  UNKNOWN_MATH_ROUNDING_DIRECTION,                  \
-  };
+      };
 
 #define EXPECT_FP_EQ(expected, actual)                                         \
   EXPECT_THAT(actual, LIBC_NAMESPACE::testing::getMatcher<                     \

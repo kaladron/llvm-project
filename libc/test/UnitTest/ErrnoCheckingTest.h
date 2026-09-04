@@ -38,11 +38,44 @@
 namespace LIBC_NAMESPACE_DECL {
 namespace testing {
 
+// RAII guard to enforce that errno is 0 on exit from a scope (e.g. a test
+// case). When instantiated at the top of test execution, it optionally clears
+// errno and asserts ASSERT_ERRNO_SUCCESS() when going out of scope, even during
+// early returns caused by assertion failures.
+class ErrnoGuard {
+  bool check_on_exit = true;
+
+  static void check_errno() { ASSERT_ERRNO_SUCCESS(); }
+
+public:
+  explicit ErrnoGuard(bool clear = true) {
+    if (clear)
+      libc_errno = 0;
+  }
+
+  ~ErrnoGuard() {
+    if (check_on_exit)
+      check_errno();
+  }
+
+  void cancel() { check_on_exit = false; }
+  void reset() { libc_errno = 0; }
+
+  ErrnoGuard(const ErrnoGuard &) = delete;
+  ErrnoGuard &operator=(const ErrnoGuard &) = delete;
+  ErrnoGuard(ErrnoGuard &&) = delete;
+  ErrnoGuard &operator=(ErrnoGuard &&) = delete;
+};
+
 // Provides a test fixture for tests that validate modifications of the errno.
 // It clears out the errno at the beginning of the test (e.g. in case it
 // contained the value pre-set by the system), and confirms it's still zero
 // at the end of the test, forcing the test author to explicitly account for all
 // non-zero values.
+//
+// Uses the Non-Virtual Interface (NVI) pattern: TearDown() is final so that
+// derived fixtures cannot accidentally bypass post-test verification. Derived
+// fixtures may override OnTearDown() for custom cleanup.
 class ErrnoCheckingTest : public Test {
 public:
   void SetUp() override {
@@ -50,10 +83,18 @@ public:
     libc_errno = 0;
   }
 
-  void TearDown() override {
-    ASSERT_ERRNO_SUCCESS();
-    Test::TearDown();
+  void TearDown() override final {
+    struct TestTearDownGuard {
+      Test *parent;
+      ~TestTearDownGuard() { parent->Test::TearDown(); }
+    } test_guard{this};
+    ErrnoGuard errno_guard(false);
+
+    OnTearDown();
   }
+
+protected:
+  virtual void OnTearDown() {}
 };
 
 } // namespace testing
