@@ -14,9 +14,11 @@
 #ifndef LLVM_LIBC_SRC_GRP_GRP_UTILS_H
 #define LLVM_LIBC_SRC_GRP_GRP_UTILS_H
 
+#include "hdr/types/gid_t.h"
 #include "hdr/types/size_t.h"
 #include "hdr/types/struct_group.h"
 #include "src/__support/CPP/span.h"
+#include "src/__support/CPP/string_view.h"
 #include "src/__support/error_or.h"
 #include "src/__support/macros/config.h"
 #include "src/__support/pwd/flat_file_db.h"
@@ -54,6 +56,19 @@ ErrorOr<void> close();
 
 // Reads the next entry from the group database.
 ErrorOr<struct group *> read_next();
+
+// Searches for a group entry matching the given name. Both the strings and the
+// gr_mem array are placed in the caller's buffer, so a buffer too small for the
+// record yields ERANGE.
+// The optional path parameter allows unit tests to direct lookups to hermetic
+// test database files without mutating global state.
+ErrorOr<bool> find_by_name(cpp::string_view name, struct group *grp,
+                           cpp::span<char> buffer, const char *path = nullptr);
+
+// Searches for a group entry matching the given group ID. See find_by_name for
+// the buffer requirements.
+ErrorOr<bool> find_by_gid(gid_t gid, struct group *grp, cpp::span<char> buffer,
+                          const char *path = nullptr);
 
 } // namespace grp
 } // namespace LIBC_NAMESPACE_DECL
