@@ -16,7 +16,7 @@ add_libc_test(
     libc.hdr.types.size_t
     libc.hdr.types.struct_group
     libc.src.__support.CPP.span
-    libc.src.__support.pwd.flat_file_db
+    libc.src.__support.flat_file_db.flat_file_db
     libc.src.grp.grp_utils
 )
 

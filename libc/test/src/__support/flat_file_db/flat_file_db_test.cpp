@@ -17,9 +17,9 @@
 #include "src/__support/CPP/string_view.h"
 #include "src/__support/File/file.h"
 #include "src/__support/error_or.h"
-#include "src/__support/pwd/dynamic_buffer.h"
-#include "src/__support/pwd/field_tokenizer.h"
-#include "src/__support/pwd/flat_file_db.h"
+#include "src/__support/flat_file_db/dynamic_buffer.h"
+#include "src/__support/flat_file_db/field_tokenizer.h"
+#include "src/__support/flat_file_db/flat_file_db.h"
 #include "src/stdio/remove.h"
 #include "src/string/string_utils.h"
 #include "test/UnitTest/ErrnoCheckingTest.h"
@@ -65,7 +65,7 @@ class LlvmLibcFlatFileDbTest
 } // namespace
 
 namespace LIBC_NAMESPACE_DECL {
-namespace pwd {
+namespace flat_file_db {
 
 template <>
 inline ErrorOr<void> parse_line<SimpleTestEntry>(cpp::span<char> line,
@@ -114,7 +114,7 @@ parse_line<ScratchRequiringEntry>(cpp::span<char> line, cpp::span<char> scratch,
   return {};
 }
 
-} // namespace pwd
+} // namespace flat_file_db
 } // namespace LIBC_NAMESPACE_DECL
 
 TEST_F(LlvmLibcFlatFileDbTest, GetNextAndLookup) {
@@ -122,7 +122,7 @@ TEST_F(LlvmLibcFlatFileDbTest, GetNextAndLookup) {
   HermeticFile test_file(libc_make_test_file_path("flat_db_test.test"),
                          content);
 
-  LIBC_NAMESPACE::pwd::ScopedFlatFileDatabase<SimpleTestEntry> db(
+  LIBC_NAMESPACE::flat_file_db::ScopedFlatFileDatabase<SimpleTestEntry> db(
       test_file.get_path());
   char buffer[128];
   SimpleTestEntry entry;
@@ -163,7 +163,7 @@ TEST_F(LlvmLibcFlatFileDbTest, LookupNotFound) {
   HermeticFile test_file(libc_make_test_file_path("flat_db_not_found.test"),
                          content);
 
-  LIBC_NAMESPACE::pwd::ScopedFlatFileDatabase<SimpleTestEntry> db(
+  LIBC_NAMESPACE::flat_file_db::ScopedFlatFileDatabase<SimpleTestEntry> db(
       test_file.get_path());
   char buffer[128];
   SimpleTestEntry entry;
@@ -181,7 +181,7 @@ TEST_F(LlvmLibcFlatFileDbTest, TruncatedLineReturnsErange) {
   HermeticFile test_file(libc_make_test_file_path("flat_db_trunc.test"),
                          content);
 
-  LIBC_NAMESPACE::pwd::ScopedFlatFileDatabase<SimpleTestEntry> db(
+  LIBC_NAMESPACE::flat_file_db::ScopedFlatFileDatabase<SimpleTestEntry> db(
       test_file.get_path());
   char small_buffer[8];
   SimpleTestEntry entry;
@@ -196,7 +196,7 @@ TEST_F(LlvmLibcFlatFileDbTest, MalformedLineReturnsEinval) {
   HermeticFile test_file(libc_make_test_file_path("flat_db_malformed.test"),
                          content);
 
-  LIBC_NAMESPACE::pwd::ScopedFlatFileDatabase<SimpleTestEntry> db(
+  LIBC_NAMESPACE::flat_file_db::ScopedFlatFileDatabase<SimpleTestEntry> db(
       test_file.get_path());
   char buffer[128];
   SimpleTestEntry entry;
@@ -211,7 +211,7 @@ TEST_F(LlvmLibcFlatFileDbTest, BlankLinesSkipped) {
   HermeticFile test_file(libc_make_test_file_path("flat_db_blank.test"),
                          content);
 
-  LIBC_NAMESPACE::pwd::ScopedFlatFileDatabase<SimpleTestEntry> db(
+  LIBC_NAMESPACE::flat_file_db::ScopedFlatFileDatabase<SimpleTestEntry> db(
       test_file.get_path());
   char buffer[128];
   SimpleTestEntry entry;
@@ -269,9 +269,9 @@ TEST_F(LlvmLibcFlatFileDbTest, DynamicBufferReadsArbitrarilyLongLines) {
   HermeticFile test_file(libc_make_test_file_path("flat_db_longline.test"),
                          content);
 
-  LIBC_NAMESPACE::pwd::ScopedFlatFileDatabase<SimpleTestEntry> db(
+  LIBC_NAMESPACE::flat_file_db::ScopedFlatFileDatabase<SimpleTestEntry> db(
       test_file.get_path());
-  LIBC_NAMESPACE::pwd::ScopedDynamicBuffer buffer;
+  LIBC_NAMESPACE::flat_file_db::ScopedDynamicBuffer buffer;
   SimpleTestEntry entry;
 
   auto r1 = db.getnext(&entry, buffer);
@@ -297,7 +297,7 @@ TEST_F(LlvmLibcFlatFileDbTest, LookupOversizedPrecedingRecord) {
   HermeticFile test_file(libc_make_test_file_path("flat_db_longskip.test"),
                          content);
 
-  LIBC_NAMESPACE::pwd::ScopedFlatFileDatabase<SimpleTestEntry> db(
+  LIBC_NAMESPACE::flat_file_db::ScopedFlatFileDatabase<SimpleTestEntry> db(
       test_file.get_path());
   auto matcher = [](const SimpleTestEntry &e) {
     return LIBC_NAMESPACE::cpp::string_view(e.key) == "target";
@@ -314,7 +314,7 @@ TEST_F(LlvmLibcFlatFileDbTest, LookupOversizedPrecedingRecord) {
 
   // DynamicBuffer lookup grows the buffer across oversized preceding records
   // and locates the target entry.
-  LIBC_NAMESPACE::pwd::ScopedDynamicBuffer dyn_buffer;
+  LIBC_NAMESPACE::flat_file_db::ScopedDynamicBuffer dyn_buffer;
   auto dyn_res = db.lookup(matcher, &entry, dyn_buffer);
   ASSERT_TRUE(dyn_res.has_value());
   ASSERT_TRUE(dyn_res.value());
@@ -323,7 +323,7 @@ TEST_F(LlvmLibcFlatFileDbTest, LookupOversizedPrecedingRecord) {
 }
 
 TEST_F(LlvmLibcFlatFileDbTest, DynamicBufferReserveGrowRelease) {
-  LIBC_NAMESPACE::pwd::ScopedDynamicBuffer buffer;
+  LIBC_NAMESPACE::flat_file_db::ScopedDynamicBuffer buffer;
   EXPECT_EQ(buffer.capacity(), static_cast<size_t>(0));
 
   ASSERT_TRUE(buffer.grow());
@@ -352,17 +352,17 @@ TEST_F(LlvmLibcFlatFileDbTest,
   // Fixed buffer with insufficient scratch returns ERANGE.
   constexpr size_t SMALL_BUFFER_SIZE = 64;
   char small_buffer[SMALL_BUFFER_SIZE];
-  LIBC_NAMESPACE::pwd::ScopedFlatFileDatabase<ScratchRequiringEntry> db_fixed(
-      test_file.get_path());
+  LIBC_NAMESPACE::flat_file_db::ScopedFlatFileDatabase<ScratchRequiringEntry>
+      db_fixed(test_file.get_path());
   ScratchRequiringEntry fixed_entry;
   auto fixed_res = db_fixed.getnext(&fixed_entry, small_buffer);
   ASSERT_FALSE(fixed_res.has_value());
   EXPECT_EQ(fixed_res.error(), ERANGE);
 
   // DynamicBuffer grows until scratch requirement (2048 bytes) is satisfied.
-  LIBC_NAMESPACE::pwd::ScopedFlatFileDatabase<ScratchRequiringEntry> db_dyn(
-      test_file.get_path());
-  LIBC_NAMESPACE::pwd::ScopedDynamicBuffer dyn_buffer;
+  LIBC_NAMESPACE::flat_file_db::ScopedFlatFileDatabase<ScratchRequiringEntry>
+      db_dyn(test_file.get_path());
+  LIBC_NAMESPACE::flat_file_db::ScopedDynamicBuffer dyn_buffer;
   ScratchRequiringEntry dyn_entry;
   auto dyn_res = db_dyn.getnext(&dyn_entry, dyn_buffer);
   ASSERT_TRUE(dyn_res.has_value());

@@ -133,8 +133,8 @@ add_object_library(
     libc.src.__support.error_or
     libc.src.__support.macros.attributes
     libc.src.__support.macros.config
-    libc.src.__support.pwd.dynamic_buffer
-    libc.src.__support.pwd.field_tokenizer
-    libc.src.__support.pwd.flat_file_db
+    libc.src.__support.flat_file_db.dynamic_buffer
+    libc.src.__support.flat_file_db.field_tokenizer
+    libc.src.__support.flat_file_db.flat_file_db
     libc.src.__support.str_to_integer
 )
