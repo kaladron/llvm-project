@@ -16,7 +16,7 @@
 #include "hdr/types/size_t.h"
 #include "hdr/types/struct_group.h"
 #include "src/__support/CPP/span.h"
-#include "src/__support/pwd/flat_file_db.h"
+#include "src/__support/flat_file_db/flat_file_db.h"
 #include "src/grp/grp_utils.h"
 #include "test/UnitTest/Test.h"
 
@@ -144,7 +144,7 @@ TEST(LlvmLibcGrpUtilsTest, ParseLine_FixedBufferErangeWhenNoScratchSpace) {
   // The line fits in buffer, but there is no space left for gr_mem pointers.
   char buffer[] = "wheel:x:10:root,admin";
   struct group grp;
-  const auto res = LIBC_NAMESPACE::pwd::parse_line<struct group>(
+  const auto res = LIBC_NAMESPACE::flat_file_db::parse_line<struct group>(
       LIBC_NAMESPACE::cpp::span<char>(buffer, sizeof(buffer)), {}, &grp);
   ASSERT_FALSE(res.has_value());
   EXPECT_EQ(res.error(), ERANGE);
@@ -156,7 +156,7 @@ TEST(LlvmLibcGrpUtilsTest, ParseLine_EmbeddedNullByteRejected) {
   for (size_t i = 0; i < sizeof(RAW); ++i)
     buffer[i] = RAW[i];
   struct group grp;
-  const auto res = LIBC_NAMESPACE::pwd::parse_line<struct group>(
+  const auto res = LIBC_NAMESPACE::flat_file_db::parse_line<struct group>(
       LIBC_NAMESPACE::cpp::span<char>(buffer, sizeof(RAW)),
       LIBC_NAMESPACE::cpp::span<char>(buffer + sizeof(RAW),
                                       sizeof(buffer) - sizeof(RAW)),
@@ -173,7 +173,7 @@ TEST(LlvmLibcGrpUtilsTest, ParseLine_SuccessWithTailForMemberPointers) {
     buffer[i] = LINE[i];
 
   struct group grp;
-  const auto res = LIBC_NAMESPACE::pwd::parse_line<struct group>(
+  const auto res = LIBC_NAMESPACE::flat_file_db::parse_line<struct group>(
       LIBC_NAMESPACE::cpp::span<char>(buffer, LEN + 1),
       LIBC_NAMESPACE::cpp::span<char>(buffer + LEN + 1,
                                       sizeof(buffer) - (LEN + 1)),

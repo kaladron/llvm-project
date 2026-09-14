@@ -17,9 +17,9 @@
 #include "hdr/types/struct_passwd.h"
 #include "src/__support/CPP/span.h"
 #include "src/__support/CPP/string_view.h"
+#include "src/__support/flat_file_db/dynamic_buffer.h"
+#include "src/__support/flat_file_db/flat_file_db.h"
 #include "src/__support/macros/attributes.h"
-#include "src/__support/pwd/dynamic_buffer.h"
-#include "src/__support/pwd/flat_file_db.h"
 #include "src/string/string_utils.h"
 
 #ifndef LIBC_COPT_PWD_FILE_PATH
@@ -35,7 +35,7 @@ ErrorOr<struct passwd> parse_passwd_line(char *line) {
 
   struct passwd pwd;
   size_t len = internal::string_length(line);
-  auto res = parse_line(cpp::span<char>(line, len + 1), {}, &pwd);
+  auto res = flat_file_db::parse_line(cpp::span<char>(line, len + 1), {}, &pwd);
   if (!res.has_value())
     return Error(res.error());
 
@@ -46,7 +46,7 @@ ErrorOr<struct passwd> parse_passwd_line(char *line) {
 // to hermetic temporary files.
 static const char *passwd_file_path = LIBC_COPT_PWD_FILE_PATH;
 
-static LIBC_CONSTINIT FlatFileDatabase<struct passwd>
+static LIBC_CONSTINIT flat_file_db::FlatFileDatabase<struct passwd>
     db(LIBC_COPT_PWD_FILE_PATH);
 // Note: These static buffers are process-global and NOT protected by a mutex
 // at this stage. POSIX getpwent is non-reentrant.
@@ -58,7 +58,7 @@ static LIBC_CONSTINIT FlatFileDatabase<struct passwd>
 // seen. endpwent() closes the file stream without freeing the buffer so that
 // pointers returned prior to endpwent() remain valid until the next
 // non-reentrant call.
-static LIBC_CONSTINIT DynamicBuffer line_buffer;
+static LIBC_CONSTINIT flat_file_db::DynamicBuffer line_buffer;
 static LIBC_CONSTINIT struct passwd pwd_entry = {};
 
 void TESTONLY_set_passwd_path(const char *path) {
@@ -96,7 +96,7 @@ namespace {
 template <typename BufferType>
 ErrorOr<bool> lookup_by_name(cpp::string_view name, struct passwd *pwd,
                              BufferType &buffer, const char *path) {
-  ScopedFlatFileDatabase<struct passwd> local_db(path);
+  flat_file_db::ScopedFlatFileDatabase<struct passwd> local_db(path);
   auto matcher = [name](const struct passwd &entry) {
     return cpp::string_view(entry.pw_name) == name;
   };
@@ -106,7 +106,7 @@ ErrorOr<bool> lookup_by_name(cpp::string_view name, struct passwd *pwd,
 template <typename BufferType>
 ErrorOr<bool> lookup_by_uid(uid_t uid, struct passwd *pwd, BufferType &buffer,
                             const char *path) {
-  ScopedFlatFileDatabase<struct passwd> local_db(path);
+  flat_file_db::ScopedFlatFileDatabase<struct passwd> local_db(path);
   auto matcher = [uid](const struct passwd &entry) {
     return entry.pw_uid == uid;
   };

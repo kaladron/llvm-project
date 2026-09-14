@@ -20,18 +20,18 @@
 #include "src/__support/CPP/span.h"
 #include "src/__support/CPP/string_view.h"
 #include "src/__support/error_or.h"
+#include "src/__support/flat_file_db/flat_file_db.h"
 #include "src/__support/macros/config.h"
-#include "src/__support/pwd/flat_file_db.h"
 
 namespace LIBC_NAMESPACE_DECL {
-namespace pwd {
+namespace flat_file_db {
 
 template <>
 ErrorOr<void> parse_line<struct group>(cpp::span<char> line,
                                        cpp::span<char> scratch,
                                        struct group *grp);
 
-} // namespace pwd
+} // namespace flat_file_db
 
 namespace grp {
 
