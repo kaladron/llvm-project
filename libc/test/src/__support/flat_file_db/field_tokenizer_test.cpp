@@ -12,12 +12,12 @@
 //===----------------------------------------------------------------------===//
 
 #include "src/__support/CPP/span.h"
-#include "src/__support/pwd/field_tokenizer.h"
+#include "src/__support/flat_file_db/field_tokenizer.h"
 #include "test/UnitTest/Test.h"
 
 TEST(LlvmLibcFieldTokenizerTest, StandardPasswdLine) {
   char line[] = "root:x:0:0:root:/root:/bin/bash";
-  LIBC_NAMESPACE::pwd::FieldTokenizer tokenizer(
+  LIBC_NAMESPACE::flat_file_db::FieldTokenizer tokenizer(
       LIBC_NAMESPACE::cpp::span<char>(line, sizeof(line)));
 
   auto f1 = tokenizer.next_field();
@@ -54,7 +54,7 @@ TEST(LlvmLibcFieldTokenizerTest, StandardPasswdLine) {
 
 TEST(LlvmLibcFieldTokenizerTest, EmptyFields) {
   char line[] = "a::c:";
-  LIBC_NAMESPACE::pwd::FieldTokenizer tokenizer(
+  LIBC_NAMESPACE::flat_file_db::FieldTokenizer tokenizer(
       LIBC_NAMESPACE::cpp::span<char>(line, sizeof(line)));
 
   auto f1 = tokenizer.next_field();
@@ -79,7 +79,7 @@ TEST(LlvmLibcFieldTokenizerTest, EmptyFields) {
 
 TEST(LlvmLibcFieldTokenizerTest, LeadingAndConsecutiveSeparators) {
   char line[] = ":first::last";
-  LIBC_NAMESPACE::pwd::FieldTokenizer tokenizer(
+  LIBC_NAMESPACE::flat_file_db::FieldTokenizer tokenizer(
       LIBC_NAMESPACE::cpp::span<char>(line, sizeof(line)));
 
   auto f1 = tokenizer.next_field();
@@ -104,7 +104,7 @@ TEST(LlvmLibcFieldTokenizerTest, LeadingAndConsecutiveSeparators) {
 
 TEST(LlvmLibcFieldTokenizerTest, SingleField) {
   char line[] = "single";
-  LIBC_NAMESPACE::pwd::FieldTokenizer tokenizer(
+  LIBC_NAMESPACE::flat_file_db::FieldTokenizer tokenizer(
       LIBC_NAMESPACE::cpp::span<char>(line, sizeof(line)));
 
   auto f1 = tokenizer.next_field();
@@ -117,7 +117,7 @@ TEST(LlvmLibcFieldTokenizerTest, SingleField) {
 
 TEST(LlvmLibcFieldTokenizerTest, EmptyBuffer) {
   char line[] = "";
-  LIBC_NAMESPACE::pwd::FieldTokenizer tokenizer(
+  LIBC_NAMESPACE::flat_file_db::FieldTokenizer tokenizer(
       LIBC_NAMESPACE::cpp::span<char>(line, sizeof(line)));
 
   auto f1 = tokenizer.next_field();
@@ -130,7 +130,7 @@ TEST(LlvmLibcFieldTokenizerTest, EmptyBuffer) {
 
 TEST(LlvmLibcFieldTokenizerTest, CustomSeparator) {
   char line[] = "foo,bar,baz";
-  LIBC_NAMESPACE::pwd::FieldTokenizer tokenizer(
+  LIBC_NAMESPACE::flat_file_db::FieldTokenizer tokenizer(
       LIBC_NAMESPACE::cpp::span<char>(line, sizeof(line)), ',');
 
   auto f1 = tokenizer.next_field();

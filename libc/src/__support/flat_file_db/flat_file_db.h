@@ -11,8 +11,8 @@
 ///
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_LIBC_SRC___SUPPORT_PWD_FLAT_FILE_DB_H
-#define LLVM_LIBC_SRC___SUPPORT_PWD_FLAT_FILE_DB_H
+#ifndef LLVM_LIBC_SRC___SUPPORT_FLAT_FILE_DB_FLAT_FILE_DB_H
+#define LLVM_LIBC_SRC___SUPPORT_FLAT_FILE_DB_FLAT_FILE_DB_H
 
 #include "hdr/errno_macros.h"
 #include "hdr/stdio_macros.h"
@@ -22,12 +22,12 @@
 #include "src/__support/CPP/span.h"
 #include "src/__support/File/file.h"
 #include "src/__support/error_or.h"
+#include "src/__support/flat_file_db/dynamic_buffer.h"
 #include "src/__support/macros/attributes.h"
 #include "src/__support/macros/config.h"
-#include "src/__support/pwd/dynamic_buffer.h"
 
 namespace LIBC_NAMESPACE_DECL {
-namespace pwd {
+namespace flat_file_db {
 
 // Struct to hold the result of a line read operation.
 struct ReadLineResult {
@@ -335,7 +335,7 @@ public:
   LIBC_INLINE ~ScopedFlatFileDatabase() { this->enddb(); }
 };
 
-} // namespace pwd
+} // namespace flat_file_db
 } // namespace LIBC_NAMESPACE_DECL
 
-#endif // LLVM_LIBC_SRC___SUPPORT_PWD_FLAT_FILE_DB_H
+#endif // LLVM_LIBC_SRC___SUPPORT_FLAT_FILE_DB_FLAT_FILE_DB_H

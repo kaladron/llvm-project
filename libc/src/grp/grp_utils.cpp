@@ -25,12 +25,12 @@
 #include "src/__support/alloc-checker.h"
 #include "src/__support/ctype_utils.h"
 #include "src/__support/error_or.h"
+#include "src/__support/flat_file_db/dynamic_buffer.h"
+#include "src/__support/flat_file_db/field_tokenizer.h"
+#include "src/__support/flat_file_db/flat_file_db.h"
 #include "src/__support/libc_assert.h"
 #include "src/__support/macros/attributes.h"
 #include "src/__support/macros/config.h"
-#include "src/__support/pwd/dynamic_buffer.h"
-#include "src/__support/pwd/field_tokenizer.h"
-#include "src/__support/pwd/flat_file_db.h"
 #include "src/__support/str_to_integer.h"
 #include "src/string/memory_utils/inline_memcpy.h"
 
@@ -58,7 +58,7 @@ bool parse_group_fields(cpp::span<char> line, struct group *grp,
   if (line.empty() || !grp || !members_out)
     return false;
 
-  pwd::FieldTokenizer tokenizer(line, ':');
+  flat_file_db::FieldTokenizer tokenizer(line, ':');
 
   const auto name = tokenizer.next_field();
   if (!name || name->empty() || name->front() == '\0')
@@ -94,7 +94,7 @@ bool parse_group_fields(cpp::span<char> line, struct group *grp,
 
 } // namespace
 
-namespace pwd {
+namespace flat_file_db {
 
 template <>
 ErrorOr<void> parse_line<struct group>(cpp::span<char> line,
@@ -130,7 +130,7 @@ ErrorOr<void> parse_line<struct group>(cpp::span<char> line,
   return {};
 }
 
-} // namespace pwd
+} // namespace flat_file_db
 
 namespace grp {
 
@@ -145,7 +145,7 @@ bool parse_group_line(cpp::span<char> line, struct group *grp,
 
   size_t member_count = 0;
   if (!members_field.empty() && members_field.front() != '\0') {
-    pwd::FieldTokenizer member_tokenizer(members_field, ',');
+    flat_file_db::FieldTokenizer member_tokenizer(members_field, ',');
     while (const auto member = member_tokenizer.next_field()) {
       if (member->empty() || member->front() == '\0')
         continue;
@@ -169,7 +169,7 @@ namespace {
 // their own scoped database rather than sharing the iteration stream.
 const char *group_file_path = LIBC_COPT_GROUP_FILE_PATH;
 
-LIBC_CONSTINIT pwd::FlatFileDatabase<struct group>
+LIBC_CONSTINIT flat_file_db::FlatFileDatabase<struct group>
     db(LIBC_COPT_GROUP_FILE_PATH);
 // Note: These static buffers are process-global and NOT protected by a mutex
 // at this stage. POSIX getgrent is non-reentrant.
@@ -179,7 +179,7 @@ LIBC_CONSTINIT pwd::FlatFileDatabase<struct group>
 // record read so far, and is reused without shrinking. endgrent() closes the
 // file stream without freeing the buffer so that pointers returned before
 // endgrent() remain valid until the next non-reentrant call.
-LIBC_CONSTINIT pwd::DynamicBuffer line_buffer;
+LIBC_CONSTINIT flat_file_db::DynamicBuffer line_buffer;
 LIBC_CONSTINIT struct group grp_entry = {};
 
 // The lookups are shared between the caller-supplied fixed buffer used by the
@@ -189,7 +189,7 @@ LIBC_CONSTINIT struct group grp_entry = {};
 template <typename BufferType>
 ErrorOr<bool> lookup_by_name(cpp::string_view name, struct group *grp,
                              BufferType &buffer, const char *path) {
-  pwd::ScopedFlatFileDatabase<struct group> local_db(path);
+  flat_file_db::ScopedFlatFileDatabase<struct group> local_db(path);
   const auto matcher = [name](const struct group &entry) {
     return cpp::string_view(entry.gr_name) == name;
   };
@@ -199,7 +199,7 @@ ErrorOr<bool> lookup_by_name(cpp::string_view name, struct group *grp,
 template <typename BufferType>
 ErrorOr<bool> lookup_by_gid(gid_t gid, struct group *grp, BufferType &buffer,
                             const char *path) {
-  pwd::ScopedFlatFileDatabase<struct group> local_db(path);
+  flat_file_db::ScopedFlatFileDatabase<struct group> local_db(path);
   const auto matcher = [gid](const struct group &entry) {
     return entry.gr_gid == gid;
   };
@@ -268,9 +268,9 @@ ErrorOr<void> collect_user_groups(cpp::string_view user, gid_t group,
   if (!gid_list.push_back(group))
     return Error(ENOMEM);
 
-  pwd::ScopedFlatFileDatabase<struct group> local_db(path ? path
-                                                          : group_file_path);
-  pwd::ScopedDynamicBuffer buffer;
+  flat_file_db::ScopedFlatFileDatabase<struct group> local_db(
+      path ? path : group_file_path);
+  flat_file_db::ScopedDynamicBuffer buffer;
   struct group entry = {};
 
   const auto open_res = local_db.setdb();

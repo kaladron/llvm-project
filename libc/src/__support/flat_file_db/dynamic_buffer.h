@@ -11,8 +11,8 @@
 ///
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_LIBC_SRC___SUPPORT_PWD_DYNAMIC_BUFFER_H
-#define LLVM_LIBC_SRC___SUPPORT_PWD_DYNAMIC_BUFFER_H
+#ifndef LLVM_LIBC_SRC___SUPPORT_FLAT_FILE_DB_DYNAMIC_BUFFER_H
+#define LLVM_LIBC_SRC___SUPPORT_FLAT_FILE_DB_DYNAMIC_BUFFER_H
 
 #include "hdr/types/size_t.h"
 #include "src/__support/CPP/limits.h"
@@ -25,7 +25,7 @@
 #include "src/string/memory_utils/inline_memcpy.h"
 
 namespace LIBC_NAMESPACE_DECL {
-namespace pwd {
+namespace flat_file_db {
 
 // A heap-backed, growable byte buffer for the flat-file database engine.
 //
@@ -105,7 +105,7 @@ public:
   LIBC_INLINE ~ScopedDynamicBuffer() { this->release(); }
 };
 
-} // namespace pwd
+} // namespace flat_file_db
 } // namespace LIBC_NAMESPACE_DECL
 
-#endif // LLVM_LIBC_SRC___SUPPORT_PWD_DYNAMIC_BUFFER_H
+#endif // LLVM_LIBC_SRC___SUPPORT_FLAT_FILE_DB_DYNAMIC_BUFFER_H
