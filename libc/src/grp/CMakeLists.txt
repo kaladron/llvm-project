@@ -66,6 +66,23 @@ add_entrypoint_object(
 )
 
 add_entrypoint_object(
+  getgrouplist
+  SRCS
+    getgrouplist.cpp
+  HDRS
+    getgrouplist.h
+  DEPENDS
+    libc.hdr.errno_macros
+    libc.hdr.types.gid_t
+    libc.src.__support.common
+    libc.src.__support.libc_errno
+    libc.src.__support.macros.config
+    libc.src.__support.macros.null_check
+    libc.src.errno.errno
+    .grp_utils
+)
+
+add_entrypoint_object(
   getgrnam
   SRCS
     getgrnam.cpp
@@ -125,16 +142,21 @@ add_object_library(
     libc.hdr.types.gid_t
     libc.hdr.types.size_t
     libc.hdr.types.struct_group
+    libc.src.__support.CPP.limits
+    libc.src.__support.CPP.new
     libc.src.__support.CPP.span
     libc.src.__support.CPP.string_view
     libc.src.__support.File.file
     libc.src.__support.File.platform_file
+    libc.src.__support.alloc_checker
     libc.src.__support.ctype_utils
     libc.src.__support.error_or
+    libc.src.__support.libc_assert
     libc.src.__support.macros.attributes
     libc.src.__support.macros.config
     libc.src.__support.pwd.dynamic_buffer
     libc.src.__support.pwd.field_tokenizer
     libc.src.__support.pwd.flat_file_db
     libc.src.__support.str_to_integer
+    libc.src.string.memory_utils.inline_memcpy
 )
