@@ -60,8 +60,22 @@ functions:
       - type: gid_t
       - type: gid_t *
       - type: int *
+  - name: initgroups
+    standards:
+      - bsd
+    return_type: int
+    arguments:
+      - type: const char *
+      - type: gid_t
   - name: setgrent
     standards:
       - posix
     return_type: void
     arguments: []
+  - name: setgroups
+    standards:
+      - bsd
+    return_type: int
+    arguments:
+      - type: size_t
+      - type: const gid_t *

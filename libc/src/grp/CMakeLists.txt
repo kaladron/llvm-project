@@ -117,6 +117,23 @@ add_entrypoint_object(
 )
 
 add_entrypoint_object(
+  initgroups
+  SRCS
+    initgroups.cpp
+  HDRS
+    initgroups.h
+  DEPENDS
+    libc.hdr.errno_macros
+    libc.hdr.types.gid_t
+    libc.src.__support.common
+    libc.src.__support.libc_errno
+    libc.src.__support.macros.config
+    libc.src.__support.macros.null_check
+    libc.src.errno.errno
+    .grp_utils
+)
+
+add_entrypoint_object(
   setgrent
   SRCS
     setgrent.cpp
@@ -128,6 +145,24 @@ add_entrypoint_object(
     libc.src.__support.macros.config
     libc.src.errno.errno
     .grp_utils
+)
+
+add_entrypoint_object(
+  setgroups
+  SRCS
+    setgroups.cpp
+  HDRS
+    setgroups.h
+  DEPENDS
+    libc.hdr.errno_macros
+    libc.hdr.types.gid_t
+    libc.hdr.types.size_t
+    libc.src.__support.OSUtil.linux.syscall_wrappers.setgroups
+    libc.src.__support.common
+    libc.src.__support.libc_errno
+    libc.src.__support.macros.config
+    libc.src.__support.macros.null_check
+    libc.src.errno.errno
 )
 
 add_object_library(
@@ -154,6 +189,7 @@ add_object_library(
     libc.src.__support.libc_assert
     libc.src.__support.macros.attributes
     libc.src.__support.macros.config
+    libc.src.__support.OSUtil.linux.syscall_wrappers.setgroups
     libc.src.__support.pwd.dynamic_buffer
     libc.src.__support.pwd.field_tokenizer
     libc.src.__support.pwd.flat_file_db
