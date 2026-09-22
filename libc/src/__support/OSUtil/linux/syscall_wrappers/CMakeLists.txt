@@ -1356,3 +1356,28 @@ add_header_library(
     libc.src.__support.CPP.bit
     libc.src.__support.error_or
 )
+
+add_header_library(
+  capget
+  HDRS
+    capget.h
+  DEPENDS
+    libc.include.sys_syscall
+    libc.src.__support.common
+    libc.src.__support.error_or
+    libc.src.__support.macros.config
+    libc.src.__support.OSUtil.osutil
+)
+
+add_header_library(
+  capset
+  HDRS
+    capset.h
+  DEPENDS
+    libc.include.sys_syscall
+    libc.src.__support.common
+    libc.src.__support.error_or
+    libc.src.__support.macros.config
+    libc.src.__support.OSUtil.osutil
+)
+

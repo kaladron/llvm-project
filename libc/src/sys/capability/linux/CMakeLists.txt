@@ -1,0 +1,25 @@
+add_entrypoint_object(
+  capget
+  SRCS
+    capget.cpp
+  HDRS
+    ../capget.h
+  DEPENDS
+    libc.src.__support.OSUtil.linux.syscall_wrappers.capget
+    libc.src.__support.common
+    libc.src.__support.macros.config
+    libc.src.errno.errno
+)
+
+add_entrypoint_object(
+  capset
+  SRCS
+    capset.cpp
+  HDRS
+    ../capset.h
+  DEPENDS
+    libc.src.__support.OSUtil.linux.syscall_wrappers.capset
+    libc.src.__support.common
+    libc.src.__support.macros.config
+    libc.src.errno.errno
+)
