@@ -15,14 +15,15 @@ add_header_library(
   HDRS
     dynamic_buffer.h
   DEPENDS
-    libc.hdr.func.free
-    libc.hdr.func.realloc
     libc.hdr.types.size_t
     libc.src.__support.CPP.limits
+    libc.src.__support.CPP.new
     libc.src.__support.CPP.span
     libc.src.__support.CPP.type_traits
+    libc.src.__support.alloc_checker
     libc.src.__support.macros.attributes
     libc.src.__support.macros.config
+    libc.src.string.memory_utils.inline_memcpy
 )
 
 add_header_library(
