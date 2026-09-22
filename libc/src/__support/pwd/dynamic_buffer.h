@@ -14,14 +14,15 @@
 #ifndef LLVM_LIBC_SRC___SUPPORT_PWD_DYNAMIC_BUFFER_H
 #define LLVM_LIBC_SRC___SUPPORT_PWD_DYNAMIC_BUFFER_H
 
-#include "hdr/func/free.h"
-#include "hdr/func/realloc.h"
 #include "hdr/types/size_t.h"
 #include "src/__support/CPP/limits.h"
+#include "src/__support/CPP/new.h"
 #include "src/__support/CPP/span.h"
 #include "src/__support/CPP/type_traits/is_trivially_destructible.h"
+#include "src/__support/alloc-checker.h"
 #include "src/__support/macros/attributes.h"
 #include "src/__support/macros/config.h"
+#include "src/string/memory_utils/inline_memcpy.h"
 
 namespace LIBC_NAMESPACE_DECL {
 namespace pwd {
@@ -58,11 +59,17 @@ public:
       next *= 2;
     }
 
-    void *new_ptr = ::realloc(ptr, next);
-    if (new_ptr == nullptr)
+    AllocChecker ac;
+    char *new_ptr = new (ac) char[next];
+    if (!ac)
       return false;
 
-    ptr = static_cast<char *>(new_ptr);
+    if (ptr != nullptr) {
+      inline_memcpy(new_ptr, ptr, cap);
+      delete[] ptr;
+    }
+
+    ptr = new_ptr;
     cap = next;
     return true;
   }
@@ -78,7 +85,7 @@ public:
   // Frees the storage and returns the buffer to its empty state. Safe to call
   // more than once.
   LIBC_INLINE void release() {
-    ::free(ptr);
+    delete[] ptr;
     ptr = nullptr;
     cap = 0;
   }
