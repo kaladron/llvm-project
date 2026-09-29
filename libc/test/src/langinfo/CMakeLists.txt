@@ -16,4 +16,8 @@ add_libc_test(
     libc.src.locale.freelocale
     libc.src.locale.locale
     libc.src.locale.newlocale
+    libc.src.locale.setlocale
+    libc.src.locale.uselocale
+    libc.src.stdlib.setenv
+    libc.src.stdlib.unsetenv
 )

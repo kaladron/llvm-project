@@ -20,6 +20,10 @@
 #include "src/locale/freelocale.h"
 #include "src/locale/locale_data.h"
 #include "src/locale/newlocale.h"
+#include "src/locale/setlocale.h"
+#include "src/locale/uselocale.h"
+#include "src/stdlib/setenv.h"
+#include "src/stdlib/unsetenv.h"
 #include "test/UnitTest/Test.h"
 
 TEST(LlvmLibcLanginfo, DefaultCLocaleItems) {
@@ -126,3 +130,54 @@ TEST(LlvmLibcLanginfo, NullLocaleCrash) {
                WITH_SIGNAL(-1));
 }
 #endif
+
+TEST(LlvmLibcLanginfo, Utf8LocaleSupport) {
+  if constexpr (!LIBC_NAMESPACE::DISABLE_RUNTIME_LOCALE) {
+    constexpr const char *DEFAULT_NAME =
+        LIBC_NAMESPACE::DEFAULT_LOCALE_IS_UTF8 ? "C.UTF-8" : "C";
+    LIBC_NAMESPACE::cpp::scope_exit restore_ambient([&] {
+      LIBC_NAMESPACE::unsetenv("LC_ALL");
+      LIBC_NAMESPACE::setlocale(LC_ALL, DEFAULT_NAME);
+    });
+
+    locale_t c_loc = LIBC_NAMESPACE::newlocale(LC_ALL_MASK, "C", nullptr);
+    ASSERT_NE(c_loc, nullptr);
+    LIBC_NAMESPACE::cpp::scope_exit free_c(
+        [&] { LIBC_NAMESPACE::freelocale(c_loc); });
+    EXPECT_STREQ(LIBC_NAMESPACE::nl_langinfo_l(CODESET, c_loc), "US-ASCII");
+
+    locale_t utf8_loc =
+        LIBC_NAMESPACE::newlocale(LC_ALL_MASK, "C.utf-8", nullptr);
+    ASSERT_NE(utf8_loc, nullptr);
+    LIBC_NAMESPACE::cpp::scope_exit free_utf8(
+        [&] { LIBC_NAMESPACE::freelocale(utf8_loc); });
+    EXPECT_STREQ(LIBC_NAMESPACE::nl_langinfo_l(CODESET, utf8_loc), "UTF-8");
+    EXPECT_STREQ(LIBC_NAMESPACE::nl_langinfo_l(RADIXCHAR, utf8_loc), ".");
+    EXPECT_STREQ(LIBC_NAMESPACE::nl_langinfo_l(DAY_1, utf8_loc), "Sunday");
+
+    // Test thread-local locale switching via uselocale.
+    locale_t old_loc = LIBC_NAMESPACE::uselocale(c_loc);
+    {
+      LIBC_NAMESPACE::cpp::scope_exit restore_thread(
+          [&] { LIBC_NAMESPACE::uselocale(old_loc); });
+      EXPECT_STREQ(LIBC_NAMESPACE::nl_langinfo(CODESET), "US-ASCII");
+      LIBC_NAMESPACE::uselocale(utf8_loc);
+      EXPECT_STREQ(LIBC_NAMESPACE::nl_langinfo(CODESET), "UTF-8");
+    }
+
+    // Test global locale switching via setlocale.
+    EXPECT_STREQ(LIBC_NAMESPACE::setlocale(LC_ALL, "C"), "C");
+    EXPECT_STREQ(LIBC_NAMESPACE::nl_langinfo(CODESET), "US-ASCII");
+    EXPECT_STREQ(LIBC_NAMESPACE::setlocale(LC_ALL, "C.utf-8"), "C.UTF-8");
+    EXPECT_STREQ(LIBC_NAMESPACE::nl_langinfo(CODESET), "UTF-8");
+
+    // Test environment-driven locale resolution via setlocale(LC_ALL, "").
+    ASSERT_EQ(LIBC_NAMESPACE::setenv("LC_ALL", "C", 1), 0);
+    EXPECT_STREQ(LIBC_NAMESPACE::setlocale(LC_ALL, ""), "C");
+    EXPECT_STREQ(LIBC_NAMESPACE::nl_langinfo(CODESET), "US-ASCII");
+
+    ASSERT_EQ(LIBC_NAMESPACE::setenv("LC_ALL", "C.utf-8", 1), 0);
+    EXPECT_STREQ(LIBC_NAMESPACE::setlocale(LC_ALL, ""), "C.UTF-8");
+    EXPECT_STREQ(LIBC_NAMESPACE::nl_langinfo(CODESET), "UTF-8");
+  }
+}

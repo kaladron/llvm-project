@@ -90,6 +90,10 @@ extern locale_t global_locale;
 locale_t get_thread_locale();
 void set_thread_locale(locale_t loc);
 
+// Resolve a locale name (or environment variables when locale_name is "")
+// for the given category_mask. Returns nullptr if unsupported.
+locale_t resolve_locale(int category_mask, const char *locale_name);
+
 } // namespace LIBC_NAMESPACE_DECL
 
 #endif // LLVM_LIBC_SRC_LOCALE_LOCALE_H
