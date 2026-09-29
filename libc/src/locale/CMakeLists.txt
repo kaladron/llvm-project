@@ -1,3 +1,18 @@
+set(locale_deps
+  libc.hdr.locale_macros
+  libc.hdr.types.locale_t
+  libc.src.__support.common
+  libc.src.__support.CPP.string_view
+  libc.src.__support.macros.attributes
+  libc.src.__support.macros.config
+)
+set(locale_compile_options "")
+if(LIBC_CONF_ENABLE_RUNTIME_LOCALE AND
+    "libc.src.stdlib.getenv" IN_LIST TARGET_LLVMLIBC_ENTRYPOINTS)
+  list(APPEND locale_deps libc.src.stdlib.environ_internal)
+  list(APPEND locale_compile_options "-DLIBC_COPT_LOCALE_SUPPORT_ENVIRON")
+endif()
+
 add_object_library(
   locale
   SRCS
@@ -5,12 +20,10 @@ add_object_library(
   HDRS
     locale.h
     locale_data.h
+  COMPILE_OPTIONS
+    ${locale_compile_options}
   DEPENDS
-    libc.hdr.types.locale_t
-    libc.src.__support.common
-    libc.src.__support.CPP.string_view
-    libc.src.__support.macros.attributes
-    libc.src.__support.macros.config
+    ${locale_deps}
 )
 
 add_entrypoint_object(
@@ -36,7 +49,6 @@ add_entrypoint_object(
     libc.hdr.locale_macros
     libc.hdr.types.locale_t
     libc.src.__support.common
-    libc.src.__support.CPP.string_view
     libc.src.__support.libc_errno
     libc.src.__support.macros.config
     libc.src.errno.errno
@@ -59,8 +71,11 @@ add_entrypoint_object(
   HDRS
     setlocale.h
   DEPENDS
+    .locale
     libc.hdr.locale_macros
     libc.hdr.types.locale_t
+    libc.src.__support.common
+    libc.src.__support.macros.config
 )
 
 add_entrypoint_object(

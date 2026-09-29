@@ -15,3 +15,25 @@ add_libc_test(
     libc.src.locale.locale
     libc.test.UnitTest.ErrnoCheckingTest
 )
+
+add_libc_test(
+  nl_langinfo_locale_test
+  SUITE
+    libc-langinfo-tests
+  SRCS
+    nl_langinfo_locale_test.cpp
+  DEPENDS
+    libc.hdr.langinfo_macros
+    libc.hdr.locale_macros
+    libc.hdr.types.locale_t
+    libc.src.__support.CPP.scope
+    libc.src.langinfo.nl_langinfo
+    libc.src.langinfo.nl_langinfo_l
+    libc.src.locale.freelocale
+    libc.src.locale.locale
+    libc.src.locale.newlocale
+    libc.src.locale.setlocale
+    libc.src.locale.uselocale
+    libc.src.stdlib.setenv
+    libc.src.stdlib.unsetenv
+)

@@ -13,24 +13,35 @@
 
 #include "src/locale/setlocale.h"
 #include "hdr/locale_macros.h"
-#include "src/__support/CPP/string_view.h"
 #include "src/__support/common.h"
 #include "src/__support/macros/config.h"
+#include "src/locale/locale.h"
+#include "src/locale/locale_data.h"
 
 namespace LIBC_NAMESPACE_DECL {
 
 LLVM_LIBC_FUNCTION(char *, setlocale, (int category, const char *locale_name)) {
-  if (category > LC_ALL)
+  if (category < LC_CTYPE || category > LC_ALL)
     return nullptr;
 
-  if (locale_name != nullptr) {
-    cpp::string_view name(locale_name);
-    if (!name.empty() && name != "C")
+  locale_t effective_loc = nullptr;
+  if (!locale_name) {
+    effective_loc = (category == LC_ALL || category == LC_CTYPE)
+                        ? get_global_locale()
+                        : &c_locale;
+  } else {
+    int mask = (category == LC_ALL) ? LC_ALL_MASK : (1 << category);
+    effective_loc = resolve_locale(mask, locale_name);
+    if (!effective_loc)
       return nullptr;
+    if constexpr (ENABLE_RUNTIME_LOCALE) {
+      if (category == LC_ALL || category == LC_CTYPE)
+        set_global_locale(effective_loc);
+    }
   }
 
-  static char locale_str[] = "C";
-  return locale_str;
+  // POSIX requires a char * return type, though callers may not modify it.
+  return const_cast<char *>(effective_loc == &utf8_locale ? "C.UTF-8" : "C");
 }
 
 } // namespace LIBC_NAMESPACE_DECL

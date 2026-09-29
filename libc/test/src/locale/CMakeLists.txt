@@ -9,11 +9,33 @@ add_libc_test(
   DEPENDS
     libc.hdr.errno_macros
     libc.hdr.locale_macros
+    libc.hdr.types.locale_t
     libc.src.__support.CPP.scope
     libc.src.locale.freelocale
+    libc.src.locale.locale
     libc.src.locale.newlocale
     libc.src.locale.setlocale
     libc.src.locale.uselocale
+    libc.test.UnitTest.ErrnoCheckingTest
+)
+
+add_libc_test(
+  locale_env_test
+  SUITE
+    libc-locale-tests
+  SRCS
+    locale_env_test.cpp
+  DEPENDS
+    libc.hdr.errno_macros
+    libc.hdr.locale_macros
+    libc.hdr.types.locale_t
+    libc.src.__support.CPP.scope
+    libc.src.locale.freelocale
+    libc.src.locale.locale
+    libc.src.locale.newlocale
+    libc.src.locale.setlocale
+    libc.src.stdlib.setenv
+    libc.src.stdlib.unsetenv
     libc.test.UnitTest.ErrnoCheckingTest
 )
 
