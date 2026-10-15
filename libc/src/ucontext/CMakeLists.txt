@@ -10,6 +10,13 @@ add_entrypoint_object(
 )
 
 add_entrypoint_object(
+  makecontext
+  ALIAS
+  DEPENDS
+    .${LIBC_TARGET_ARCHITECTURE}.makecontext
+)
+
+add_entrypoint_object(
   setcontext
   ALIAS
   DEPENDS

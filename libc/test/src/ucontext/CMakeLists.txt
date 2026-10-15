@@ -8,7 +8,11 @@ if(TARGET libc.src.ucontext.getcontext)
     SRCS
       ucontext_test.cpp
     DEPENDS
+      libc.hdr.signal_macros
+      libc.hdr.stdint_proxy
+      libc.include.llvm-libc-types.ucontext_t
       libc.src.ucontext.getcontext
+      libc.src.ucontext.makecontext
       libc.src.ucontext.setcontext
       libc.src.signal.sigemptyset
       libc.src.signal.sigaddset

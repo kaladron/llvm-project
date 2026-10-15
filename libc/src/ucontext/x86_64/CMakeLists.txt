@@ -13,6 +13,21 @@ add_entrypoint_object(
 )
 
 add_entrypoint_object(
+  makecontext
+  SRCS
+    makecontext.cpp
+  HDRS
+    ../makecontext.h
+  DEPENDS
+    libc.hdr.stdint_proxy
+    libc.hdr.types.size_t
+    libc.include.llvm-libc-types.ucontext_t
+    libc.src.__support.OSUtil.osutil
+    libc.src.__support.macros.null_check
+    libc.src.ucontext.setcontext
+)
+
+add_entrypoint_object(
   setcontext
   SRCS
     setcontext.cpp
