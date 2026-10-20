@@ -3,8 +3,6 @@
 #include <cstdlib>
 #include <string>
 
-// The lexer returns [0-255] if it is an unknown character (like '+' or ';'),
-// otherwise one of these known token enumerations.
 enum Token {
   tok_eof = -1,
 
@@ -12,7 +10,7 @@ enum Token {
   tok_def = -2,
   tok_extern = -3,
 
-  // Primary tokens
+  // Primary
   tok_identifier = -4,
   tok_number = -5,
 };
@@ -20,11 +18,9 @@ enum Token {
 static std::string IdentifierStr; // Filled in if tok_identifier
 static double NumVal;             // Filled in if tok_number
 
-/// gettok - Return the next token from standard input.
 static int gettok() {
   static int LastChar = ' ';
 
-  // Skip any whitespace.
   while (isspace(LastChar))
     LastChar = getchar();
 
@@ -53,37 +49,20 @@ static int gettok() {
     return tok_number;
   }
 
-  // Recognise comments: '#' through end of line.
-  if (LastChar == '#') {
-    do
-      LastChar = getchar();
-    while (LastChar != EOF && LastChar != '\n' && LastChar != '\r');
-
-    if (LastChar != EOF)
-      return gettok();
-  }
-
-  // Check for end of file.
   if (LastChar == EOF)
     return tok_eof;
 
-  // Otherwise, return the character as its ASCII value.
   int ThisChar = LastChar;
   LastChar = getchar();
   return ThisChar;
 }
 
 int main() {
-  printf("Kaleidoscope Token Inspector\n");
+  printf("Kaleidoscope Token Inspector (Step 4: Identifiers & Keywords)\n");
   printf("Type code and press Enter (Ctrl+D to exit):\n\n");
 
-  while (true) {
-    int tok = gettok();
-    if (tok == tok_eof) {
-      printf("[EOF]\n");
-      break;
-    }
-
+  int tok;
+  while ((tok = gettok()) != tok_eof) {
     switch (tok) {
     case tok_def:
       printf("Token: KEYWORD(def)\n");
@@ -97,15 +76,12 @@ int main() {
     case tok_number:
       printf("Token: NUMBER(%f)\n", NumVal);
       break;
-    case '\n':
-    case '\r':
-      // Ignored
-      break;
     default:
       printf("Token: '%c' (ASCII %d)\n", static_cast<char>(tok), tok);
       break;
     }
   }
 
+  printf("[EOF]\n");
   return 0;
 }

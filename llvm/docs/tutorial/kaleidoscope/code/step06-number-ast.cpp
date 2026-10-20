@@ -4,8 +4,6 @@
 #include <iostream>
 #include <memory>
 #include <string>
-#include <utility>
-#include <vector>
 
 //===----------------------------------------------------------------------===//
 // Lexer
@@ -91,35 +89,6 @@ public:
   }
 };
 
-/// VariableExprAST - Expression class for referencing a variable, like "a".
-class VariableExprAST : public ExprAST {
-  std::string Name;
-
-public:
-  explicit VariableExprAST(std::string Name) : Name(std::move(Name)) {}
-
-  void print(std::ostream &OS) const override { OS << "(Var " << Name << ")"; }
-};
-
-/// CallExprAST - Expression class for function calls, like "foo(a, 2.0)".
-class CallExprAST : public ExprAST {
-  std::string Callee;
-  std::vector<std::unique_ptr<ExprAST>> Args;
-
-public:
-  CallExprAST(std::string Callee, std::vector<std::unique_ptr<ExprAST>> Args)
-      : Callee(std::move(Callee)), Args(std::move(Args)) {}
-
-  void print(std::ostream &OS) const override {
-    OS << "(Call " << Callee;
-    for (const auto &Arg : Args) {
-      OS << " ";
-      Arg->print(OS);
-    }
-    OS << ")";
-  }
-};
-
 //===----------------------------------------------------------------------===//
 // Parser
 //===----------------------------------------------------------------------===//
@@ -127,87 +96,24 @@ public:
 static int CurTok;
 static int getNextToken() { return CurTok = gettok(); }
 
-/// LogError - Helper function for error handling.
 static std::unique_ptr<ExprAST> LogError(const char *Str) {
   fprintf(stderr, "Error: %s\n", Str);
   return nullptr;
 }
 
-static std::unique_ptr<ExprAST> ParseExpression();
-
 /// numberexpr ::= number
 static std::unique_ptr<ExprAST> ParseNumberExpr() {
   auto Result = std::make_unique<NumberExprAST>(NumVal);
-  getNextToken(); // consume the number
+  getNextToken(); // consume number token
   return Result;
 }
 
-/// parenexpr ::= '(' expression ')'
-static std::unique_ptr<ExprAST> ParseParenExpr() {
-  getNextToken(); // eat '('
-  auto V = ParseExpression();
-  if (!V)
-    return nullptr;
-
-  if (CurTok != ')')
-    return LogError("expected ')'");
-  getNextToken(); // eat ')'
-  return V;
-}
-
-/// identifierexpr
-///   ::= identifier
-///   ::= identifier '(' expression* ')'
-static std::unique_ptr<ExprAST> ParseIdentifierExpr() {
-  std::string IdName = IdentifierStr;
-  getNextToken(); // eat identifier
-
-  // Simple variable ref.
-  if (CurTok != '(')
-    return std::make_unique<VariableExprAST>(IdName);
-
-  // Function call.
-  getNextToken(); // eat '('
-  std::vector<std::unique_ptr<ExprAST>> Args;
-  if (CurTok != ')') {
-    while (true) {
-      if (auto Arg = ParseExpression())
-        Args.push_back(std::move(Arg));
-      else
-        return nullptr;
-
-      if (CurTok == ')')
-        break;
-
-      if (CurTok != ',')
-        return LogError("expected ')' or ',' in argument list");
-      getNextToken(); // eat ','
-    }
-  }
-
-  getNextToken(); // eat ')'
-  return std::make_unique<CallExprAST>(IdName, std::move(Args));
-}
-
-/// primary
-///   ::= identifierexpr
-///   ::= numberexpr
-///   ::= parenexpr
-static std::unique_ptr<ExprAST> ParsePrimary() {
-  switch (CurTok) {
-  case tok_identifier:
-    return ParseIdentifierExpr();
-  case tok_number:
+/// expression ::= numberexpr
+static std::unique_ptr<ExprAST> ParseExpression() {
+  if (CurTok == tok_number)
     return ParseNumberExpr();
-  case '(':
-    return ParseParenExpr();
-  default:
-    return LogError("unknown token when expecting an expression");
-  }
+  return LogError("expected a number");
 }
-
-/// expression ::= primary
-static std::unique_ptr<ExprAST> ParseExpression() { return ParsePrimary(); }
 
 //===----------------------------------------------------------------------===//
 // Interactive Driver Loop
@@ -220,7 +126,7 @@ static void MainLoop() {
     case tok_eof:
       return;
     case ';':
-      getNextToken(); // ignore top-level semicolons
+      getNextToken();
       break;
     default:
       if (auto AST = ParseExpression()) {
@@ -228,7 +134,6 @@ static void MainLoop() {
         AST->print(std::cout);
         std::cout << "\n";
       } else {
-        // Skip token to recover
         getNextToken();
       }
       break;
@@ -237,12 +142,10 @@ static void MainLoop() {
 }
 
 int main() {
-  printf("Kaleidoscope AST Inspector (Chapter 2)\n");
-  printf("Type expressions and press Enter (Ctrl+D to exit):\n\n");
+  printf("Kaleidoscope AST Inspector (Step 2.1: Numbers)\n");
+  printf("Type a number followed by ';' and press Enter (Ctrl+D to exit):\n\n");
 
-  // Prime the first token.
   getNextToken();
-
   MainLoop();
 
   return 0;

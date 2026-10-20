@@ -8,10 +8,6 @@
 #include <utility>
 #include <vector>
 
-//===----------------------------------------------------------------------===//
-// Lexer
-//===----------------------------------------------------------------------===//
-
 enum Token {
   tok_eof = -1,
   tok_def = -2,
@@ -69,11 +65,6 @@ static int gettok() {
   return ThisChar;
 }
 
-//===----------------------------------------------------------------------===//
-// Abstract Syntax Tree (AST)
-//===----------------------------------------------------------------------===//
-
-/// ExprAST - Base class for all expression nodes.
 class ExprAST {
 public:
   virtual ~ExprAST() = default;
@@ -81,7 +72,6 @@ public:
   virtual double eval() const = 0;
 };
 
-/// NumberExprAST - Expression class for numeric literals like "1.0".
 class NumberExprAST : public ExprAST {
   double Val;
 
@@ -93,7 +83,6 @@ public:
   double eval() const override { return Val; }
 };
 
-/// VariableExprAST - Expression class for referencing a variable, like "a".
 class VariableExprAST : public ExprAST {
   std::string Name;
 
@@ -104,14 +93,13 @@ public:
 
   double eval() const override {
     fprintf(stderr,
-            "Error: variables cannot be directly evaluated yet in AST "
-            "interpreter: %s\n",
+            "Error: variables cannot be evaluated in pure C++ AST interpreter: "
+            "%s\n",
             Name.c_str());
     return 0.0;
   }
 };
 
-/// BinaryExprAST - Expression class for binary operators like "a + b".
 class BinaryExprAST : public ExprAST {
   char Op;
   std::unique_ptr<ExprAST> LHS, RHS;
@@ -154,7 +142,6 @@ public:
   }
 };
 
-/// CallExprAST - Expression class for function calls.
 class CallExprAST : public ExprAST {
   std::string Callee;
   std::vector<std::unique_ptr<ExprAST>> Args;
@@ -175,22 +162,16 @@ public:
   double eval() const override {
     fprintf(
         stderr,
-        "Error: function calls will be evaluated by LLVM JIT in Chapter 5\n");
+        "Error: function calls will be evaluated by LLVM JIT in Section 5\n");
     return 0.0;
   }
 };
 
-//===----------------------------------------------------------------------===//
-// Parser
-//===----------------------------------------------------------------------===//
-
 static int CurTok;
 static int getNextToken() { return CurTok = gettok(); }
 
-/// BinopPrecedence - Precedence table for binary operators.
 static std::map<char, int> BinopPrecedence;
 
-/// GetTokPrecedence - Get the precedence of the pending binary operator token.
 static int GetTokPrecedence() {
   if (!isascii(CurTok))
     return -1;
@@ -208,14 +189,12 @@ static std::unique_ptr<ExprAST> LogError(const char *Str) {
 
 static std::unique_ptr<ExprAST> ParseExpression();
 
-/// numberexpr ::= number
 static std::unique_ptr<ExprAST> ParseNumberExpr() {
   auto Result = std::make_unique<NumberExprAST>(NumVal);
   getNextToken();
   return Result;
 }
 
-/// parenexpr ::= '(' expression ')'
 static std::unique_ptr<ExprAST> ParseParenExpr() {
   getNextToken(); // eat '('
   auto V = ParseExpression();
@@ -228,9 +207,6 @@ static std::unique_ptr<ExprAST> ParseParenExpr() {
   return V;
 }
 
-/// identifierexpr
-///   ::= identifier
-///   ::= identifier '(' expression* ')'
 static std::unique_ptr<ExprAST> ParseIdentifierExpr() {
   std::string IdName = IdentifierStr;
   getNextToken();
@@ -260,10 +236,6 @@ static std::unique_ptr<ExprAST> ParseIdentifierExpr() {
   return std::make_unique<CallExprAST>(IdName, std::move(Args));
 }
 
-/// primary
-///   ::= identifierexpr
-///   ::= numberexpr
-///   ::= parenexpr
 static std::unique_ptr<ExprAST> ParsePrimary() {
   switch (CurTok) {
   case tok_identifier:
@@ -277,15 +249,11 @@ static std::unique_ptr<ExprAST> ParsePrimary() {
   }
 }
 
-/// binoprhs
-///   ::= ('+' primary)*
 static std::unique_ptr<ExprAST> ParseBinOpRHS(int ExprPrec,
                                               std::unique_ptr<ExprAST> LHS) {
   while (true) {
     int TokPrec = GetTokPrecedence();
 
-    // If this binary operator binds at least as tightly as the current
-    // operator, consume it; otherwise we are done.
     if (TokPrec < ExprPrec)
       return LHS;
 
@@ -296,8 +264,6 @@ static std::unique_ptr<ExprAST> ParseBinOpRHS(int ExprPrec,
     if (!RHS)
       return nullptr;
 
-    // If BinOp binds less tightly with RHS than the operator after RHS, let
-    // the pending operator take RHS as its LHS.
     int NextPrec = GetTokPrecedence();
     if (TokPrec < NextPrec) {
       RHS = ParseBinOpRHS(TokPrec + 1, std::move(RHS));
@@ -305,14 +271,11 @@ static std::unique_ptr<ExprAST> ParseBinOpRHS(int ExprPrec,
         return nullptr;
     }
 
-    // Merge LHS/RHS into a binary expression node.
     LHS = std::make_unique<BinaryExprAST>(static_cast<char>(BinOp),
                                           std::move(LHS), std::move(RHS));
   }
 }
 
-/// expression
-///   ::= primary binoprhs
 static std::unique_ptr<ExprAST> ParseExpression() {
   auto LHS = ParsePrimary();
   if (!LHS)
@@ -320,10 +283,6 @@ static std::unique_ptr<ExprAST> ParseExpression() {
 
   return ParseBinOpRHS(0, std::move(LHS));
 }
-
-//===----------------------------------------------------------------------===//
-// Interactive Driver Loop
-//===----------------------------------------------------------------------===//
 
 static void MainLoop() {
   while (true) {
@@ -349,15 +308,13 @@ static void MainLoop() {
 }
 
 int main() {
-  // Install standard binary operators.
-  // 1 is lowest precedence.
   BinopPrecedence['<'] = 10;
   BinopPrecedence['+'] = 20;
   BinopPrecedence['-'] = 20;
   BinopPrecedence['*'] = 40;
   BinopPrecedence['/'] = 40;
 
-  printf("Kaleidoscope Calculator & AST Inspector (Chapter 3)\n");
+  printf("Kaleidoscope Interactive Calculator (Step 3.4)\n");
   printf("Type math expressions followed by ';' and press Enter (Ctrl+D to "
          "exit):\n\n");
 

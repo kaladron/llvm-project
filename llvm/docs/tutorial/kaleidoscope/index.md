@@ -4,7 +4,7 @@
 
 Most compiler tutorials fail for a simple reason: they make you wait too long before anything actually runs.  They hand you hundreds of lines of disconnected code snippets, ask you to trust that it will all make sense later, and leave you staring at compiler errors when the pieces do not fit together.
 
-This tutorial takes the opposite approach.  Every chapter in this series provides complete, compilable code with immediate payoff.  Even within a single chapter, you will build in tiny increments - writing twenty or thirty lines at a time, compiling immediately, and verifying that the code works before moving forward.
+This tutorial takes the opposite approach.  You will work in a single living file, building in tiny steps of five to fifteen lines of code.  Each step takes between one and three minutes to type, compiles immediately, and gives you instant visual feedback in your terminal.
 
 By the end of this series, you will have written a complete, working programming language with an interactive REPL, an optimising JIT compiler, and an ahead-of-time code generator that produces standalone native object files.
 
@@ -70,15 +70,59 @@ If `llvm-config` is present and prints compiler flags along with library names, 
 
 ---
 
-## Chapter Roadmap
+## Tutorial Roadmap
 
-- [Chapter 1: The Lexer and Interactive Token Inspector](01-lexer.md) - Break raw text into structured tokens with a live, interactive token scanner.
-- [Chapter 2: The Abstract Syntax Tree and Tree Pretty-Printing](02-ast-and-parsing.md) - Define AST nodes for numbers and variables, and pretty-print them.
-- [Chapter 3: Binary Operators and Direct Evaluation](03-operators-and-eval.md) - Implement operator precedence climbing, and evaluate math expressions immediately in C++.
-- [Chapter 4: Generating LLVM Intermediate Representation](04-llvm-ir.md) - Emit LLVM IR for expressions using the LLVM IR builder.
-- [Chapter 5: The JIT and Native Execution](05-jit.md) - Compile LLVM IR into machine code in memory and execute it on the host CPU.
-- [Chapter 6: Functions and External Library Calls](06-functions.md) - Support function definitions, arguments, and calls to standard library functions.
-- [Chapter 7: Conditionals and Control Flow](07-control-flow.md) - Add `if/then/else` expressions using basic blocks and LLVM PHI nodes.
-- [Chapter 8: Loops and Iteration](08-loops.md) - Add iterative `for` loops in SSA form.
-- [Chapter 9: Local Variables and Mutability](09-variables.md) - Implement mutable local variables using stack allocation and memory-to-register promotion.
-- [Chapter 10: Compiling to Standalone Object Files](10-object-code.md) - Emit `.o` object files and link them into native executable binaries.
+### [Section 1: The Lexer (From Raw Text to Tokens)](01-lexer/index.md)
+- [Step 1.1: Your First Token (The 90-Second Win)](01-lexer/01-first-token.md) - A fifteen-line character echo loop running in under two minutes.
+- [Step 1.2: Skipping Whitespace](01-lexer/02-skipping-whitespace.md) - Teach the scanner to discard whitespace with character buffering.
+- [Step 1.3: Numeric Literals](01-lexer/03-numeric-literals.md) - Read multi-digit integers and floating-point decimals.
+- [Step 1.4: Identifiers and Keywords](01-lexer/04-identifiers-keywords.md) - Distinguish `def` and `extern` from variable and function names.
+- [Step 1.5: Skipping Comments](01-lexer/05-skipping-comments.md) - Discard comments starting with `#`, plus an active learning challenge.
+
+### Section 2: The Parser and AST (From Tokens to Trees)
+- Step 2.1: The Base AST and Numbers
+- Step 2.2: Parentheses and Grouping
+- Step 2.3: Variables
+- Step 2.4: Function Calls
+
+### Section 3: Operator Precedence and The Calculator
+- Step 3.1: The Binary Node
+- Step 3.2: The Precedence Table
+- Step 3.3: Precedence Climbing
+- Step 3.4: Immediate Evaluation
+
+### Section 4: Generating LLVM Intermediate Representation
+- Step 4.1: LLVM Context and Module
+- Step 4.2: Emitting Constants
+- Step 4.3: Binary Math IR
+- Step 4.4: Variable Lookups
+
+### Section 5: The JIT (Executing Native Machine Code)
+- Step 5.1: Native Target Initialisation
+- Step 5.2: Anonymous Top-Level Wrappers
+- Step 5.3: In-Memory JIT Execution
+
+### Section 6: Functions and External Library Calls
+- Step 6.1: Function Prototypes
+- Step 6.2: Function Bodies
+- Step 6.3: External C Library Calls
+
+### Section 7: Control Flow (if / then / else)
+- Step 7.1: Conditional Expressions
+- Step 7.2: Basic Blocks and Branching
+- Step 7.3: SSA PHI Nodes
+
+### Section 8: Loops and Iteration
+- Step 8.1: The `for` Loop Syntax
+- Step 8.2: Loop Basic Blocks and PHI Nodes
+- Step 8.3: Generating ASCII Patterns
+
+### Section 9: Local Variables and Mutability
+- Step 9.1: Mutable Variables and Assignment
+- Step 9.2: Stack Allocation with `alloca`
+- Step 9.3: Automatic SSA Promotion with `mem2reg`
+
+### Section 10: Compiling to Standalone Object Files
+- Step 10.1: Target Machine Configuration
+- Step 10.2: Emitting Relocatable `.o` Files
+- Step 10.3: Linking with a Native C Driver
