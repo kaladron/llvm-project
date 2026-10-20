@@ -103,28 +103,29 @@ If `llvm-config` is present and prints compiler flags along with library names, 
 - [Step 5.3: Executing Expressions](05-jit/03-executing-expressions.md) - Compile and execute top-level mathematical expressions natively in memory.
 - [Step 5.4: Functions and Library Calls](05-jit/04-functions-and-externs.md) - Call user-defined functions and external C standard library functions from the JIT REPL.
 
-### Section 6: Control Flow (if / then / else) (Upcoming)
-- Step 6.1: Conditional Expressions and Syntax
-- Step 6.2: Basic Blocks and Conditional Branching
-- Step 6.3: SSA PHI Nodes
-- Step 6.4: Recursive Fibonacci in the JIT
+### [Section 6: Control Flow (if / then / else)](06-control-flow/index.md)
+- [Step 6.1: Lexing and Parsing 'if / then / else'](06-control-flow/01-if-ast.md) - Recognise conditional keywords and build the `IfExprAST` node.
+- [Step 6.2: Basic Blocks and Branching](06-control-flow/02-basic-blocks-branching.md) - Divide code into single-entry blocks and emit conditional branches.
+- [Step 6.3: SSA PHI Nodes](06-control-flow/03-phi-nodes.md) - Merge expression values across divergent control flow paths.
+- [Step 6.4: Recursive Fibonacci in the JIT](06-control-flow/04-fibonacci-jit.md) - Run recursive control flow in your interactive JIT REPL.
 
-### Section 7: Loops and Iteration (Upcoming)
-- Step 7.1: The `for` Loop Syntax
-- Step 7.2: Loop Basic Blocks and PHI Nodes
-- Step 7.3: Printing Coordinate Patterns
+### [Section 7: Loops and Iteration](07-loops/index.md)
+- [Step 7.1: Lexing and Parsing 'for' Loops](07-loops/01-for-ast.md) - Add `for`, `=`, and `in` keywords, and parse loop syntax into `ForExprAST`.
+- [Step 7.2: Emitting Loop Basic Blocks and PHI Nodes](07-loops/02-loop-codegen.md) - Generate the preheader, loop body, counter increment, and exit blocks.
+- [Step 7.3: Terminal Graphics and Host Calls](07-loops/03-terminal-graphics.md) - Use `-rdynamic` to expose host I/O functions and draw patterns from the JIT.
 
-### Section 8: User-Defined Operators (Upcoming)
-- Step 8.1: Custom Binary Operators and Precedence
-- Step 8.2: Unary Operators
-- Step 8.3: Writing Standard Library Functions in Kaleidoscope
+### [Section 8: User-Defined Operators](08-user-defined-ops/index.md)
+- [Step 8.1: Parsing Custom Operator Prototypes](08-user-defined-ops/01-custom-operators-ast.md) - Recognise `binary` and `unary` keywords in prototypes and capture user precedence.
+- [Step 8.2: Unary Operators](08-user-defined-ops/02-unary-operators.md) - Parse prefix unary operators and emit function calls like `unary!(v)`.
+- [Step 8.3: User Binary Operators](08-user-defined-ops/03-binary-operators.md) - Dynamically update `BinopPrecedence` and emit calls to `binary<op>(LHS, RHS)`.
+- [Step 8.4: The Mandelbrot Set](08-user-defined-ops/04-mandelbrot.md) - Define standard library operators in Kaleidoscope and render the Mandelbrot fractal.
 
-### Section 9: Local Variables and Mutability (Upcoming)
-- Step 9.1: Mutable Variables and Assignment
-- Step 9.2: Stack Allocation with `alloca`
-- Step 9.3: Automatic SSA Promotion with `mem2reg`
+### [Section 9: Local Variables and Mutability](09-local-variables/index.md)
+- [Step 9.1: Stack Allocation with 'alloca'](09-local-variables/01-alloca-stack-variables.md) - Create entry block `alloca` variables, read with `load`, and write with `store`.
+- [Step 9.2: Local Variables and Assignment](09-local-variables/02-var-in-expressions.md) - Add `var / in` syntax and the assignment operator `=`.
+- [Step 9.3: Automatic SSA Promotion with 'mem2reg'](09-local-variables/03-mem2reg-optimization.md) - Run LLVM's `mem2reg` pass to eliminate memory accesses.
 
-### Section 10: Compiling to Standalone Object Files (Upcoming)
-- Step 10.1: Target Machine Configuration
-- Step 10.2: Emitting Relocatable `.o` Files
-- Step 10.3: Linking with a Native C Driver
+### [Section 10: Compiling to Standalone Object Files](10-object-files/index.md)
+- [Step 10.1: Configuring the Target Machine](10-object-files/01-target-machine.md) - Initialise target registries, query the host target triple, and configure `llvm::TargetMachine`.
+- [Step 10.2: Emitting Object Code](10-object-files/02-emitting-object-code.md) - Run LLVM's code emission passes to write a native `.o` object file to disk.
+- [Step 10.3: Linking Standalone Executables](10-object-files/03-linking-standalone-binary.md) - Write a C driver and link with `clang` to produce a standalone executable.
