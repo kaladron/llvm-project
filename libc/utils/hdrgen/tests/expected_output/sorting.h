@@ -1,10 +1,15 @@
-//===-- Standard C header <sorting.h> --===//
+//===----------------------------------------------------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
-//===---------------------------------------------------------------------===//
+//===----------------------------------------------------------------------===//
+///
+/// \file
+/// Standard C header <sorting.h>
+///
+//===----------------------------------------------------------------------===//
 
 #ifndef _LLVM_LIBC_SORTING_H
 #define _LLVM_LIBC_SORTING_H

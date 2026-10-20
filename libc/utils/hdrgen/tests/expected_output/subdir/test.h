@@ -1,10 +1,15 @@
-//===-- BSD / GNU header <subdir/test.h> --===//
+//===----------------------------------------------------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
-//===---------------------------------------------------------------------===//
+//===----------------------------------------------------------------------===//
+///
+/// \file
+/// BSD / GNU header <subdir/test.h>
+///
+//===----------------------------------------------------------------------===//
 
 #ifndef _LLVM_LIBC_SUBDIR_TEST_H
 #define _LLVM_LIBC_SUBDIR_TEST_H
