@@ -79,17 +79,17 @@ If `llvm-config` is present and prints compiler flags along with library names, 
 - [Step 1.4: Identifiers and Keywords](01-lexer/04-identifiers-keywords.md) - Distinguish `def` and `extern` from variable and function names.
 - [Step 1.5: Skipping Comments](01-lexer/05-skipping-comments.md) - Discard comments starting with `#`, plus an active learning challenge.
 
-### Section 2: The Parser and AST (From Tokens to Trees)
-- Step 2.1: The Base AST and Numbers
-- Step 2.2: Parentheses and Grouping
-- Step 2.3: Variables
-- Step 2.4: Function Calls
+### [Section 2: The Parser and AST (From Tokens to Trees)](02-parser-ast/index.md)
+- [Step 2.1: The Base AST and Numbers](02-parser-ast/01-first-ast-node.md) - Define the `ExprAST` base class, `NumberExprAST`, and parse numeric literals.
+- [Step 2.2: Parentheses and Grouping](02-parser-ast/02-parentheses.md) - Group subexpressions with parentheses and catch syntax errors.
+- [Step 2.3: Variables](02-parser-ast/03-variables.md) - Represent and parse named variable references.
+- [Step 2.4: Function Calls](02-parser-ast/04-function-calls.md) - Parse function call expressions and comma-separated argument lists.
 
-### Section 3: Operator Precedence and The Calculator
-- Step 3.1: The Binary Node
-- Step 3.2: The Precedence Table
-- Step 3.3: Precedence Climbing
-- Step 3.4: Immediate Evaluation
+### [Section 3: Operator Precedence and The Calculator](03-operators-eval/index.md)
+- [Step 3.1: The Binary AST Node](03-operators-eval/01-binary-ast.md) - Define `BinaryExprAST` with left and right child subtrees.
+- [Step 3.2: The Precedence Table](03-operators-eval/02-precedence-table.md) - Configure operator binding strengths with a lookup table.
+- [Step 3.3: Precedence Climbing](03-operators-eval/03-precedence-climbing.md) - Parse arithmetic expressions with operator precedence in eighteen lines.
+- [Step 3.4: Immediate Evaluation](03-operators-eval/04-immediate-eval.md) - Add direct tree evaluation in pure C++ and turn your parser into a live calculator.
 
 ### [Section 4: Generating LLVM Intermediate Representation](04-llvm-ir/index.md)
 - [Step 4.1: LLVM Setup and Constant IR](04-llvm-ir/01-llvm-setup.md) - Initialise the context, module, and builder, and emit numeric constants.
@@ -103,27 +103,28 @@ If `llvm-config` is present and prints compiler flags along with library names, 
 - [Step 5.3: Executing Expressions](05-jit/03-executing-expressions.md) - Compile and execute top-level mathematical expressions natively in memory.
 - [Step 5.4: Functions and Library Calls](05-jit/04-functions-and-externs.md) - Call user-defined functions and external C standard library functions from the JIT REPL.
 
-### Section 6: Functions and External Library Calls
-- Step 6.1: Function Prototypes
-- Step 6.2: Function Bodies
-- Step 6.3: External C Library Calls
+### Section 6: Control Flow (if / then / else) (Upcoming)
+- Step 6.1: Conditional Expressions and Syntax
+- Step 6.2: Basic Blocks and Conditional Branching
+- Step 6.3: SSA PHI Nodes
+- Step 6.4: Recursive Fibonacci in the JIT
 
-### Section 7: Control Flow (if / then / else)
-- Step 7.1: Conditional Expressions
-- Step 7.2: Basic Blocks and Branching
-- Step 7.3: SSA PHI Nodes
+### Section 7: Loops and Iteration (Upcoming)
+- Step 7.1: The `for` Loop Syntax
+- Step 7.2: Loop Basic Blocks and PHI Nodes
+- Step 7.3: Printing Coordinate Patterns
 
-### Section 8: Loops and Iteration
-- Step 8.1: The `for` Loop Syntax
-- Step 8.2: Loop Basic Blocks and PHI Nodes
-- Step 8.3: Generating ASCII Patterns
+### Section 8: User-Defined Operators (Upcoming)
+- Step 8.1: Custom Binary Operators and Precedence
+- Step 8.2: Unary Operators
+- Step 8.3: Writing Standard Library Functions in Kaleidoscope
 
-### Section 9: Local Variables and Mutability
+### Section 9: Local Variables and Mutability (Upcoming)
 - Step 9.1: Mutable Variables and Assignment
 - Step 9.2: Stack Allocation with `alloca`
 - Step 9.3: Automatic SSA Promotion with `mem2reg`
 
-### Section 10: Compiling to Standalone Object Files
+### Section 10: Compiling to Standalone Object Files (Upcoming)
 - Step 10.1: Target Machine Configuration
 - Step 10.2: Emitting Relocatable `.o` Files
 - Step 10.3: Linking with a Native C Driver
