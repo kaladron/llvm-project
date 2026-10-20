@@ -112,7 +112,7 @@ static void MainLoop() {
 Recompile:
 
 ```bash
-clang++ -std=c++17 -Wall -Wextra kaleidoscope.cpp -o kaleidoscope
+clang++ -Wall -Wextra kaleidoscope.cpp -o kaleidoscope
 ```
 
 Run the binary:

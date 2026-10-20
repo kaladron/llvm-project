@@ -88,7 +88,7 @@ Notice how the `do-while` loop consumes all consecutive digits and decimal point
 Recompile:
 
 ```bash
-clang++ -std=c++17 -Wall -Wextra kaleidoscope.cpp -o kaleidoscope
+clang++ -Wall -Wextra kaleidoscope.cpp -o kaleidoscope
 ```
 
 Run the binary:

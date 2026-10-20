@@ -66,7 +66,7 @@ Run the following command in your terminal:
 llvm-config --version --cxxflags --ldflags --system-libs --libs core
 ```
 
-If `llvm-config` is present and prints compiler flags along with library names, your environment is ready.  We will use Clang (`clang++`) with C++17 throughout this guide.
+If `llvm-config` is present and prints compiler flags along with library names, your environment is ready.  We will use Clang (`clang++`) throughout this guide.
 
 ---
 

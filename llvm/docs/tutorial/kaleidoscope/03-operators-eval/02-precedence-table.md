@@ -63,7 +63,7 @@ Because `*` and `/` have precedence 40 while `+` and `-` have precedence 20, mul
 Recompile your binary:
 
 ```bash
-clang++ -std=c++17 -Wall -Wextra kaleidoscope.cpp -o kaleidoscope
+clang++ -Wall -Wextra kaleidoscope.cpp -o kaleidoscope
 ```
 
 In [Step 3.3](03-precedence-climbing.md), we will write the precedence climbing algorithm that uses this table.

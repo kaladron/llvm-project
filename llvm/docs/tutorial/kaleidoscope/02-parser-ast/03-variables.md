@@ -61,7 +61,7 @@ Notice what `ParseIdentifierExpr()` does: it captures the name from `IdentifierS
 Recompile:
 
 ```bash
-clang++ -std=c++17 -Wall -Wextra kaleidoscope.cpp -o kaleidoscope
+clang++ -Wall -Wextra kaleidoscope.cpp -o kaleidoscope
 ```
 
 Run the binary:

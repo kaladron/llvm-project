@@ -30,10 +30,10 @@ int main() {
 
 ## Compiling and Running
 
-Compile the code with Clang using C++17 and standard warnings:
+Compile the code with Clang using standard warnings:
 
 ```bash
-clang++ -std=c++17 -Wall -Wextra kaleidoscope.cpp -o kaleidoscope
+clang++ -Wall -Wextra kaleidoscope.cpp -o kaleidoscope
 ```
 
 Run the binary:

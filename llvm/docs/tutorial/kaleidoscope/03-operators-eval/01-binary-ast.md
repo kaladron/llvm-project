@@ -43,7 +43,7 @@ Notice that `LHS` and `RHS` are `std::unique_ptr<ExprAST>`.  Because an expressi
 Recompile your binary:
 
 ```bash
-clang++ -std=c++17 -Wall -Wextra kaleidoscope.cpp -o kaleidoscope
+clang++ -Wall -Wextra kaleidoscope.cpp -o kaleidoscope
 ```
 
 In [Step 3.2](02-precedence-table.md), we will set up an operator precedence table to determine which operators bind first.
