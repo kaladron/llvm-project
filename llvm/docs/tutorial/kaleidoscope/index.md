@@ -91,16 +91,17 @@ If `llvm-config` is present and prints compiler flags along with library names, 
 - Step 3.3: Precedence Climbing
 - Step 3.4: Immediate Evaluation
 
-### Section 4: Generating LLVM Intermediate Representation
-- Step 4.1: LLVM Context and Module
-- Step 4.2: Emitting Constants
-- Step 4.3: Binary Math IR
-- Step 4.4: Variable Lookups
+### [Section 4: Generating LLVM Intermediate Representation](04-llvm-ir/index.md)
+- [Step 4.1: LLVM Setup and Constant IR](04-llvm-ir/01-llvm-setup.md) - Initialise the context, module, and builder, and emit numeric constants.
+- [Step 4.2: Binary Math in IR](04-llvm-ir/02-binary-ir.md) - Generate floating-point math instructions (`fadd`, `fsub`, `fmul`, `fdiv`).
+- [Step 4.3: Function Definitions](04-llvm-ir/03-functions-ir.md) - Define function prototypes, function bodies, and basic blocks.
+- [Step 4.4: Function Calls and 'extern'](04-llvm-ir/04-calls-and-extern.md) - Call user functions and declare external C standard library functions.
 
-### Section 5: The JIT (Executing Native Machine Code)
-- Step 5.1: Native Target Initialisation
-- Step 5.2: Anonymous Top-Level Wrappers
-- Step 5.3: In-Memory JIT Execution
+### [Section 5: The JIT (Executing Native Machine Code)](05-jit/index.md)
+- [Step 5.1: Native Target Initialisation](05-jit/01-target-setup.md) - Initialise the target machine for your host processor architecture.
+- [Step 5.2: The JIT Engine](05-jit/02-jit-engine.md) - Set up the `KaleidoscopeJIT` instance and configure the module data layout.
+- [Step 5.3: Executing Expressions](05-jit/03-executing-expressions.md) - Compile and execute top-level mathematical expressions natively in memory.
+- [Step 5.4: Functions and Library Calls](05-jit/04-functions-and-externs.md) - Call user-defined functions and external C standard library functions from the JIT REPL.
 
 ### Section 6: Functions and External Library Calls
 - Step 6.1: Function Prototypes
