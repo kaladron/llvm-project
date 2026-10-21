@@ -1,6 +1,6 @@
 # Section 2: The Parser and AST (From Tokens to Trees)
 
-In [Section 1](../01-lexer/index.md), you created an interactive lexer that breaks raw text into structured tokens.  Now we need to assemble those tokens into an Abstract Syntax Tree (AST).
+In [Section 1](../01-lexer/README.md), you created an interactive lexer that breaks raw text into structured tokens.  Now we need to assemble those tokens into an Abstract Syntax Tree (AST).
 
 An AST is an in-memory tree representation of your program.  Later stages of our compiler - including code generation, optimisation, and JIT compilation - traverse this tree to understand what your code computes.
 

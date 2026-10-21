@@ -1,6 +1,6 @@
 # Section 5: The JIT (Executing Native Machine Code)
 
-In [Section 4](../04-llvm-ir/index.md), you generated LLVM Intermediate Representation (IR) from your Kaleidoscope code.  However, printing text IR is not the same as executing code.
+In [Section 4](../04-llvm-ir/README.md), you generated LLVM Intermediate Representation (IR) from your Kaleidoscope code.  However, printing text IR is not the same as executing code.
 
 In this section, you will turn Kaleidoscope into a true **Just-In-Time (JIT) compiler**.  Using LLVM's modern On-Request Compilation (ORCv2) infrastructure, your compiler will take in-memory LLVM IR, compile it directly into native machine instructions for your host CPU, and execute those instructions on the bare metal.
 

@@ -97,4 +97,4 @@ GEP chains indices hierarchically: pointer $\to$ array element $\to$ struct memb
 
 ---
 
-Next: [Section 15: Source-Level Debug Information (DWARF)](../15-debug-info/index.md) - Teach your compiler how to emit debug symbols for GDB and LLDB.
+Next: [Section 15: Source-Level Debug Information (DWARF)](../15-debug-info/README.md) - Teach your compiler how to emit debug symbols for GDB and LLDB.

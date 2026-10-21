@@ -1,6 +1,6 @@
 # Section 3: Operator Precedence and The Calculator
 
-In [Section 2](../02-parser-ast/index.md), you created an Abstract Syntax Tree that parses primary expressions, parentheses, variables, and function calls.
+In [Section 2](../02-parser-ast/README.md), you created an Abstract Syntax Tree that parses primary expressions, parentheses, variables, and function calls.
 
 Now we need to parse binary operators like `+`, `-`, `*`, and `/`.  Handling binary operators is subtle because operators have different mathematical precedence.  In `1 + 2 * 3`, multiplication binds more tightly than addition.  The expression must be parsed as `1 + (2 * 3)`, not `(1 + 2) * 3`.
 

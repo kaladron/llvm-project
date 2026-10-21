@@ -87,4 +87,4 @@ Notice how clean the IR is.  Dynamic heap pointers interoperate directly with no
 
 ---
 
-Next: [Section 14: Aggregate Structs, Arrays, and GetElementPtr](../14-structs-and-gep/index.md) - Learn how LLVM represents complex data structures and computes memory offsets.
+Next: [Section 14: Aggregate Structs, Arrays, and GetElementPtr](../14-structs-and-gep/README.md) - Learn how LLVM represents complex data structures and computes memory offsets.

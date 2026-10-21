@@ -1,6 +1,6 @@
 # Section 8: User-Defined Operators
 
-In [Section 7](../07-loops/index.md), you introduced `for` loops and connected host functions to draw text patterns.  However, Kaleidoscope still lacks many common mathematical and logical operators: logical negation, logical OR, logical AND, greater-than, and sequencing.
+In [Section 7](../07-loops/README.md), you introduced `for` loops and connected host functions to draw text patterns.  However, Kaleidoscope still lacks many common mathematical and logical operators: logical negation, logical OR, logical AND, greater-than, and sequencing.
 
 Rather than hardcoding dozens of built-in operators into the lexer and parser, Kaleidoscope lets **the programmer define custom operators directly in the language**, choosing their names, arity, and binding precedence!
 

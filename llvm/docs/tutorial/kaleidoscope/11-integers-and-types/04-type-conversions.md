@@ -105,4 +105,4 @@ Notice `CreateSelect`: in LLVM, `select` is the ternary operator `cond ? trueval
 
 ---
 
-Next: [Section 12: Global Variables and Constant Strings](../12-globals-and-strings/index.md) - Learn how LLVM represents global state and string literals.
+Next: [Section 12: Global Variables and Constant Strings](../12-globals-and-strings/README.md) - Learn how LLVM represents global state and string literals.

@@ -111,4 +111,4 @@ case '>':
 
 ---
 
-Next: [Section 7: Loops and Iteration](../07-loops/index.md) - Build `for` loops in SSA form.
+Next: [Section 7: Loops and Iteration](../07-loops/README.md) - Build `for` loops in SSA form.

@@ -119,4 +119,4 @@ def triangle(n)
 
 ---
 
-Next: [Section 8: User-Defined Operators](../08-user-defined-ops/index.md) - Extend Kaleidoscope to allow custom binary and unary operators.
+Next: [Section 8: User-Defined Operators](../08-user-defined-ops/README.md) - Extend Kaleidoscope to allow custom binary and unary operators.

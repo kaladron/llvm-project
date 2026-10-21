@@ -91,4 +91,4 @@ On x86-64 System V ABI, variadic functions use a different calling convention th
 
 ---
 
-Next: [Section 13: Pointers, Indirection, and Heap Memory](../13-pointers-and-heap/index.md) - Master LLVM pointers and heap allocations with `malloc` and `free`.
+Next: [Section 13: Pointers, Indirection, and Heap Memory](../13-pointers-and-heap/README.md) - Master LLVM pointers and heap allocations with `malloc` and `free`.

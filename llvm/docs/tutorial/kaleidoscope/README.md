@@ -94,60 +94,60 @@ If `llvm-config` is present and prints compiler flags along with library names, 
 
 ## Tutorial Roadmap
 
-### [Section 1: The Lexer (From Raw Text to Tokens)](01-lexer/index.md)
+### [Section 1: The Lexer (From Raw Text to Tokens)](01-lexer/README.md)
 - [Step 1.1: What is a Token?](01-lexer/01-first-token.md) - Understand tokens as atomic syntax units and build a basic single-character scanner.
 - [Step 1.2: Skipping Whitespace](01-lexer/02-skipping-whitespace.md) - Teach the scanner to discard whitespace with character buffering.
 - [Step 1.3: Numeric Literals](01-lexer/03-numeric-literals.md) - Read multi-digit integers and floating-point decimals.
 - [Step 1.4: Identifiers and Keywords](01-lexer/04-identifiers-keywords.md) - Distinguish `def` and `extern` from variable and function names.
 - [Step 1.5: Skipping Comments](01-lexer/05-skipping-comments.md) - Discard comments starting with `#`, plus an active learning challenge.
 
-### [Section 2: The Parser and AST (From Tokens to Trees)](02-parser-ast/index.md)
+### [Section 2: The Parser and AST (From Tokens to Trees)](02-parser-ast/README.md)
 - [Step 2.1: The Base AST and Numbers](02-parser-ast/01-first-ast-node.md) - Define the `ExprAST` base class, `NumberExprAST`, and parse numeric literals.
 - [Step 2.2: Parentheses and Grouping](02-parser-ast/02-parentheses.md) - Group subexpressions with parentheses and catch syntax errors.
 - [Step 2.3: Variables](02-parser-ast/03-variables.md) - Represent and parse named variable references.
 - [Step 2.4: Function Calls](02-parser-ast/04-function-calls.md) - Parse function call expressions and comma-separated argument lists.
 
-### [Section 3: Operator Precedence and The Calculator](03-operators-eval/index.md)
+### [Section 3: Operator Precedence and The Calculator](03-operators-eval/README.md)
 - [Step 3.1: The Binary AST Node](03-operators-eval/01-binary-ast.md) - Define `BinaryExprAST` with left and right child subtrees.
 - [Step 3.2: The Precedence Table](03-operators-eval/02-precedence-table.md) - Configure operator binding strengths with a lookup table.
 - [Step 3.3: Precedence Climbing](03-operators-eval/03-precedence-climbing.md) - Parse arithmetic expressions with operator precedence in eighteen lines.
 - [Step 3.4: Immediate Evaluation](03-operators-eval/04-immediate-eval.md) - Add direct tree evaluation in pure C++ and turn your parser into a live calculator.
 
-### [Section 4: Generating LLVM Intermediate Representation](04-llvm-ir/index.md)
+### [Section 4: Generating LLVM Intermediate Representation](04-llvm-ir/README.md)
 - [Step 4.1: LLVM Setup and Constant IR](04-llvm-ir/01-llvm-setup.md) - Initialise the context, module, and builder, and emit numeric constants.
 - [Step 4.2: Binary Math in IR](04-llvm-ir/02-binary-ir.md) - Generate floating-point math instructions (`fadd`, `fsub`, `fmul`, `fdiv`).
 - [Step 4.3: Function Definitions](04-llvm-ir/03-functions-ir.md) - Define function prototypes, function bodies, and basic blocks.
 - [Step 4.4: Function Calls and 'extern'](04-llvm-ir/04-calls-and-extern.md) - Call user functions and declare external C standard library functions.
 
-### [Section 5: The JIT (Executing Native Machine Code)](05-jit/index.md)
+### [Section 5: The JIT (Executing Native Machine Code)](05-jit/README.md)
 - [Step 5.1: Native Target Initialisation](05-jit/01-target-setup.md) - Initialise the target machine for your host processor architecture.
 - [Step 5.2: The JIT Engine](05-jit/02-jit-engine.md) - Set up the `KaleidoscopeJIT` instance and configure the module data layout.
 - [Step 5.3: Executing Expressions](05-jit/03-executing-expressions.md) - Compile and execute top-level mathematical expressions natively in memory.
 - [Step 5.4: Functions and Library Calls](05-jit/04-functions-and-externs.md) - Call user-defined functions and external C standard library functions from the JIT REPL.
 
-### [Section 6: Control Flow (if / then / else)](06-control-flow/index.md)
+### [Section 6: Control Flow (if / then / else)](06-control-flow/README.md)
 - [Step 6.1: Lexing and Parsing 'if / then / else'](06-control-flow/01-if-ast.md) - Recognise conditional keywords and build the `IfExprAST` node.
 - [Step 6.2: Basic Blocks and Branching](06-control-flow/02-basic-blocks-branching.md) - Divide code into single-entry blocks and emit conditional branches.
 - [Step 6.3: SSA PHI Nodes](06-control-flow/03-phi-nodes.md) - Merge expression values across divergent control flow paths.
 - [Step 6.4: Recursive Fibonacci in the JIT](06-control-flow/04-fibonacci-jit.md) - Run recursive control flow in your interactive JIT REPL.
 
-### [Section 7: Loops and Iteration](07-loops/index.md)
+### [Section 7: Loops and Iteration](07-loops/README.md)
 - [Step 7.1: Lexing and Parsing 'for' Loops](07-loops/01-for-ast.md) - Add `for`, `=`, and `in` keywords, and parse loop syntax into `ForExprAST`.
 - [Step 7.2: Emitting Loop Basic Blocks and PHI Nodes](07-loops/02-loop-codegen.md) - Generate the preheader, loop body, counter increment, and exit blocks.
 - [Step 7.3: Terminal Graphics and Host Calls](07-loops/03-terminal-graphics.md) - Use `-rdynamic` to expose host I/O functions and draw patterns from the JIT.
 
-### [Section 8: User-Defined Operators](08-user-defined-ops/index.md)
+### [Section 8: User-Defined Operators](08-user-defined-ops/README.md)
 - [Step 8.1: Parsing Custom Operator Prototypes](08-user-defined-ops/01-custom-operators-ast.md) - Recognise `binary` and `unary` keywords in prototypes and capture user precedence.
 - [Step 8.2: Unary Operators](08-user-defined-ops/02-unary-operators.md) - Parse prefix unary operators and emit function calls like `unary!(v)`.
 - [Step 8.3: User Binary Operators](08-user-defined-ops/03-binary-operators.md) - Dynamically update `BinopPrecedence` and emit calls to `binary<op>(LHS, RHS)`.
 - [Step 8.4: The Mandelbrot Set](08-user-defined-ops/04-mandelbrot.md) - Define standard library operators in Kaleidoscope and render the Mandelbrot fractal.
 
-### [Section 9: Local Variables and Mutability](09-local-variables/index.md)
+### [Section 9: Local Variables and Mutability](09-local-variables/README.md)
 - [Step 9.1: Stack Allocation with 'alloca'](09-local-variables/01-alloca-stack-variables.md) - Create entry block `alloca` variables, read with `load`, and write with `store`.
 - [Step 9.2: Local Variables and Assignment](09-local-variables/02-var-in-expressions.md) - Add `var / in` syntax and the assignment operator `=`.
 - [Step 9.3: Automatic SSA Promotion with 'mem2reg'](09-local-variables/03-mem2reg-optimization.md) - Run LLVM's `mem2reg` pass to eliminate memory accesses.
 
-### [Section 10: Compiling to Standalone Object Files](10-object-files/index.md)
+### [Section 10: Compiling to Standalone Object Files](10-object-files/README.md)
 - [Step 10.1: Configuring the Target Machine](10-object-files/01-target-machine.md) - Initialise target registries, query the host target triple, and configure `llvm::TargetMachine`.
 - [Step 10.2: Emitting Object Code](10-object-files/02-emitting-object-code.md) - Run LLVM's code emission passes to write a native `.o` object file to disk.
 - [Step 10.3: Linking Standalone Executables](10-object-files/03-linking-standalone-binary.md) - Write a C driver and link with `clang` to produce a standalone executable.
@@ -158,33 +158,33 @@ If `llvm-config` is present and prints compiler flags along with library names, 
 
 In Part 2, you transition from a single-type toy language to core compiler engineering.  You will implement multi-type semantics, memory layouts, DWARF debugging, and custom LLVM transformation passes.
 
-### [Section 11: Primitive Types, Integers, and Casts](11-integers-and-types/index.md)
+### [Section 11: Primitive Types, Integers, and Casts](11-integers-and-types/README.md)
 - [Step 11.1: Integer Widths and Primitive Types](11-integers-and-types/01-integer-widths.md) - Define explicit types and emit integer constants.
 - [Step 11.2: Signless Registers and Integer Arithmetic](11-integers-and-types/02-signless-integers.md) - Generate integer math and understand the distinction between signed and unsigned operations.
 - [Step 11.3: Integer Comparisons with 'icmp'](11-integers-and-types/03-integer-comparisons.md) - Compare integers with `icmp slt`, `icmp ult`, and equality checks.
 - [Step 11.4: Type Conversions and Casts](11-integers-and-types/04-type-conversions.md) - Convert between integers and floating-point values with `sitofp`, `fptosi`, and bit truncation.
 
-### [Section 12: Global Variables and Constant Strings](12-globals-and-strings/index.md)
+### [Section 12: Global Variables and Constant Strings](12-globals-and-strings/README.md)
 - [Step 12.1: Emitting Global Variables](12-globals-and-strings/01-global-variables.md) - Allocate global variables in `.data` and `.bss`, and configure symbol linkage.
 - [Step 12.2: String Literals and Constant Pools](12-globals-and-strings/02-string-literals.md) - Emit null-terminated string literals into `.rodata` with `CreateGlobalString`.
 - [Step 12.3: Calling the C Standard Library](12-globals-and-strings/03-calling-clib.md) - Declare external functions with pointer arguments and call `puts` and `printf`.
 
-### [Section 13: Pointers, Indirection, and Heap Memory](13-pointers-and-heap/index.md)
+### [Section 13: Pointers, Indirection, and Heap Memory](13-pointers-and-heap/README.md)
 - [Step 13.1: Understanding LLVM Opaque Pointers](13-pointers-and-heap/01-opaque-pointers.md) - Learn how modern LLVM models memory addresses with `ptr`.
 - [Step 13.2: Address-Of and Dereferencing](13-pointers-and-heap/02-address-and-dereference.md) - Implement C-style pointer operators `&` and `*` in LLVM IR.
 - [Step 13.3: Heap Allocation with 'malloc' and 'free'](13-pointers-and-heap/03-heap-malloc-free.md) - Allocate and release dynamic heap buffers at runtime.
 
-### [Section 14: Aggregate Structs, Arrays, and GetElementPtr](14-structs-and-gep/index.md)
+### [Section 14: Aggregate Structs, Arrays, and GetElementPtr](14-structs-and-gep/README.md)
 - [Step 14.1: Struct Types and ABI DataLayout](14-structs-and-gep/01-struct-types-layout.md) - Define struct types, inspect memory sizing, and understand hardware padding.
 - [Step 14.2: Demystifying GetElementPtr](14-structs-and-gep/02-understanding-gep.md) - Understand how GEP calculates pointer addresses without accessing memory.
 - [Step 14.3: Arrays and Member Access in Practice](14-structs-and-gep/03-arrays-indexing.md) - Access struct fields and index array elements using GEP.
 
-### [Section 15: Source-Level Debug Information (DWARF)](15-debug-info/index.md)
+### [Section 15: Source-Level Debug Information (DWARF)](15-debug-info/README.md)
 - [Step 15.1: Initialising DIBuilder and Compile Units](15-debug-info/01-dibuilder-setup.md) - Set up debug files, compile units, and DWARF standards.
 - [Step 15.2: Subprograms and Instruction Locations](15-debug-info/02-subprograms-locations.md) - Attach line numbers and lexical scopes to generated instructions.
 - [Step 15.3: Stepping Through Code with LLDB](15-debug-info/03-debugging-with-lldb.md) - Compile to object code and step through source lines in a real debugger.
 
-### [Section 16: Writing a Custom LLVM Pass](16-custom-opt-pass/index.md)
+### [Section 16: Writing a Custom LLVM Pass](16-custom-opt-pass/README.md)
 - [Step 16.1: The Modern LLVM Pass Pipeline](16-custom-opt-pass/01-pass-pipeline.md) - Understand `PassInfoMixin`, analysis managers, and the new pass manager architecture.
 - [Step 16.2: Inspecting and Modifying IR](16-custom-opt-pass/02-inspecting-modifying-ir.md) - Traverse basic blocks, match instructions, and eliminate redundant operations.
 - [Step 16.3: Running Your Pass and Verifying Optimisations](16-custom-opt-pass/03-running-pass.md) - Register and execute your pass in a real optimization pipeline.

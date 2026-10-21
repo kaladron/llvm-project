@@ -73,4 +73,4 @@ Evaluated to 11.000000
 
 ---
 
-Next: [Section 10: Compiling to Standalone Object Files](../10-object-files/index.md) - Turn Kaleidoscope into an ahead-of-time (AOT) static compiler.
+Next: [Section 10: Compiling to Standalone Object Files](../10-object-files/README.md) - Turn Kaleidoscope into an ahead-of-time (AOT) static compiler.

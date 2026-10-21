@@ -66,4 +66,4 @@ Notice that the debugger stopped at the exact line number (`demo.c:6:3`) you spe
 
 ---
 
-Next: [Section 16: Writing a Custom LLVM Pass](../16-custom-opt-pass/index.md) - Build your own custom optimization pass with the modern PassManager.
+Next: [Section 16: Writing a Custom LLVM Pass](../16-custom-opt-pass/README.md) - Build your own custom optimization pass with the modern PassManager.

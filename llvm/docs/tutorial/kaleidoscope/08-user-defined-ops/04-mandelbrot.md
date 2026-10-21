@@ -115,4 +115,4 @@ Every floating-point operation, recursive function call, user-defined operator, 
 
 ---
 
-Next: [Section 9: Local Variables and Mutability](../09-local-variables/index.md) - Add mutable stack variables with `alloca` and `mem2reg`.
+Next: [Section 9: Local Variables and Mutability](../09-local-variables/README.md) - Add mutable stack variables with `alloca` and `mem2reg`.

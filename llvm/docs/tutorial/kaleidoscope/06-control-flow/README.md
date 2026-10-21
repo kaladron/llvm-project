@@ -1,6 +1,6 @@
 # Section 6: Control Flow (if / then / else)
 
-In [Section 5](../05-jit/index.md), you constructed a native Just-In-Time (JIT) compiler capable of compiling mathematical expressions and functions to machine code.  However, your language remains strictly linear.  Without conditional branching, Kaleidoscope cannot make decisions or compute recursive algorithms.
+In [Section 5](../05-jit/README.md), you constructed a native Just-In-Time (JIT) compiler capable of compiling mathematical expressions and functions to machine code.  However, your language remains strictly linear.  Without conditional branching, Kaleidoscope cannot make decisions or compute recursive algorithms.
 
 In this section, you will introduce conditional control flow to Kaleidoscope.  You will implement `if / then / else` expressions, understand LLVM basic blocks, and learn how Static Single Assignment (SSA) form merges values with PHI nodes.
 

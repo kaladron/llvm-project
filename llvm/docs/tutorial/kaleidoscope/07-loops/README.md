@@ -1,6 +1,6 @@
 # Section 7: Loops and Iteration
 
-In [Section 6](../06-control-flow/index.md), you introduced conditional branching and recursive functions to Kaleidoscope.  While recursion allows repetition, many numerical and algorithmic tasks are most naturally expressed using loops.
+In [Section 6](../06-control-flow/README.md), you introduced conditional branching and recursive functions to Kaleidoscope.  While recursion allows repetition, many numerical and algorithmic tasks are most naturally expressed using loops.
 
 In this section, you will add `for` loop expressions to Kaleidoscope.  You will learn how compilers structure loops in Static Single Assignment (SSA) form, how to use a PHI node as an iteration counter (induction variable), and how to connect native C host functions to draw text patterns directly from JIT-compiled code.
 

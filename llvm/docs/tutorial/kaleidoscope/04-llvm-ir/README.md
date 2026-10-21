@@ -1,6 +1,6 @@
 # Section 4: Generating LLVM Intermediate Representation
 
-In [Section 3](../03-operators-eval/index.md), you built an Abstract Syntax Tree (AST) with operator precedence and evaluated expressions directly in pure C++.
+In [Section 3](../03-operators-eval/README.md), you built an Abstract Syntax Tree (AST) with operator precedence and evaluated expressions directly in pure C++.
 
 Now we begin using the LLVM compiler framework.  In this section, you will translate the AST into real LLVM Intermediate Representation (IR).  LLVM IR is a universal, strongly-typed, low-level language in Static Single Assignment (SSA) form that LLVM uses to optimise code and generate machine code for any target architecture.
 
