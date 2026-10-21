@@ -65,6 +65,10 @@ Notice what happens:
 * The `while (isspace(LastChar))` loop repeatedly calls `getchar()` until it finds a non-whitespace character.
 * Once a non-whitespace character is found, we copy it to `ThisChar`, read the next character into `LastChar` for future calls, and return `ThisChar`.
 
+> [!NOTE]
+> **What `isspace()` Covers**:
+> In Step 1.1, we manually checked `c != '\n' && c != '\r'` to prevent terminal newlines from being printed as tokens.  Standard C and C++ `isspace()` checks for spaces (`' '`), tabs (`'\t'`), and newlines (`'\n'`, `'\r'`).  The `while (isspace(LastChar))` loop automatically swallows newlines alongside spaces, making our earlier manual check in `main()` redundant.
+
 ### 3. A Streamlined `main()` Loop
 
 With `gettok()` handling token extraction, your `main()` function simplifies into a clean consumer loop:

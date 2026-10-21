@@ -4,29 +4,21 @@ In this step, we add the final feature to complete our lexer: ignoring single-li
 
 ---
 
-## Comment Skipping
+## Comment Skipping Mechanics
 
-When `gettok()` encounters a `#` character, it skips all characters until it reaches a newline (`'\n'`), a carriage return (`'\r'`), or the end of the file (`EOF`).
+Single-line comments in Kaleidoscope begin with `#` and extend through the end of the line.  Because comments carry no syntactic meaning for the parser, our lexer discards comment text completely.
 
-Once the comment is consumed, `gettok()` recursively calls itself so that it returns the next valid token on the subsequent line:
+When `gettok()` encounters a `#` character, it consumes all subsequent characters until it reaches a newline (`'\n'`), a carriage return (`'\r'`), or the end of the file (`EOF`).  Once the comment line has been consumed, `gettok()` recursively calls itself to return the first meaningful token on the following line.
 
-```cpp
-  // Recognise comments: '#' through end of line.
-  if (LastChar == '#') {
-    do
-      LastChar = getchar();
-    while (LastChar != EOF && LastChar != '\n' && LastChar != '\r');
-
-    if (LastChar != EOF)
-      return gettok();
-  }
-```
+> [!NOTE]
+> **Leaving Newlines for the Scanner**:
+> Notice that the loop stops as soon as it hits `'\n'` or `'\r'`, leaving `LastChar` holding that character.  When `gettok()` calls itself recursively, the `while (isspace(LastChar))` loop at the start of `gettok()` immediately consumes that newline as whitespace and proceeds to scan the next token.
 
 ---
 
-## Adding Comment Handling
+## Incremental Code Changes
 
-Open `kaleidoscope.cpp` and insert the comment check right after the numeric literal block in `gettok()`:
+Open your `kaleidoscope.cpp` file.  Insert the comment-skipping block inside `gettok()`, directly after the numeric literal check:
 
 ```cpp
   // Recognise comments: '#' through end of line.
@@ -39,6 +31,10 @@ Open `kaleidoscope.cpp` and insert the comment check right after the numeric lit
       return gettok();
   }
 ```
+
+Notice what happens:
+* If a line contains only a comment, `gettok()` skips to the end of the line, calls itself, and retrieves the token on the next line.
+* If a file ends with a comment, `LastChar` becomes `EOF`, so `gettok()` skips the recursive call, falls through, and returns `tok_eof`.
 
 ---
 
