@@ -8,7 +8,34 @@ Understanding why opaque pointers exist and how they work is vital for anyone wr
 
 ---
 
-## 1. The Problem with Typed Pointers
+## Evolution of LLVM Pointer Types
+
+```mermaid
+flowchart LR
+    subgraph Legacy ["Legacy LLVM (Pre-15: Typed Pointers)"]
+        P1["i32*"]
+        P2["i8*"]
+        P3["double*"]
+        P1 -. "bitcast" .-> P2
+        P3 -. "bitcast" .-> P2
+    end
+
+    subgraph Modern ["Modern LLVM (Unified Opaque Pointer)"]
+        UnifiedPtr["ptr"]
+    end
+```
+
+> [!NOTE]
+> **Why LLVM Adopted Opaque Pointers**:
+> Physical CPU architectures do not distinguish pointers by pointee type; a 64-bit memory address in a CPU register is simply an address.  By shifting pointee type knowledge from the pointer type itself to the memory access instructions (`load i32, ptr %p`), LLVM eliminated millions of redundant `bitcast` instructions and significantly streamlined compiler optimisation passes.
+
+---
+
+## Incremental Code Changes
+
+Open `kaleidoscope.cpp` to work with modern LLVM pointer types.
+
+### 1. The Problem with Typed Pointers
 
 In early versions of LLVM, every pointer carried the type of the value it pointed to.  For example, `i32*` pointed to a 32-bit integer, and `i8*` pointed to a byte.
 
@@ -17,9 +44,7 @@ In practice, this caused immense friction for compilers:
 2.  **Type Mismatches in Optimisers**: Passes frequently had to unwrap layers of bitcasts to discover what memory was actually being referenced.
 3.  **Hardware Reality**: On physical CPU architectures, a memory address is just a 64-bit integer.  The hardware does not care whether an address holds a float, an int, or an instruction.
 
----
-
-## 2. How Opaque Pointers Work
+### 2. How Opaque Pointers Work
 
 With opaque pointers, **there is only one pointer type in all of LLVM**:
 
@@ -55,4 +80,4 @@ llvm::Value *Val = Builder->CreateLoad(Builder->getInt32Ty(), PtrVal, "val");
 
 ---
 
-Next: [Step 13.2: Address-Of and Dereferencing](02-address-and-dereference.md) - Implement `&` and `*` operators in your AST.
+In [Step 13.2](02-address-and-dereference.md), we will implement the address-of (`&`) and dereference (`*`) operators in our Abstract Syntax Tree.

@@ -8,7 +8,28 @@ How do these concepts map to LLVM Intermediate Representation?
 
 ---
 
-## 1. The Address-Of Operator (`&`)
+## Address-Of and Dereferencing Operations
+
+```mermaid
+flowchart LR
+    Var["Variable 'x'<br>(alloca %x in stack)"]
+    AddrOf["Address-Of: &x"] --> Var
+    PointerVal["Pointer value 'p'<br>(holds address %x)"]
+    Deref["Dereference: *p"] --> Load["load i32, ptr %p"]
+    Load --> Val["42 (Loaded Value)"]
+```
+
+> [!NOTE]
+> **Address-Of is Free in Stack-Allocated Code**:
+> Because our compiler represents mutable local variables as stack allocations (`llvm::AllocaInst*`), taking the address of a local variable (`&x`) requires emitting zero machine instructions.  The `AllocaInst` itself is already the memory address (`ptr`) where the variable is stored on the stack.
+
+---
+
+## Incremental Code Changes
+
+Open `kaleidoscope.cpp` to implement address-of and dereference codegen.
+
+### 1. The Address-Of Operator (`&`)
 
 Remember how local variables are represented in `NamedValues` from Section 9:
 
@@ -29,13 +50,11 @@ return VariableAlloca;
 
 Because variables already exist as stack pointers in the frontend, `&x` simply returns the `AllocaInst*` directly.
 
----
-
-## 2. The Dereference Operator (`*`)
+### 2. The Dereference Operator (`*`)
 
 The dereference operator behaves differently depending on whether it appears on the right-hand side (RHS, reading) or the left-hand side (LHS, writing) of an assignment.
 
-### Reading Through a Pointer (`*p`)
+#### Reading Through a Pointer (`*p`)
 To read the value referenced by a pointer, emit a `load` instruction:
 
 ```cpp
@@ -44,7 +63,7 @@ llvm::Value *LoadedVal = Builder->CreateLoad(
     PointeeType, PtrVal, "deref_val");
 ```
 
-### Writing Through a Pointer (`*p = val`)
+#### Writing Through a Pointer (`*p = val`)
 To write through a pointer, emit a `store` instruction into the target address:
 
 ```cpp
@@ -53,9 +72,7 @@ llvm::Value *ValToStore = ValueExpr->codegen();
 Builder->CreateStore(ValToStore, PtrVal);
 ```
 
----
-
-## 3. Multi-Level Pointers (`int **`)
+### 3. Multi-Level Pointers (`int **`)
 
 Consider a pointer to a pointer:
 
@@ -78,4 +95,4 @@ In LLVM IR, each dereference is simply another `load` instruction:
 
 ---
 
-Next: [Step 13.3: Heap Allocation with 'malloc' and 'free'](03-heap-malloc-free.md) - Allocate dynamic memory on the heap.
+In [Step 13.3](03-heap-malloc-free.md), we will allocate and free dynamic heap memory using standard runtime library functions.
