@@ -108,7 +108,17 @@ Notice what `ParseNumberExpr()` does: it takes `NumVal` (populated by our lexer)
 
 ### 4. The Interactive AST REPL
 
-Replace your old token-testing `main()` function with an interactive driver loop that parses expressions and prints their syntax trees:
+In Section 1, our test loop printed each token individually as soon as you pressed Enter.  Now that we are parsing complete expressions, our parser needs to know where an expression ends so it can finish assembling the syntax tree and report the result.
+
+Kaleidoscope uses semicolons (`;`) as top-level expression delimiters (`top ::= expression ';'`).
+
+> [!TIP]
+> **Top-Level Semicolons are Required**:
+> In Section 1, the lexer emitted tokens immediately upon pressing Enter.  Now that we are parsing structured grammar expressions, the parser needs an explicit delimiter to recognise that an expression is complete.
+> 
+> Always terminate your interactive inputs with a semicolon (for example, `42;`).  If you omit the semicolon, the parser assumes the expression is still continuing and will pause waiting for subsequent tokens or operators before building the tree.
+
+Replace your old token-testing `main()` function with an interactive driver loop:
 
 ```cpp
 //===----------------------------------------------------------------------===//
@@ -117,12 +127,12 @@ Replace your old token-testing `main()` function with an interactive driver loop
 
 static void MainLoop() {
   while (true) {
-    fprintf(stderr, "ready> ");
     switch (CurTok) {
     case tok_eof:
       return;
-    case ';':
-      getNextToken(); // ignore top-level semicolons
+    case ';': // ignore top-level semicolons
+      fprintf(stderr, "ready> ");
+      getNextToken();
       break;
     default:
       if (auto AST = ParseExpression()) {
@@ -141,12 +151,18 @@ int main() {
   printf("Kaleidoscope AST Inspector (Step 2.1: Numbers)\n");
   printf("Type a number followed by ';' and press Enter (Ctrl+D to exit):\n\n");
 
-  getNextToken(); // prime the first token
-  MainLoop();
+  // Prime the first token.
+  fprintf(stderr, "ready> ");
+  getNextToken();
 
+  MainLoop();
   return 0;
 }
 ```
+
+Notice how the prompt and input loop interact:
+* In `main()`, we display the initial `ready> ` prompt and call `getNextToken()` to prime `CurTok` with the first token of input before `MainLoop()` begins.
+* Inside `MainLoop()`, when a top-level semicolon is encountered (`case ';':`), we print `ready> ` and call `getNextToken()` to consume the semicolon and wait for your next command.
 
 ---
 
@@ -285,11 +301,11 @@ static std::unique_ptr<ExprAST> ParseExpression() {
 
 static void MainLoop() {
   while (true) {
-    fprintf(stderr, "ready> ");
     switch (CurTok) {
     case tok_eof:
       return;
     case ';':
+      fprintf(stderr, "ready> ");
       getNextToken();
       break;
     default:
@@ -309,6 +325,8 @@ int main() {
   printf("Kaleidoscope AST Inspector (Step 2.1: Numbers)\n");
   printf("Type a number followed by ';' and press Enter (Ctrl+D to exit):\n\n");
 
+  // Prime the first token.
+  fprintf(stderr, "ready> ");
   getNextToken();
   MainLoop();
 

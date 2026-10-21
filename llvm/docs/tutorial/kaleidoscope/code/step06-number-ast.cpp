@@ -125,11 +125,11 @@ static std::unique_ptr<ExprAST> ParseExpression() {
 
 static void MainLoop() {
   while (true) {
-    fprintf(stderr, "ready> ");
     switch (CurTok) {
     case tok_eof:
       return;
     case ';':
+      fprintf(stderr, "ready> ");
       getNextToken();
       break;
     default:
@@ -149,6 +149,8 @@ int main() {
   printf("Kaleidoscope AST Inspector (Step 2.1: Numbers)\n");
   printf("Type a number followed by ';' and press Enter (Ctrl+D to exit):\n\n");
 
+  // Prime the first token.
+  fprintf(stderr, "ready> ");
   getNextToken();
   MainLoop();
 
