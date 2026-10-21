@@ -6,6 +6,8 @@ Most compiler tutorials fail for a simple reason: they make you wait too long be
 
 This tutorial takes the opposite approach.  You will work in a single living file, building in tiny steps of five to fifteen lines of code.  Each step takes between one and three minutes to type, compiles immediately, and gives you instant visual feedback in your terminal.
 
+Furthermore, genuine learning requires actively producing code rather than passively reading it.  Throughout this guide, we will progressively hand over responsibility to you: starting with clear scaffolding, and gradually guiding you to write functions and compiler extensions yourself.  Reference solutions and implementations are placed under collapsible folds so that you can stretch, experiment, and prove your own understanding before verifying your work.
+
 By the end of this series, you will have written a complete, working programming language with an interactive REPL, an optimising JIT compiler, and an ahead-of-time code generator that produces standalone native object files.
 
 ---
@@ -19,7 +21,27 @@ To get the most out of this tutorial, commit to two rules:
 1.  **Type everything by hand.**  Do not copy and paste blocks of code from the browser into your editor.  Typing code forces your eyes to scan every token, helps build muscle memory for compiler data structures, and forces you to confront syntax errors when you make a typo.
 2.  **No LLMs.**  Do not paste these chapters into a large language model to generate the code for you.  Using a code generator robs you of the specific friction that produces learning.  When you encounter a compiler error or an unexpected assertion failure, read the diagnostic, inspect the state of your AST or token stream, and track it down yourself.
 
-Throughout the tutorial, we will provide guided challenges where you add features to the language yourself.  Reference solutions are provided under expandable folds so that you can check your work after attempting the implementation.
+---
+
+## Choosing Your Learning Milestone (Where to Stop)
+
+Not every developer needs to complete all sixteen sections.  You can reasonably stop at several natural milestones depending on what you wish to learn:
+
+### Milestone 1: Frontends, Parsing, and ASTs (End of Section 3)
+* **Target Audience**: Developers interested in lexical analysis, Abstract Syntax Tree representation, and recursive-descent parsing with operator precedence climbing, without touching machine code.
+* **Outcome**: A self-contained, pure C++ AST-based calculator that evaluates mathematical expressions with correct operator precedence.
+
+### Milestone 2: Interactive JIT Compilers (End of Section 5 or Section 8)
+* **Target Audience**: Language designers interested in building interactive scripting engines, domain-specific languages (DSLs), or Just-In-Time execution engines.
+* **Outcome**: By Section 5, you have an interactive REPL executing native machine code in memory using LLVM ORCv2.  By Section 8, you have added control flow, loops, and user-defined operators rendering the Mandelbrot fractal.
+
+### Milestone 3: Classical Static Ahead-Of-Time Compilers (End of Section 10)
+* **Target Audience**: Engineers building standalone compiled languages (like C, Go, or Rust) that emit relocatable `.o` object files and link with native C drivers into executables.
+* **Outcome**: The complete Kaleidoscope 101 curriculum, compiling raw source text into independent executable binaries.
+
+### Milestone 4: Systems Programming and Core LLVM (End of Section 16)
+* **Target Audience**: Developers preparing to contribute to core LLVM or build production-grade systems languages.
+* **Outcome**: The Kaleidoscope 201 curriculum, covering integer signedness, constant pools, opaque pointers (`ptr`), heap allocators, aggregate structs, `GetElementPtr` address math, DWARF debug information, and custom optimization passes.
 
 ---
 
