@@ -188,14 +188,18 @@ The complete reference implementation for this section is available in [code/ste
 
 enum Token {
   tok_eof = -1,
-  tok_def = -2,
-  tok_extern = -3,
-  tok_identifier = -4,
-  tok_number = -5,
-  tok_int_literal = -6,
-  tok_type_int = -7,
-  tok_type_double = -8,
-  tok_type_bool = -9,
+
+  // Commands / Keywords
+  tok_def = -100,
+  tok_extern = -101,
+  tok_type_int = -102,
+  tok_type_double = -103,
+  tok_type_bool = -104,
+
+  // Primary
+  tok_identifier = -200,
+  tok_number = -201,
+  tok_int_literal = -202,
 };
 
 static std::string IdentifierStr;

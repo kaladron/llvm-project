@@ -38,18 +38,22 @@ extern "C" double printd(double X) {
 
 enum Token {
   tok_eof = -1,
-  tok_def = -2,
-  tok_extern = -3,
-  tok_identifier = -4,
-  tok_number = -5,
-  tok_if = -6,
-  tok_then = -7,
-  tok_else = -8,
-  tok_for = -9,
-  tok_in = -10,
-  tok_binary = -11,
-  tok_unary = -12,
-  tok_var = -13,
+
+  // Commands / Keywords
+  tok_def = -100,
+  tok_extern = -101,
+  tok_if = -102,
+  tok_then = -103,
+  tok_else = -104,
+  tok_for = -105,
+  tok_in = -106,
+  tok_binary = -107,
+  tok_unary = -108,
+  tok_var = -109,
+
+  // Primary
+  tok_identifier = -200,
+  tok_number = -201,
 };
 
 static std::string IdentifierStr;

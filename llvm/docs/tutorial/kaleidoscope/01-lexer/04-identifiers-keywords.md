@@ -23,19 +23,25 @@ Open your `kaleidoscope.cpp` file.  You will build upon the code you wrote in St
 
 ### 1. Token Codes and IdentifierStr
 
-Update your `enum Token` to add codes for keywords and identifiers, and declare `IdentifierStr` directly above `NumVal`:
+Update your `enum Token` to separate token categories into distinct numeric ranges:
+* Commands and keywords start at `-100` (`tok_def = -100`, `tok_extern = -101`).
+* Primary expressions start at `-200` (`tok_identifier = -200`, `tok_number = -201`).
+
+Splitting these categories numerically means that whenever you add new keywords to your language later (such as `if` or `for`), you can simply increment within the keyword range without shifting or renumbering other tokens.
+
+Declare `IdentifierStr` directly above `NumVal`:
 
 ```cpp
 enum Token {
   tok_eof = -1,
 
   // Commands / Keywords
-  tok_def = -2,
-  tok_extern = -3,
+  tok_def = -100,
+  tok_extern = -101,
 
   // Primary
-  tok_identifier = -4,
-  tok_number = -5,
+  tok_identifier = -200,
+  tok_number = -201,
 };
 
 static std::string IdentifierStr; // Filled in if tok_identifier
@@ -121,12 +127,12 @@ enum Token {
   tok_eof = -1,
 
   // Commands / Keywords
-  tok_def = -2,
-  tok_extern = -3,
+  tok_def = -100,
+  tok_extern = -101,
 
   // Primary
-  tok_identifier = -4,
-  tok_number = -5,
+  tok_identifier = -200,
+  tok_number = -201,
 };
 
 static std::string IdentifierStr; // Filled in if tok_identifier

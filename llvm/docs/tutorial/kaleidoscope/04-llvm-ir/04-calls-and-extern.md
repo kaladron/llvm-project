@@ -147,10 +147,14 @@ Before compiling, verify your complete `kaleidoscope.cpp` implementation against
 
 enum Token {
   tok_eof = -1,
-  tok_def = -2,
-  tok_extern = -3,
-  tok_identifier = -4,
-  tok_number = -5,
+
+  // Commands / Keywords
+  tok_def = -100,
+  tok_extern = -101,
+
+  // Primary
+  tok_identifier = -200,
+  tok_number = -201,
 };
 
 static std::string IdentifierStr;

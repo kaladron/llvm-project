@@ -55,12 +55,12 @@ enum Token {
   tok_eof = -1,
 
   // Commands / Keywords
-  tok_def = -2,
-  tok_extern = -3,
+  tok_def = -100,
+  tok_extern = -101,
 
   // Primary
-  tok_identifier = -4,
-  tok_number = -5,
+  tok_identifier = -200,
+  tok_number = -201,
 };
 
 static std::string IdentifierStr; // Filled in if tok_identifier
@@ -193,9 +193,11 @@ if x < 3 then 1 else 2;
 ```
 
 Modify your `kaleidoscope.cpp` to recognise three new keywords:
-1.  `if` (returning `tok_if`)
-2.  `then` (returning `tok_then`)
-3.  `else` (returning `tok_else`)
+1.  `if` (returning `tok_if = -102`)
+2.  `then` (returning `tok_then = -103`)
+3.  `else` (returning `tok_else = -104`)
+
+Because we separated keywords (starting at `-100`) from primary expressions (starting at `-200`) in Step 1.4, you can simply append these new keywords to your Commands and Keywords group without renumbering or displacing any other tokens.
 
 ### Testing Your Changes
 
@@ -222,13 +224,17 @@ Here are the required changes:
 ```cpp
 enum Token {
   tok_eof = -1,
-  tok_def = -2,
-  tok_extern = -3,
-  tok_identifier = -4,
-  tok_number = -5,
-  tok_if = -6,
-  tok_then = -7,
-  tok_else = -8,
+
+  // Commands / Keywords
+  tok_def = -100,
+  tok_extern = -101,
+  tok_if = -102,
+  tok_then = -103,
+  tok_else = -104,
+
+  // Primary
+  tok_identifier = -200,
+  tok_number = -201,
 };
 ```
 
