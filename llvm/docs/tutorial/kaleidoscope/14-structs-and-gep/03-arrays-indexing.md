@@ -4,7 +4,26 @@ Now that you understand the dual-index mechanics of `getelementptr`, you can com
 
 ---
 
-## 1. Array Types in LLVM
+## Hierarchical Indexing Architecture
+
+```mermaid
+flowchart LR
+    ArrayBase["points: [10 x %Point]"] --> GEP["CreateGEP(ArrayOfPointsTy, Base, {0, i, 1})"]
+    GEP --> FieldY["points[i].y (ptr)"]
+    FieldY --> LoadVal["load double, ptr %y_ptr"]
+```
+
+> [!NOTE]
+> **Decayed Pointers vs. Array Allocations**:
+> Notice the difference between indexing a stack array allocation `[10 x i32]` and indexing a decayed pointer argument `ptr %arr`.  When indexing an allocated array `[10 x i32]`, two indices are required (`{0, i}`) because the pointer points to the array itself.  When indexing a decayed pointer `ptr %arr` where the element type is specified as `i32`, only a single index (`i`) is needed.
+
+---
+
+## Incremental Code Changes
+
+Open `kaleidoscope.cpp` to create arrays and perform member access.
+
+### 1. Array Types in LLVM
 
 To define a fixed-size array type in LLVM, use `llvm::ArrayType::get`:
 
@@ -19,9 +38,7 @@ To allocate this array on the stack:
 llvm::AllocaInst *ArrayAlloca = Builder->CreateAlloca(Array10Ty, nullptr, "my_array");
 ```
 
----
-
-## 2. Indexing an Array with GEP
+### 2. Indexing an Array with GEP
 
 To compute a pointer to element `i` of your stack-allocated array (`&my_array[i]`):
 
@@ -65,7 +82,77 @@ entry:
 }
 ```
 
-Notice the second function: when indexing a raw pointer `ptr %arr` (decayed array pointer), GEP only needs **one index** because the element type is specified directly as `i32`!
+Notice the second function: when indexing a raw pointer `ptr %arr` (decayed array pointer), GEP only needs **one index** because the element type is specified directly as `i32`.
+
+---
+
+## Full Working Example
+
+The complete reference implementation for this section is available in [code/step38-structs-gep.cpp](../code/step38-structs-gep.cpp).
+
+<details>
+<summary><b>Expand to view complete code (step38-structs-gep.cpp)</b></summary>
+
+```cpp
+#include "llvm/IR/BasicBlock.h"
+#include "llvm/IR/Constants.h"
+#include "llvm/IR/DataLayout.h"
+#include "llvm/IR/DerivedTypes.h"
+#include "llvm/IR/Function.h"
+#include "llvm/IR/IRBuilder.h"
+#include "llvm/IR/Instructions.h"
+#include "llvm/IR/LLVMContext.h"
+#include "llvm/IR/Module.h"
+#include "llvm/IR/Type.h"
+#include "llvm/IR/Verifier.h"
+#include "llvm/Support/raw_ostream.h"
+
+#include <cstdio>
+#include <memory>
+
+int main() {
+  auto Context = std::make_unique<llvm::LLVMContext>();
+  auto Module = std::make_unique<llvm::Module>("struct_gep_demo", *Context);
+  auto Builder = std::make_unique<llvm::IRBuilder<>>(*Context);
+
+  llvm::Type *I32Ty = llvm::Type::getInt32Ty(*Context);
+  llvm::Type *DoubleTy = llvm::Type::getDoubleTy(*Context);
+  llvm::Type *PtrTy = llvm::PointerType::get(*Context, 0);
+
+  // Define struct Point { int32_t x; double y; };
+  llvm::StructType *PointTy =
+      llvm::StructType::create(*Context, {I32Ty, DoubleTy}, "Point");
+
+  // Inspect DataLayout sizing and alignment
+  const llvm::DataLayout &DL = Module->getDataLayout();
+  uint64_t StructSize = DL.getTypeAllocSize(PointTy);
+  llvm::Align StructAlign = DL.getABITypeAlign(PointTy);
+  fprintf(stderr, "Struct Point size: %lu bytes, align: %u bytes\n", StructSize,
+          (unsigned)StructAlign.value());
+
+  // Function: double get_point_y(Point *p)
+  llvm::FunctionType *FT = llvm::FunctionType::get(DoubleTy, {PtrTy}, false);
+  llvm::Function *F = llvm::Function::Create(
+      FT, llvm::Function::ExternalLinkage, "get_point_y", Module.get());
+
+  llvm::Value *PtrArg = F->arg_begin();
+  PtrArg->setName("p");
+
+  llvm::BasicBlock *BB = llvm::BasicBlock::Create(*Context, "entry", F);
+  Builder->SetInsertPoint(BB);
+
+  // Compute GEP to field 1 (y): gep Point, ptr %p, i32 0, i32 1
+  llvm::Value *YPtr = Builder->CreateStructGEP(PointTy, PtrArg, 1, "y_ptr");
+  llvm::Value *YVal = Builder->CreateLoad(DoubleTy, YPtr, "y_val");
+
+  Builder->CreateRet(YVal);
+
+  llvm::verifyFunction(*F);
+  Module->print(llvm::errs(), nullptr);
+  return 0;
+}
+```
+</details>
 
 ---
 
@@ -97,4 +184,4 @@ GEP chains indices hierarchically: pointer $\to$ array element $\to$ struct memb
 
 ---
 
-Next: [Section 15: Source-Level Debug Information (DWARF)](../15-debug-info/README.md) - Teach your compiler how to emit debug symbols for GDB and LLDB.
+In [Section 15](../15-debug-info/README.md), we will teach our compiler how to emit DWARF debug information for source-level debugging in GDB and LLDB.

@@ -6,6 +6,21 @@ It does not.
 
 ---
 
+## The Dual-Index Mechanics of GEP
+
+```mermaid
+flowchart LR
+    BasePtr["Base ptr %p"] --> Idx0["Index 0: Through the pointer<br>(%p + 0 * sizeof(Point))"]
+    Idx0 --> Idx1["Index 1: Into the struct<br>(Field 1: offset +8 bytes for 'y')"]
+    Idx1 --> OutPtr["Result ptr %y_ptr<br>(Direct address of member 'y')"]
+```
+
+> [!IMPORTANT]
+> **Understanding the Leading Zero in GEP**:
+> The first index always indexes through the base pointer.  Because in C and LLVM any pointer `p` can represent an array of elements (`p[0]`, `p[1]`, ...), the first index specifies which element of the array is selected.  Only subsequent indices navigate into the internal members or sub-elements of that element.
+
+---
+
 ## The Golden Rule of GEP
 
 > **`getelementptr` NEVER accesses memory.**
@@ -16,7 +31,11 @@ GEP does not read from memory (`load`).  It does not write to memory (`store`).
 
 ---
 
-## The Mystery of the First Index
+## Incremental Code Changes
+
+Open `kaleidoscope.cpp` to emit GEP address calculations.
+
+### 1. The Mystery of the First Index
 
 Consider accessing member `y` of a pointer to a struct in C:
 
@@ -33,7 +52,7 @@ In LLVM IR, the GEP instruction looks like this:
 
 Why are there **two** indices (`0` and `1`) when we only asked for the second field (`y`)?
 
-This confuses almost every beginner.  Here is the reason:
+Here is the reason:
 
 1.  **The First Index (`0`) indexes through the pointer**:
     In C, any pointer `p` can be treated as an array of structs (`p[0]`, `p[1]`, `p[2]`).  The first index specifies **which struct in the array** you are indexing into.  Index `0` means: stay at the struct pointed to by `%p` ($p + 0 \times \text{sizeof}(\text{Point})$).
@@ -46,9 +65,7 @@ If you were writing `p[3].y` in C, the GEP instruction would be:
 %y_ptr = getelementptr inbounds %Point, ptr %p, i32 3, i32 1
 ```
 
----
-
-## Using `CreateStructGEP`
+### 2. Using `CreateStructGEP`
 
 Because accessing a field inside a struct is such a common pattern, `IRBuilder` provides a dedicated helper that automatically supplies the leading `0` index:
 
@@ -57,9 +74,7 @@ Because accessing a field inside a struct is such a common pattern, `IRBuilder` 
 llvm::Value *YPtr = Builder->CreateStructGEP(PointTy, PtrVal, 1, "y_ptr");
 ```
 
----
-
-## What Does `inbounds` Mean?
+### 3. What Does `inbounds` Mean?
 
 You will notice the `inbounds` keyword on most GEP instructions:
 
@@ -73,4 +88,4 @@ This allows LLVM to perform aggressive loop vectorisation and alias analysis opt
 
 ---
 
-Next: [Step 14.3: Arrays and Member Access in Practice](03-arrays-indexing.md) - Work with arrays and structs in compiled code.
+In [Step 14.3](03-arrays-indexing.md), we will work with arrays and structs in compiled code.

@@ -1,8 +1,28 @@
 # Section 14: Aggregate Structs, Arrays, and GetElementPtr
 
-In Section 13, you learned how LLVM models pointers and allocates memory on the stack and heap.  However, real programs rarely allocate solitary integers or doubles in isolation.  They organize data into **records, structs, and arrays**.
+In Section 13, you learned how LLVM models pointers and allocates memory on the stack and heap.  However, real programs rarely allocate solitary integers or doubles in isolation.  They organise data into **records, structs, and arrays**.
+
+Welcome to **Kaleidoscope 201: Systems Programming and Core LLVM**.
 
 In this section, you will learn how LLVM represents composite data structures using `llvm::StructType` and `llvm::ArrayType`.  You will discover how LLVM's `DataLayout` calculates ABI alignment and padding, and you will master **`GetElementPtr` (GEP)**: the single most important, and most frequently misunderstood, instruction in the LLVM instruction set.
+
+---
+
+## Struct Layout and Memory Alignment
+
+```mermaid
+flowchart LR
+    subgraph MemoryLayout ["struct Point Memory Geometry (16 bytes total)"]
+        X["x: i32<br>(Bytes 0-3)"]
+        Pad["[Alignment Padding]<br>(Bytes 4-7)"]
+        Y["y: double<br>(Bytes 8-15)"]
+        X --- Pad --- Y
+    end
+```
+
+> [!IMPORTANT]
+> **The Golden Rule of GEP**:
+> The `getelementptr` instruction NEVER accesses memory.  It performs no loads and no stores.  GEP is an address arithmetic instruction that computes a target pointer from a base pointer and type offsets.
 
 ---
 

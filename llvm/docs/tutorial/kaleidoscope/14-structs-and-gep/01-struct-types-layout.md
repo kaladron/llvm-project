@@ -6,7 +6,29 @@ In LLVM IR, composite record types are represented by **`llvm::StructType`**.
 
 ---
 
-## 1. Creating a Named Struct Type
+## Memory Padding and Alignment
+
+```mermaid
+flowchart TD
+    subgraph Standard ["Standard Struct: %Point = type { i32, double } (16 bytes)"]
+        S1["x: i32 (4 bytes)"] --- S2["Padding (4 bytes)"] --- S3["y: double (8 bytes)"]
+    end
+    subgraph Packed ["Packed Struct: %PackedPoint = type <{ i32, double }> (12 bytes)"]
+        P1["x: i32 (4 bytes)"] --- P2["y: double (8 bytes)"]
+    end
+```
+
+> [!NOTE]
+> **Always Consult DataLayout**:
+> Never calculate struct member offsets by adding byte sizes manually in frontend compiler code.  Target architectures have varying ABI rules for field alignments and tail padding.  Always query `Module->getDataLayout()` to obtain target-accurate struct sizing and member offsets.
+
+---
+
+## Incremental Code Changes
+
+Open `kaleidoscope.cpp` to define struct types and query target layouts.
+
+### 1. Creating a Named Struct Type
 
 To define a struct type, provide the element types to `llvm::StructType::create`:
 
@@ -27,9 +49,7 @@ In LLVM IR, this definition appears at module scope as:
 %Point = type { i32, double }
 ```
 
----
-
-## 2. Hardware Alignment and Padding
+### 2. Hardware Alignment and Padding
 
 How many bytes does `%Point = type { i32, double }` occupy in memory?
 
@@ -40,9 +60,7 @@ Naive math suggests $4 + 8 = 12$ bytes.  However, on standard modern architectur
 
 To ensure `y` is 8-byte aligned, the compiler must insert **4 bytes of invisible padding** between `x` and `y`.  Therefore, the actual allocated size of `Point` is **16 bytes**.
 
----
-
-## 3. Querying `DataLayout`
+### 3. Querying `DataLayout`
 
 Never hardcode struct sizes or offsets in a compiler.  Always ask LLVM's **`DataLayout`**:
 
@@ -61,9 +79,7 @@ fprintf(stderr, "Size: %lu bytes, Alignment: %u bytes\n",
 
 `DataLayout` computes exact sizes, field offsets, and alignments according to the target platform's Application Binary Interface (ABI).
 
----
-
-## 4. Packed Structs
+### 4. Packed Structs
 
 If you require a struct without padding (for example, parsing a binary file header or network packet), create a **packed struct**:
 
@@ -82,4 +98,4 @@ Packed structs have a size of exactly 12 bytes, but may incur significant perfor
 
 ---
 
-Next: [Step 14.2: Demystifying GetElementPtr](02-understanding-gep.md) - Learn how GEP computes memory addresses without accessing memory.
+In [Step 14.2](02-understanding-gep.md), we will learn how `getelementptr` computes field addresses without touching memory.
