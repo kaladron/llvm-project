@@ -1,6 +1,6 @@
 # Step 6.2: Basic Blocks and Branching
 
-In previous sections, your functions consisted of a single sequence of instructions executed straight through from top to bottom.  To implement decisions, your compiler must jump between different paths.  In LLVM IR, control flow is structured with **Basic Blocks**.
+In previous sections, your functions consisted of a single linear sequence of instructions executed straight through from top to bottom.  To implement decisions, your compiler must jump between different paths.  In LLVM IR, control flow is structured using **Basic Blocks**.
 
 ---
 
@@ -9,37 +9,40 @@ In previous sections, your functions consisted of a single sequence of instructi
 A `BasicBlock` is a sequence of LLVM instructions with two fundamental properties:
 
 1.  **Single Entry**: Execution always starts at the first instruction.  No instruction inside the block can be jumped into from the outside.
-2.  **Single Exit**: Execution always proceeds to the end of the block.  The final instruction in every basic block **must** be a **terminator instruction** (such as a branch `br` or return `ret`).
+2.  **Single Exit**: Execution always proceeds to the end of the block.  The final instruction in every basic block **must** be a **terminator instruction** (such as an unconditional branch `br`, a conditional branch `br i1`, or a return `ret`).
 
-Because basic blocks cannot contain internal branches, compilers can easily analyse and optimise them as indivisible units.
+Because basic blocks cannot contain internal branches, compilers can analyse and optimise them as indivisible units.
+
+> [!WARNING]
+> **Strict Block Termination Rules**:
+> In LLVM IR, every basic block must have exactly one terminator instruction at the end, and no instructions may appear after the terminator.  A common bug in compiler frontends is forgetting to emit a terminator before moving to the next block, or continuing to insert instructions into a block that has already been terminated.
 
 ---
 
 ## The Control Flow Graph for 'if / then / else'
 
-An `if / then / else` expression splits control flow into three basic blocks:
+An `if / then / else` expression splits control flow into distinct paths before merging:
 
-1.  **`then` Block**: Executed only if the condition evaluates to true (non-zero).
-2.  **`else` Block**: Executed only if the condition evaluates to false (zero).
-3.  **`ifcont` (Merge) Block**: Where both branches converge after completing their computations.
+```mermaid
+flowchart TD
+    Current["Current Block<br>compute condition Cond->codegen()<br>fcmp one double %cond, 0.0"]
+    Current -->|true| ThenBB["then block<br>compute Then->codegen()<br>br label %ifcont"]
+    Current -->|false| ElseBB["else block<br>compute Else->codegen()<br>br label %ifcont"]
+    ThenBB --> MergeBB["ifcont block (merge)<br>phi double [%then_val, %then], [%else_val, %else]"]
+    ElseBB --> MergeBB
+```
 
-```
-       [ Current Block ]
-       (compute condition)
-          /         \
-   (true)/           \(false)
-        v             v
-   [ then ]        [ else ]
-   (compute)       (compute)
-        \             /
-         \           /
-          v         v
-        [ ifcont (merge) ]
-```
+> [!NOTE]
+> **Tracking Dynamic Block Insertion Points**:
+> Why must we update `ThenBB = Builder->GetInsertBlock();` and `ElseBB = Builder->GetInsertBlock();` after generating code for the branch bodies?  Because the expression inside `then` or `else` might itself contain nested `if` expressions or loops!  If nested control flow creates additional basic blocks, the block that ends up branching to `MergeBB` is the final block produced by the nested expression, not the initial `ThenBB`.
 
 ---
 
-## 1. Converting the Condition to a Boolean
+## Phased Code Generation Breakdown
+
+Let us inspect each phase of generating basic blocks for `IfExprAST::codegen()`.
+
+### 1. Converting the Condition to a Boolean
 
 In Kaleidoscope, all numeric values are 64-bit IEEE 754 floating-point doubles.  However, conditional branch instructions in LLVM IR require a 1-bit integer (`i1`, boolean).
 
@@ -54,11 +57,9 @@ To convert a floating-point value into a boolean, compare it against `0.0`.  In 
       CondV, llvm::ConstantFP::get(*TheContext, llvm::APFloat(0.0)), "ifcond");
 ```
 
----
+### 2. Creating Blocks and Emitting the Conditional Branch
 
-## 2. Creating the Blocks and Branching
-
-Next, retrieve the enclosing function from the builder's current insertion point, and construct the three blocks:
+Retrieve the enclosing function from the builder's current insertion point, and construct the three blocks:
 
 ```cpp
   llvm::Function *TheFunction = Builder->GetInsertBlock()->getParent();
@@ -71,11 +72,9 @@ Next, retrieve the enclosing function from the builder's current insertion point
   Builder->CreateCondBr(CondV, ThenBB, ElseBB);
 ```
 
-Notice that only `ThenBB` is passed `TheFunction` upon creation.  This automatically appends `ThenBB` to the end of the function.  `ElseBB` and `MergeBB` are created unattached for now; we will attach them in order as we emit their contents.
+Notice that only `ThenBB` is passed `TheFunction` upon creation.  This automatically appends `ThenBB` to the function.  `ElseBB` and `MergeBB` are created unattached for now; we attach them in order as we emit their contents.
 
----
-
-## 3. Emitting the 'then' and 'else' Bodies
+### 3. Emitting the 'then' and 'else' Bodies
 
 To emit instructions into `ThenBB`, move the builder's insertion point:
 
@@ -89,14 +88,7 @@ To emit instructions into `ThenBB`, move the builder's insertion point:
   ThenBB = Builder->GetInsertBlock();
 ```
 
-After generating code for `Then`, we emit an unconditional branch (`CreateBr`) to jump to `MergeBB`.
-
-Notice this line:
-```cpp
-  ThenBB = Builder->GetInsertBlock();
-```
-
-Why update `ThenBB`?  Because the expression inside `then` might itself contain another nested `if` expression!  If it does, generating code for `Then` will create additional basic blocks, and the block that actually ends up branching to `MergeBB` will not be the original `ThenBB`.  Recording `Builder->GetInsertBlock()` ensures we know the true block where the branch originates.
+After generating code for `Then`, emit an unconditional branch (`CreateBr`) to jump to `MergeBB`.
 
 Next, attach and emit `ElseBB`:
 
@@ -111,6 +103,6 @@ Next, attach and emit `ElseBB`:
   ElseBB = Builder->GetInsertBlock();
 ```
 
----
+Now both branches are generated and jump to `MergeBB`.
 
-Next: [Step 6.3: SSA PHI Nodes](03-phi-nodes.md) - Learn how LLVM merges divergent values at control flow merge points.
+In [Step 6.3](03-phi-nodes.md), we will complete `IfExprAST::codegen()` by merging the values in `MergeBB` with an SSA PHI node.
