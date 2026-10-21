@@ -10,6 +10,23 @@ In this section, you will introduce primitive types to your compiler.  You will 
 
 ---
 
+## LLVM Type Architecture
+
+```mermaid
+flowchart TD
+    Type["llvm::Type"] --> IntTy["Integer Types<br>(i1, i8, i16, i32, i64, ...)"]
+    Type --> FPTy["Floating-Point Types<br>(half, float, double, fp128)"]
+    Type --> PtrTy["Pointer Types<br>(ptr - LLVM opaque pointer)"]
+    Type --> AggTy["Aggregate Types<br>(Arrays, Structures)"]
+    Type --> VoidTy["Other Types<br>(void, label, metadata)"]
+```
+
+> [!NOTE]
+> **Strict Type Invariants in LLVM IR**:
+> LLVM Intermediate Representation performs zero implicit conversions.  An `i32` cannot be added to an `i64`, nor can an `i32` be passed to a function expecting a `double`.  Every width expansion, narrowing, sign extension, or domain change requires an explicit conversion instruction.
+
+---
+
 ## Steps in This Section
 
 1.  [Step 11.1: Integer Widths and Primitive Types](01-integer-widths.md) - Define explicit types and emit integer constants.
