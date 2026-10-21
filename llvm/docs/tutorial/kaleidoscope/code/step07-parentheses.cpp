@@ -129,13 +129,15 @@ static std::unique_ptr<ExprAST> ParsePrimary() {
 /// expression ::= primary
 static std::unique_ptr<ExprAST> ParseExpression() { return ParsePrimary(); }
 
+static void Prompt() { fprintf(stderr, "ready> "); }
+
 static void MainLoop() {
   while (true) {
     switch (CurTok) {
     case tok_eof:
       return;
     case ';':
-      fprintf(stderr, "ready> ");
+      Prompt();
       getNextToken();
       break;
     default:
@@ -157,7 +159,7 @@ int main() {
       "Type expressions followed by ';' and press Enter (Ctrl+D to exit):\n\n");
 
   // Prime the first token.
-  fprintf(stderr, "ready> ");
+  Prompt();
   getNextToken();
   MainLoop();
 

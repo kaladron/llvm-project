@@ -125,13 +125,15 @@ Replace your old token-testing `main()` function with an interactive driver loop
 // Interactive Driver Loop
 //===----------------------------------------------------------------------===//
 
+static void Prompt() { fprintf(stderr, "ready> "); }
+
 static void MainLoop() {
   while (true) {
     switch (CurTok) {
     case tok_eof:
       return;
     case ';': // ignore top-level semicolons
-      fprintf(stderr, "ready> ");
+      Prompt();
       getNextToken();
       break;
     default:
@@ -152,7 +154,7 @@ int main() {
   printf("Type a number followed by ';' and press Enter (Ctrl+D to exit):\n\n");
 
   // Prime the first token.
-  fprintf(stderr, "ready> ");
+  Prompt();
   getNextToken();
 
   MainLoop();
@@ -161,8 +163,8 @@ int main() {
 ```
 
 Notice how the prompt and input loop interact:
-* In `main()`, we display the initial `ready> ` prompt and call `getNextToken()` to prime `CurTok` with the first token of input before `MainLoop()` begins.
-* Inside `MainLoop()`, when a top-level semicolon is encountered (`case ';':`), we print `ready> ` and call `getNextToken()` to consume the semicolon and wait for your next command.
+* In `main()`, we call `Prompt()` to display the initial `ready> ` prompt and then call `getNextToken()` to prime `CurTok` with the first token of input before `MainLoop()` begins.
+* Inside `MainLoop()`, when a top-level semicolon is encountered (`case ';':`), we call `Prompt()` and `getNextToken()` to consume the semicolon and wait for your next command.
 
 ---
 
@@ -299,13 +301,15 @@ static std::unique_ptr<ExprAST> ParseExpression() {
 // Interactive Driver Loop
 //===----------------------------------------------------------------------===//
 
+static void Prompt() { fprintf(stderr, "ready> "); }
+
 static void MainLoop() {
   while (true) {
     switch (CurTok) {
     case tok_eof:
       return;
     case ';':
-      fprintf(stderr, "ready> ");
+      Prompt();
       getNextToken();
       break;
     default:
@@ -326,7 +330,7 @@ int main() {
   printf("Type a number followed by ';' and press Enter (Ctrl+D to exit):\n\n");
 
   // Prime the first token.
-  fprintf(stderr, "ready> ");
+  Prompt();
   getNextToken();
   MainLoop();
 
