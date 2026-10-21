@@ -22,9 +22,7 @@ In compiler engineering, each of these indivisible units of syntax is called a *
 
 ## The Atom of Syntax
 
-In *The Little Schemer*, the atom is the foundational building block: an indivisible entity upon which all lists and computational structures are built.  You cannot slice an atom into smaller computational pieces without destroying what it is.
-
-Tokens play the exact same role in compiler construction.  A token is the atom of syntax.
+An atom is an indivisible entity: something that cannot be divided into smaller pieces without destroying what it is.  In chemistry, an atom is the fundamental building block of matter.  In compiler construction, a token is the atom of syntax.
 
 Consider the expression:
 
@@ -60,6 +58,12 @@ expression = (optional spaces) (sequence of digits or characters) (optional spac
 ```
 
 Every single grammar rule in the compiler would be buried under the bookkeeping of skipping spaces and assembling words.  The grammar would collapse under its own weight.
+
+```mermaid
+flowchart LR
+    Bytes["Raw Bytes<br>'4' '2' ' ' '+' ' ' '1' '0'"] -->|Lexer / Scanner| Tokens["Atomic Tokens<br>[42]  [+]  [10]"]
+    Tokens -->|Parser| Ast["Grammar & AST<br>42 + 10"]
+```
 
 By establishing tokens as our fundamental building block, we draw a clean boundary:
 * **Below the boundary (The Lexer)**: Slices a messy stream of bytes into a tidy sequence of atomic tokens, throwing away whitespace and comments.
