@@ -201,12 +201,10 @@ Notice how your scanner seamlessly groups multi-digit sequences into single atom
 
 ---
 
-## Pedagogical Reflection: Scanner Precision
-
-Try typing `1.2.3.4.5` into your token inspector.  What happens?
-
-Your scanner will greedily collect all the digits and dots into `NumStr`, and `strtod()` will parse `1.2`, ignoring the remaining dots and digits.
-
-In our lightweight tutorial scanner, this simple logic keeps the code compact and readable.  In a production compiler, the lexer would track the decimal point count and flag invalid formats as lexical errors.
+> [!NOTE]
+> **Scanner Precision**:
+> Try typing `1.2.3.4.5` into your token inspector.  Your scanner will greedily collect all the digits and dots into `NumStr`, and `strtod()` will parse `1.2`, ignoring the remaining dots and digits.
+> 
+> In our lightweight tutorial scanner, this simple logic keeps the code compact and readable.  In a production compiler, the lexer would track the decimal point count and flag invalid formats as lexical errors.
 
 In [Step 1.4](04-identifiers-keywords.md), you will build upon your code once more to recognise variable names, function names, and language keywords.
