@@ -67,7 +67,9 @@ Notice what happens:
 
 > [!NOTE]
 > **What `isspace()` Covers**:
-> In Step 1.1, we manually checked `c != '\n' && c != '\r'` to prevent terminal newlines from being printed as tokens.  Standard C and C++ `isspace()` checks for spaces (`' '`), tabs (`'\t'`), and newlines (`'\n'`, `'\r'`).  The `while (isspace(LastChar))` loop automatically swallows newlines alongside spaces, making our earlier manual check in `main()` redundant.
+> In Step 1.1, we manually checked `c != '\n' && c != '\r'` to prevent terminal newlines from being printed as tokens.  Standard C and C++ `isspace()` from `<cctype>` classifies all standard whitespace characters:  spaces (`' '`), horizontal tabs (`'\t'`), vertical tabs (`'\v'`), form feeds (`'\f'`), newlines (`'\n'`), and carriage returns (`'\r'`).
+> 
+> The `while (isspace(LastChar))` loop automatically swallows newlines alongside spaces and tabs, which is why our earlier manual newline check in `main()` is no longer required.
 
 ### 3. A Streamlined `main()` Loop
 
