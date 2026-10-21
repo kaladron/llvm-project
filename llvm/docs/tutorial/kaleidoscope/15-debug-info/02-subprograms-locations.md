@@ -4,7 +4,28 @@ With the compile unit and source file configured, you can now attach debug metad
 
 ---
 
-## 1. Creating `DISubprogram` for Functions
+## Debug Location Attachment
+
+```mermaid
+flowchart TD
+    SP["DISubprogram (add_one, Line 5)"] --> Loc1["DILocation(Line 6, Col 3, SP)"]
+    SP --> Loc2["DILocation(Line 7, Col 3, SP)"]
+
+    Builder["IRBuilder::SetCurrentDebugLocation(Loc1)"] --> EmitAdd["Builder->CreateAdd(A, B, 'sum')"]
+    EmitAdd --> IRInst["%sum = add i32 %x, 1, !dbg !6"]
+```
+
+> [!NOTE]
+> **Source Columns and Sub-Expressions**:
+> `llvm::DILocation::get(*TheContext, Line, Column, Scope)` records both line and column coordinates.  Modern debuggers and IDEs use column coordinates to place precise breakpoints inside multi-operator expressions and highlight exact evaluation sites.
+
+---
+
+## Incremental Code Changes
+
+Open `kaleidoscope.cpp` to create subprograms and set instruction debug locations.
+
+### 1. Creating `DISubprogram` for Functions
 
 In DWARF terminology, a function is a **Subprogram**.
 
@@ -34,9 +55,7 @@ llvm::DISubprogram *SP = DIB.createFunction(
 TheFunction->setSubprogram(SP);
 ```
 
----
-
-## 2. Attaching Source Locations to Instructions
+### 2. Attaching Source Locations to Instructions
 
 To tell a debugger which line of source code an instruction corresponds to, configure the `IRBuilder`'s current debug location before creating the instruction:
 
@@ -75,4 +94,73 @@ Every instruction contains an attached `!dbg` tag pointing to metadata containin
 
 ---
 
-Next: [Step 15.3: Stepping Through Code with LLDB](03-debugging-with-lldb.md) - Step through compiled functions in a native debugger.
+## Full Working Example
+
+The complete reference implementation for this section is available in [code/step39-debug-info.cpp](../code/step39-debug-info.cpp).
+
+<details>
+<summary><b>Expand to view complete code (step39-debug-info.cpp)</b></summary>
+
+```cpp
+#include "llvm/IR/DIBuilder.h"
+#include "llvm/IR/Function.h"
+#include "llvm/IR/IRBuilder.h"
+#include "llvm/IR/LLVMContext.h"
+#include "llvm/IR/Module.h"
+#include "llvm/IR/Verifier.h"
+#include "llvm/Support/raw_ostream.h"
+
+#include <memory>
+
+int main() {
+  auto Context = std::make_unique<llvm::LLVMContext>();
+  auto Module = std::make_unique<llvm::Module>("debug_demo", *Context);
+  auto Builder = std::make_unique<llvm::IRBuilder<>>(*Context);
+
+  llvm::DIBuilder DIB(*Module);
+
+  // 1. DIFile and DICompileUnit
+  llvm::DIFile *File = DIB.createFile("demo.c", "/src");
+  llvm::DICompileUnit *CU = DIB.createCompileUnit(
+      llvm::dwarf::DW_LANG_C99, File, "Kaleidoscope201", false, "", 0);
+
+  // 2. Function prototype
+  llvm::Type *I32Ty = llvm::Type::getInt32Ty(*Context);
+  llvm::FunctionType *FT = llvm::FunctionType::get(I32Ty, {I32Ty}, false);
+  llvm::Function *F = llvm::Function::Create(
+      FT, llvm::Function::ExternalLinkage, "add_one", Module.get());
+
+  // 3. DISubprogram
+  llvm::DISubroutineType *DIType =
+      DIB.createSubroutineType(DIB.getOrCreateTypeArray(
+          {DIB.createBasicType("int", 32, llvm::dwarf::DW_ATE_signed)}));
+  llvm::DISubprogram *SP = DIB.createFunction(
+      File, "add_one", "add_one", File, 5, DIType, 5,
+      llvm::DINode::FlagPrototyped, llvm::DISubprogram::SPFlagDefinition);
+  F->setSubprogram(SP);
+
+  llvm::BasicBlock *BB = llvm::BasicBlock::Create(*Context, "entry", F);
+  Builder->SetInsertPoint(BB);
+
+  // Set line number 6 on instruction
+  Builder->SetCurrentDebugLocation(llvm::DILocation::get(*Context, 6, 3, SP));
+  llvm::Value *Arg = F->arg_begin();
+  llvm::Value *Add = Builder->CreateAdd(Arg, Builder->getInt32(1), "add");
+
+  // Set line number 7 on return
+  Builder->SetCurrentDebugLocation(llvm::DILocation::get(*Context, 7, 3, SP));
+  Builder->CreateRet(Add);
+
+  // Finalise DWARF metadata
+  DIB.finalize();
+
+  llvm::verifyFunction(*F);
+  Module->print(llvm::errs(), nullptr);
+  return 0;
+}
+```
+</details>
+
+---
+
+In [Step 15.3](03-debugging-with-lldb.md), we will step through our compiled functions in LLDB.

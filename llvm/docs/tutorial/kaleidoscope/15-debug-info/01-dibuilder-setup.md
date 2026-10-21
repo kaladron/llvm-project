@@ -6,9 +6,30 @@ In LLVM, generating DWARF metadata is managed by **`llvm::DIBuilder`**.
 
 ---
 
-## 1. Creating the `DIBuilder`
+## DIBuilder Initialisation Pipeline
 
-Include the debug info builder header in `kaleidoscope.cpp`:
+```mermaid
+flowchart TD
+    Init["llvm::DIBuilder DIB(*TheModule)"] --> File["DIB.createFile('demo.c', '/src')"]
+    File --> CU["DIB.createCompileUnit(DW_LANG_C99, File, ...)"]
+    CU --> Flag["TheModule->addModuleFlag(Warning, 'Debug Info Version', DEBUG_METADATA_VERSION)"]
+    Flag --> Gen["Emit functions and instructions with debug locations"]
+    Gen --> Fin["DIB.finalize()"]
+```
+
+> [!IMPORTANT]
+> **Always Finalise the DIBuilder**:
+> You must invoke `DIB.finalize()` after emitting all functions and before verifying the module or writing object files.  Calling `finalize()` resolves forward-referenced type nodes, constructs complete lexical scopes, and writes root compile unit anchors (`!llvm.dbg.cu`) into the module.  Omitting `finalize()` causes LLVM verifier assertions or missing debug tables.
+
+---
+
+## Incremental Code Changes
+
+Open `kaleidoscope.cpp` to initialise the debug information builder.
+
+### 1. Creating the `DIBuilder`
+
+Include the debug info builder header:
 
 ```cpp
 #include "llvm/IR/DIBuilder.h"
@@ -20,9 +41,7 @@ Instantiate the builder on your module:
 llvm::DIBuilder DIB(*TheModule);
 ```
 
----
-
-## 2. Defining File and Compile Unit Metadata
+### 2. Defining File and Compile Unit Metadata
 
 A debugger must first know the source file being compiled and the language conventions to use:
 
@@ -41,9 +60,7 @@ llvm::DICompileUnit *CU = DIB.createCompileUnit(
 );
 ```
 
----
-
-## 3. Setting Module Debug Version Flags
+### 3. Setting Module Debug Version Flags
 
 Modern debuggers and linkers require an explicit metadata flag in the module specifying the DWARF version format.  Add this to your module initialisation:
 
@@ -52,9 +69,7 @@ TheModule->addModuleFlag(
     llvm::Module::Warning, "Debug Info Version", llvm::DEBUG_METADATA_VERSION);
 ```
 
----
-
-## 4. Finalising the Debug Metadata
+### 4. Finalising the Debug Metadata
 
 Once all functions and instructions have been emitted, you **must** finalise the debug metadata before writing object code or JIT compiling:
 
@@ -66,4 +81,4 @@ DIB.finalize();
 
 ---
 
-Next: [Step 15.2: Subprograms and Instruction Locations](02-subprograms-locations.md) - Attach source lines to functions and instructions.
+In [Step 15.2](02-subprograms-locations.md), we will create subprograms and attach line numbers to instructions.
