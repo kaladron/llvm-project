@@ -147,9 +147,10 @@ TEST(LlvmLibcUniquePtrTest, Array) {
 }
 
 struct CustomDeleter {
-  int *count;
+  int *count = nullptr;
   void operator()(int *p) const {
-    (*count)++;
+    if (count)
+      (*count)++;
     delete p;
   }
 };
@@ -168,7 +169,7 @@ TEST(LlvmLibcUniquePtrTest, CustomDeleter) {
 }
 
 struct CustomArrayDeleter {
-  int *count;
+  int *count = nullptr;
   void operator()(int *p) const {
     if (count)
       (*count)++;
@@ -241,4 +242,93 @@ TEST(LlvmLibcUniquePtrTest, BaseDerivedConversion) {
   ASSERT_FALSE(static_cast<bool>(derived_ptr));
   ASSERT_TRUE(static_cast<bool>(base_ptr));
   ASSERT_EQ(base_ptr->val, 100);
+}
+
+// Test that assigning nullptr resets the pointer without clobbering a stateful
+// deleter.
+TEST(LlvmLibcUniquePtrTest, NullptrAssignmentPreservesDeleter) {
+  int deleter_count = 0;
+  {
+    AllocChecker ac;
+    unique_ptr<int, CustomDeleter> ptr(new (ac) int(42),
+                                       CustomDeleter{&deleter_count});
+    ASSERT_TRUE(static_cast<bool>(ac));
+    ptr = nullptr;
+    EXPECT_FALSE(static_cast<bool>(ptr));
+    EXPECT_EQ(deleter_count, 1);
+    EXPECT_EQ(ptr.get_deleter().count, &deleter_count);
+    ptr.reset(new (ac) int(99));
+    ASSERT_TRUE(static_cast<bool>(ac));
+  }
+  EXPECT_EQ(deleter_count, 2);
+
+  int array_deleter_count = 0;
+  {
+    AllocChecker ac;
+    unique_ptr<int[], CustomArrayDeleter> arr_ptr(
+        new (ac) int[3], CustomArrayDeleter{&array_deleter_count});
+    ASSERT_TRUE(static_cast<bool>(ac));
+    arr_ptr = nullptr;
+    EXPECT_FALSE(static_cast<bool>(arr_ptr));
+    EXPECT_EQ(array_deleter_count, 1);
+    EXPECT_EQ(arr_ptr.get_deleter().count, &array_deleter_count);
+    arr_ptr.reset(new (ac) int[2]);
+    ASSERT_TRUE(static_cast<bool>(ac));
+  }
+  EXPECT_EQ(array_deleter_count, 2);
+}
+
+// Test that default and nullptr constructors value-initialize the deleter.
+TEST(LlvmLibcUniquePtrTest, ValueInitializedDeleter) {
+  using FnDeleter = void (*)(int *);
+  using SinglePtr = unique_ptr<int, FnDeleter>;
+  using ArrayPtr = unique_ptr<int[], FnDeleter>;
+
+  alignas(SinglePtr) unsigned char single_buf[sizeof(SinglePtr)];
+  for (size_t i = 0; i < sizeof(SinglePtr); ++i)
+    single_buf[i] = 0xFF;
+  SinglePtr *single_ptr = new (single_buf) SinglePtr(nullptr);
+  EXPECT_EQ(single_ptr->get_deleter(), static_cast<FnDeleter>(nullptr));
+  single_ptr->~SinglePtr();
+
+  alignas(ArrayPtr) unsigned char array_buf[sizeof(ArrayPtr)];
+  for (size_t i = 0; i < sizeof(ArrayPtr); ++i)
+    array_buf[i] = 0xFF;
+  ArrayPtr *array_ptr = new (array_buf) ArrayPtr(nullptr);
+  EXPECT_EQ(array_ptr->get_deleter(), static_cast<FnDeleter>(nullptr));
+  array_ptr->~ArrayPtr();
+}
+
+namespace adl_trap {
+struct AdlDeleter {
+  bool *adl_called = nullptr;
+  void operator()(int *p) const { delete p; }
+};
+
+constexpr AdlDeleter &&move(AdlDeleter &d) {
+  if (d.adl_called)
+    *d.adl_called = true;
+  return static_cast<AdlDeleter &&>(d);
+}
+
+template <typename T> constexpr T &&forward(AdlDeleter &d) {
+  if (d.adl_called)
+    *d.adl_called = true;
+  return static_cast<T &&>(d);
+}
+} // namespace adl_trap
+
+// Test that move and forward inside unique_ptr are qualified with cpp:: and do
+// not trigger ADL in the deleter's namespace.
+TEST(LlvmLibcUniquePtrTest, AdlIsolation) {
+  bool adl_called = false;
+  {
+    AllocChecker ac;
+    unique_ptr<int, adl_trap::AdlDeleter> ptr1(
+        new (ac) int(1), adl_trap::AdlDeleter{&adl_called});
+    ASSERT_TRUE(static_cast<bool>(ac));
+    unique_ptr<int, adl_trap::AdlDeleter> ptr2(LIBC_NAMESPACE::cpp::move(ptr1));
+    ptr1 = LIBC_NAMESPACE::cpp::move(ptr2);
+  }
+  EXPECT_FALSE(adl_called);
 }

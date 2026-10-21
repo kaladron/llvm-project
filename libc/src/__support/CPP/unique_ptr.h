@@ -57,7 +57,7 @@ template <typename T> struct default_delete<T[]> {
 template <typename T, typename Deleter = default_delete<T>>
 class LIBC_TRIVIAL_ABI unique_ptr {
   T *ptr = nullptr;
-  LIBC_NO_UNIQUE_ADDRESS Deleter deleter;
+  LIBC_NO_UNIQUE_ADDRESS Deleter deleter{};
 
 public:
   using element_type = T;
@@ -71,16 +71,22 @@ public:
   LIBC_INLINE constexpr unique_ptr(pointer p, const deleter_type &d)
       : ptr(p), deleter(d) {}
   LIBC_INLINE constexpr unique_ptr(pointer p, deleter_type &&d)
-      : ptr(p), deleter(move(d)) {}
+      : ptr(p), deleter(cpp::move(d)) {}
 
   // Move constructor
   LIBC_INLINE constexpr unique_ptr(unique_ptr &&other)
-      : ptr(other.release()), deleter(forward<Deleter>(other.get_deleter())) {}
+      : ptr(other.release()),
+        deleter(cpp::forward<Deleter>(other.get_deleter())) {}
 
   // Move assignment
   LIBC_INLINE constexpr unique_ptr &operator=(unique_ptr &&other) {
     reset(other.release());
-    deleter = forward<Deleter>(other.get_deleter());
+    deleter = cpp::forward<Deleter>(other.get_deleter());
+    return *this;
+  }
+
+  LIBC_INLINE constexpr unique_ptr &operator=(decltype(nullptr)) {
+    reset();
     return *this;
   }
 
@@ -90,7 +96,7 @@ public:
                 is_convertible_v<typename unique_ptr<U, E>::pointer, pointer> &&
                 !is_array<U>::value && is_convertible_v<E, Deleter>>>
   LIBC_INLINE constexpr unique_ptr(unique_ptr<U, E> &&other)
-      : ptr(other.release()), deleter(forward<E>(other.get_deleter())) {}
+      : ptr(other.release()), deleter(cpp::forward<E>(other.get_deleter())) {}
 
   // Conversion move assignment
   template <typename U, typename E,
@@ -99,7 +105,7 @@ public:
                 !is_array<U>::value && is_assignable_v<Deleter &, E &&>>>
   LIBC_INLINE constexpr unique_ptr &operator=(unique_ptr<U, E> &&other) {
     reset(other.release());
-    deleter = forward<E>(other.get_deleter());
+    deleter = cpp::forward<E>(other.get_deleter());
     return *this;
   }
 
@@ -143,7 +149,7 @@ public:
 template <typename T, typename Deleter>
 class LIBC_TRIVIAL_ABI unique_ptr<T[], Deleter> {
   T *ptr = nullptr;
-  LIBC_NO_UNIQUE_ADDRESS Deleter deleter;
+  LIBC_NO_UNIQUE_ADDRESS Deleter deleter{};
 
 public:
   using element_type = T;
@@ -157,16 +163,22 @@ public:
   LIBC_INLINE constexpr unique_ptr(pointer p, const deleter_type &d)
       : ptr(p), deleter(d) {}
   LIBC_INLINE constexpr unique_ptr(pointer p, deleter_type &&d)
-      : ptr(p), deleter(move(d)) {}
+      : ptr(p), deleter(cpp::move(d)) {}
 
   // Move constructor
   LIBC_INLINE constexpr unique_ptr(unique_ptr &&other)
-      : ptr(other.release()), deleter(forward<Deleter>(other.get_deleter())) {}
+      : ptr(other.release()),
+        deleter(cpp::forward<Deleter>(other.get_deleter())) {}
 
   // Move assignment
   LIBC_INLINE constexpr unique_ptr &operator=(unique_ptr &&other) {
     reset(other.release());
-    deleter = forward<Deleter>(other.get_deleter());
+    deleter = cpp::forward<Deleter>(other.get_deleter());
+    return *this;
+  }
+
+  LIBC_INLINE constexpr unique_ptr &operator=(decltype(nullptr)) {
+    reset();
     return *this;
   }
 
