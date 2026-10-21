@@ -370,6 +370,12 @@ Error: expected a number
 ready>
 ```
 
+> [!NOTE]
+> **Comments and Blank Lines in the REPL**:
+> In Step 1.5, we designed `gettok()` to discard comments and newlines as transparent whitespace.  Because whitespace produces no tokens, pressing Enter on a blank line or typing a standalone comment (`# comment`) does not trigger a new `ready> ` prompt.  The lexer silently waits on the following line for your actual expression (e.g. `42;`).
+> 
+> Comments can also be placed at the end of an expression line (for example, `42; # note`), where the semicolon terminates the statement before the comment is discarded.
+
 You now have a running recursive-descent parser and an AST tree printer in your terminal.
 
 In [Step 2.2](02-parentheses.md), we will add support for parenthesised expressions like `(42)`.
