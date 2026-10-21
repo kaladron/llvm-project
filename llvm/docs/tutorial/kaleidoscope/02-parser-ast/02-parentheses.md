@@ -10,7 +10,7 @@ Consider the expression `(42)`.  Why do we not create a `ParenExprAST` node?
 
 ```mermaid
 flowchart TD
-    Src["Source Text: '( 42 )'"] -->|Parser consumes '(' and ')'| Ast["AST Node: NumberExprAST(42.0)"]
+    Src["Source Text: '( 42 )'"] -->|Parser consumes parentheses| Ast["AST Node: NumberExprAST(42.0)"]
 ```
 
 Parentheses exist in source text to alter grouping and operator precedence.  However, once the parser constructs an in-memory tree, the tree structure itself explicitly captures that grouping.  The parentheses carry no runtime meaning and can be discarded.
