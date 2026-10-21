@@ -11,15 +11,105 @@ In this step, we add the ability to recognise words.  In programming languages, 
 In Kaleidoscope, an identifier begins with an alphabetical letter and is followed by any combination of letters and digits (`[a-zA-Z][a-zA-Z0-9]*`).
 
 Whenever `gettok()` sees an alphabetical character, it collects characters into a global string named `IdentifierStr`.  Once the word is complete, it checks if the word matches a keyword:
-- If `IdentifierStr == "def"`, it returns `tok_def`.
-- If `IdentifierStr == "extern"`, it returns `tok_extern`.
-- Otherwise, it returns `tok_identifier`.
+* If `IdentifierStr == "def"`, it returns `tok_def`.
+* If `IdentifierStr == "extern"`, it returns `tok_extern`.
+* Otherwise, it returns `tok_identifier`.
 
 ---
 
-## The Code Changes
+## Incremental Code Changes
 
-Update `kaleidoscope.cpp` with the new token codes and the identifier scanning block:
+Open your `kaleidoscope.cpp` file.  You will build upon the code you wrote in Step 1.3 by making three targeted additions.
+
+### 1. Token Codes and IdentifierStr
+
+Update your `enum Token` to add codes for keywords and identifiers, and declare `IdentifierStr` directly above `NumVal`:
+
+```cpp
+enum Token {
+  tok_eof = -1,
+
+  // Commands / Keywords
+  tok_def = -2,
+  tok_extern = -3,
+
+  // Primary
+  tok_identifier = -4,
+  tok_number = -5,
+};
+
+static std::string IdentifierStr; // Filled in if tok_identifier
+static double NumVal;             // Filled in if tok_number
+```
+
+### 2. Scanning Identifiers in `gettok()`
+
+In `gettok()`, right after the `while (isspace(LastChar))` loop skips whitespace, check if `LastChar` is an alphabetical character using `isalpha()`.  Place this block immediately before your numeric literal check:
+
+```cpp
+  // Recognise identifiers and keywords: [a-zA-Z][a-zA-Z0-9]*
+  if (isalpha(LastChar)) {
+    IdentifierStr = LastChar;
+    while (isalnum((LastChar = getchar())))
+      IdentifierStr += LastChar;
+
+    if (IdentifierStr == "def")
+      return tok_def;
+    if (IdentifierStr == "extern")
+      return tok_extern;
+    return tok_identifier;
+  }
+```
+
+Notice how this works:
+* The first character is already known to be alphabetical, so we initialise `IdentifierStr` with it.
+* The `while` loop calls `getchar()` and appends characters as long as they are alphanumeric (`isalnum`).
+* Once a non-alphanumeric character is encountered, the loop finishes.  `LastChar` holds that character, ready for the next token call.
+* We then test `IdentifierStr` against our known keywords.  If it matches `"def"` or `"extern"`, we return the respective keyword token.  Otherwise, it is a user identifier.
+
+### 3. Updating `main()` to Handle All Tokens
+
+In `main()`, replace the previous `if-else` statement with a `switch` statement that formats keywords and identifiers:
+
+```cpp
+int main() {
+  printf("Kaleidoscope Token Inspector (Step 4: Identifiers & Keywords)\n");
+  printf("Type code and press Enter (Ctrl+D to exit):\n\n");
+
+  int tok;
+  while ((tok = gettok()) != tok_eof) {
+    switch (tok) {
+    case tok_def:
+      printf("Token: KEYWORD(def)\n");
+      break;
+    case tok_extern:
+      printf("Token: KEYWORD(extern)\n");
+      break;
+    case tok_identifier:
+      printf("Token: IDENTIFIER(\"%s\")\n", IdentifierStr.c_str());
+      break;
+    case tok_number:
+      printf("Token: NUMBER(%f)\n", NumVal);
+      break;
+    default:
+      printf("Token: '%c' (ASCII %d)\n", static_cast<char>(tok), tok);
+      break;
+    }
+  }
+
+  printf("[EOF]\n");
+  return 0;
+}
+```
+
+---
+
+## Verifying Your Code
+
+Before compiling, check that your `kaleidoscope.cpp` has all additions in place.
+
+<details>
+<summary>Click here to compare against the reference kaleidoscope.cpp</summary>
 
 ```cpp
 #include <cctype>
@@ -110,12 +200,13 @@ int main() {
   return 0;
 }
 ```
+</details>
 
 ---
 
 ## Compiling and Running
 
-Recompile:
+Recompile your scanner:
 
 ```bash
 clang++ -Wall -Wextra kaleidoscope.cpp -o kaleidoscope

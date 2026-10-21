@@ -1,6 +1,6 @@
 # Step 1.2: Skipping Whitespace
 
-In programming languages, whitespace between tokens (spaces, tabs, and newlines) carries no semantic meaning.  In this step, we introduce a dedicated function named `gettok()` that silently skips whitespace before returning the next token.
+In programming languages, whitespace between tokens (spaces, tabs, and newlines) carries no semantic meaning.  In this step, we restructure our code by extracting token scanning into a dedicated function named `gettok()` that silently skips whitespace before returning the next token.
 
 ---
 
@@ -12,9 +12,74 @@ To handle this, our lexer stores the most recently read character in a static va
 
 ---
 
-## The Code Changes
+## Incremental Code Changes
 
-Open `kaleidoscope.cpp` and update it by adding `<cctype>` and our `gettok()` function above `main()`:
+Open your `kaleidoscope.cpp` file.  You will transform the raw loop from Step 1.1 into a structured lexer through three targeted updates.
+
+### 1. Header Inclusion
+
+At the top of `kaleidoscope.cpp`, include `<cctype>` for the `isspace()` function:
+
+```cpp
+#include <cctype>
+#include <cstdio>
+```
+
+### 2. The `gettok()` Function
+
+Above `main()`, add our primary lexing function:
+
+```cpp
+// Returns [0-255] for an ASCII character, or -1 for EOF.
+static int gettok() {
+  static int LastChar = ' ';
+
+  // Skip any whitespace.
+  while (isspace(LastChar))
+    LastChar = getchar();
+
+  // Check for end of file.
+  if (LastChar == EOF)
+    return -1;
+
+  // Otherwise, return the character as its ASCII value.
+  int ThisChar = LastChar;
+  LastChar = getchar();
+  return ThisChar;
+}
+```
+
+Notice what happens:
+* `LastChar` persists across calls to `gettok()` because it is `static`.
+* The `while (isspace(LastChar))` loop repeatedly calls `getchar()` until it finds a non-whitespace character.
+* Once a non-whitespace character is found, we copy it to `ThisChar`, read the next character into `LastChar` for future calls, and return `ThisChar`.
+
+### 3. A Streamlined `main()` Loop
+
+With `gettok()` handling token extraction, your `main()` function simplifies into a clean consumer loop:
+
+```cpp
+int main() {
+  printf("Kaleidoscope Token Inspector (Step 2: Whitespace Skipping)\n");
+  printf("Type characters with spaces and press Enter (Ctrl+D to exit):\n\n");
+
+  int tok;
+  while ((tok = gettok()) != -1)
+    printf("Token: '%c' (ASCII %d)\n", static_cast<char>(tok), tok);
+
+  printf("[EOF]\n");
+  return 0;
+}
+```
+
+---
+
+## Verifying Your Code
+
+Before compiling, check that your `kaleidoscope.cpp` has all changes in place.
+
+<details>
+<summary>Click here to compare against the reference kaleidoscope.cpp</summary>
 
 ```cpp
 #include <cctype>
@@ -50,6 +115,7 @@ int main() {
   return 0;
 }
 ```
+</details>
 
 ---
 
