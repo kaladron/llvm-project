@@ -7,7 +7,29 @@ Real programs require **global state**:
 * Read-only constant lookup tables.
 * String literals stored in the binary's read-only data section (`.rodata`).
 
+Welcome to **Kaleidoscope 201: Systems Programming and Core LLVM**.
+
 In this section, you will learn how to create and manage `llvm::GlobalVariable` objects, understand symbol linkage rules, emit string literals into constant pools, and call standard C library I/O functions like `puts` and `printf`.
+
+---
+
+## Memory Segments Architecture
+
+```mermaid
+flowchart TD
+    subgraph Executable Memory Layout
+        Text[".text<br>(Machine Instructions / Code)"]
+        ROData[".rodata<br>(Constants & String Literals)"]
+        Data[".data<br>(Initialised Mutable Globals)"]
+        BSS[".bss<br>(Zero-Initialised Globals)"]
+        Heap["Heap<br>(malloc / free allocations)"]
+        Stack["Stack<br>(alloca / Local Variables & Frames)"]
+    end
+```
+
+> [!NOTE]
+> **Static Lifetimes vs. Stack Frames**:
+> Unlike stack variables created by `alloca` which vanish when their enclosing function returns, global variables reside in fixed memory segments.  Their addresses are resolved either at link time or by the operating system dynamic linker during program startup.
 
 ---
 

@@ -6,7 +6,27 @@ In this step, you will learn how LLVM stores string literals in module constant 
 
 ---
 
-## 1. How LLVM Models String Literals
+## String Literal Architecture and Deduplication
+
+```mermaid
+flowchart TD
+    Code1["Call puts('Hello')"] --> Pool["Module Constant Pool"]
+    Code2["Call printf('Hello')"] --> Pool
+    Pool --> RoData[".rodata: ['H','e','l','l','o','\\0']"]
+    RoData --> SinglePtr["Single shared ptr @str"]
+```
+
+> [!NOTE]
+> **The `unnamed_addr` Attribute and Deduplication**:
+> In LLVM IR, the `unnamed_addr` attribute signals that the compiler and linker only care about the contents of the memory buffer, not its exact address.  This allows LLVM's optimiser and the system linker to merge identical string constants across functions and translation units, reducing binary size.
+
+---
+
+## Incremental Code Changes
+
+Open `kaleidoscope.cpp` to emit constant string literals.
+
+### 1. How LLVM Models String Literals
 
 In LLVM IR, a string literal is an array of 8-bit integers (`[N x i8]`):
 
@@ -19,9 +39,7 @@ Notice the attributes:
 * **`unnamed_addr`**: Indicates that the address of the string is not significant, only its contents.  This allows LLVM's optimiser to merge identical string constants across the module (string deduplication) to save space.
 * **`constant`**: Placed in read-only memory (`.rodata`).
 
----
-
-## 2. Generating Strings with `IRBuilder`
+### 2. Generating Strings with `IRBuilder`
 
 Creating string constants manually with `ConstantDataArray::getString` and `GlobalVariable` requires several lines of boilerplate.  `IRBuilder` provides a modern helper:
 
@@ -34,9 +52,7 @@ This single line:
 2.  Creates the private global constant array in the module.
 3.  Returns an `llvm::Value*` with type `ptr` pointing directly to the first character of the string.
 
----
-
-## 3. String Deduplication in Action
+### 3. String Deduplication in Action
 
 If you invoke `CreateGlobalString` multiple times with identical strings, LLVM automatically deduplicates them:
 
@@ -49,4 +65,4 @@ In the emitted IR, both pointers reference the exact same global storage in `.ro
 
 ---
 
-Next: [Step 12.3: Calling the C Standard Library](03-calling-clib.md) - Pass string pointers to standard C library functions like `puts` and `printf`.
+In [Step 12.3](03-calling-clib.md), we will pass string pointers to standard C library functions like `puts` and `printf`.
