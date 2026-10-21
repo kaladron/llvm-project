@@ -504,6 +504,6 @@ Notice your `kaleidoscope.cpp` file: it is roughly 250 lines of clean, readable 
 
 ### Looking Ahead to Section 4: Architectural Refactoring
 
-In **Section 4: Generating LLVM IR**, our goal shifts from interpreting trees in C++ to generating native LLVM Intermediate Representation.
+In [Section 4: Generating LLVM IR](../04-llvm-ir/README.md), our goal shifts from interpreting trees in C++ to generating native LLVM Intermediate Representation.
 
 Before introducing LLVM's types, modules, and builders, we will take a brief architectural step in [Step 4.1](../04-llvm-ir/01-llvm-setup.md): modularising our codebase by extracting our lexer, AST, and parser into clean header files under `include/`.  This keeps our frontend independent and lets `kaleidoscope.cpp` focus purely on LLVM code generation.

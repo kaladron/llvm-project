@@ -455,4 +455,4 @@ public:
 
 Congratulations!  You have created a complete Abstract Syntax Tree and recursive-descent parser for primary expressions.
 
-In **Section 3: Operator Precedence and The Calculator**, we will implement operator precedence climbing to parse expressions like `1 + 2 * 3` and evaluate mathematical results directly in C++.
+In [Section 3: Operator Precedence and The Calculator](../03-operators-eval/README.md), we will implement operator precedence climbing to parse expressions like `1 + 2 * 3` and evaluate mathematical results directly in C++.

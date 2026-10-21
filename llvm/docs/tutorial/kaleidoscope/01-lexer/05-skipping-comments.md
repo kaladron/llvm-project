@@ -273,4 +273,4 @@ enum Token {
 
 Congratulations!  You have written a complete, interactive token scanner from scratch.
 
-In **Section 2: The Parser and AST**, we will start assembling these tokens into an in-memory Abstract Syntax Tree, building an interactive tree pretty-printer along the way.
+In [Section 2: The Parser and AST](../02-parser-ast/README.md), we will start assembling these tokens into an in-memory Abstract Syntax Tree, building an interactive tree pretty-printer along the way.
