@@ -4,7 +4,27 @@ Up until now, you have used LLVM as a code generator: taking an AST and emitting
 
 In core LLVM development, engineers constantly write and refine **passes**: modular units of compiler logic that analyse or transform Intermediate Representation to make code smaller, faster, or safer.
 
+Welcome to **Kaleidoscope 201: Systems Programming and Core LLVM**.
+
 In this final capstone section of Kaleidoscope 201, you will learn how to write a real LLVM optimization pass using the modern **PassManager** infrastructure.  You will inspect instructions, detect dead arithmetic patterns like $x + 0$, replace redundant computations, and safely delete dead code.
+
+---
+
+## Pass Pipeline Architecture
+
+```mermaid
+flowchart TD
+    Module["LLVM Module"] --> MPM["ModulePassManager"]
+    MPM --> FPM["FunctionPassManager"]
+    FPM --> P1["ZeroIdentityPass<br>(Custom Simplification)"]
+    FPM --> P2["InstCombinePass<br>(Peephole Optimisations)"]
+    FPM --> P3["SimplifyCFGPass<br>(Control Flow Cleanup)"]
+    FAM["FunctionAnalysisManager<br>(DominatorTree, LoopInfo)"] -. "provides analyses" .-> FPM
+```
+
+> [!NOTE]
+> **The Modern New Pass Manager (NPM)**:
+> Earlier versions of LLVM used the legacy `llvm::FunctionPass` hierarchy and macro registration.  Modern LLVM relies on a type-safe, template-driven PassManager based on `PassInfoMixin` and explicit analysis managers (`FunctionAnalysisManager`), enabling clean analysis caching, fine-grained invalidation, and multithreaded pass pipelines.
 
 ---
 

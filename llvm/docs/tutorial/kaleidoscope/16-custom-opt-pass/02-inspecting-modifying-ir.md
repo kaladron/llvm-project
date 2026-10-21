@@ -6,7 +6,28 @@ In this step, you will implement an algebraic simplification pass: detecting and
 
 ---
 
-## 1. Safe Iterator Traversal
+## Instruction Replacement Architecture
+
+```mermaid
+flowchart TD
+    Pattern["Matched Pattern: %res = add i32 %x, 0<br>Users: ret i32 %res"]
+    Step1["Step 1: I.replaceAllUsesWith(I.getOperand(0))<br>Users now point directly to %x: ret i32 %x"]
+    Step2["Step 2: I.eraseFromParent()<br>%res is unlinked from block and freed"]
+
+    Pattern --> Step1 --> Step2
+```
+
+> [!WARNING]
+> **Iterator Invalidation in LLVM Basic Blocks**:
+> Modifying or deleting an instruction while iterating with `for (auto &I : BB)` causes immediate iterator invalidation and undefined behaviour.  Always advance the iterator before mutating or erasing: `for (auto Inst = BB.begin(), E = BB.end(); Inst != E;) { llvm::Instruction &I = *Inst++; ... }`.
+
+---
+
+## Incremental Code Changes
+
+Open `kaleidoscope.cpp` to implement the IR traversal and pattern matching.
+
+### 1. Safe Iterator Traversal
 
 When modifying or deleting instructions in a basic block, **you must never use a standard range-based for loop** (`for (auto &I : BB)`).
 
@@ -24,9 +45,7 @@ for (auto &BB : F) {
 }
 ```
 
----
-
-## 2. Pattern Matching Instructions
+### 2. Pattern Matching Instructions
 
 To match an instruction of the form `x + 0`:
 
@@ -45,9 +64,7 @@ if (I.getOpcode() == llvm::Instruction::Add) {
 
 Notice `llvm::dyn_cast<T>`: this is LLVM's custom RTTI casting system.  It is faster than standard C++ `dynamic_cast` and works across compilers with RTTI disabled (`-fno-rtti`).
 
----
-
-## 3. Replacing Uses and Erasing Instructions
+### 3. Replacing Uses and Erasing Instructions
 
 Once the pattern is detected, perform the transformation in two steps:
 
@@ -67,4 +84,4 @@ Modified = true;
 
 ---
 
-Next: [Step 16.3: Running Your Pass and Verifying Optimisations](03-running-pass.md) - Register and execute your pass in a real pipeline.
+In [Step 16.3](03-running-pass.md), we will register and execute your pass in a real optimization pipeline.

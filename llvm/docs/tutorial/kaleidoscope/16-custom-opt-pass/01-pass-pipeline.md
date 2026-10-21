@@ -6,7 +6,28 @@ Since LLVM 13, LLVM has completely standardized on the **New Pass Manager (NPM)*
 
 ---
 
-## 1. Defining a Function Pass with `PassInfoMixin`
+## Pass Execution and Analysis Management
+
+```mermaid
+flowchart LR
+    Func["llvm::Function &F"] --> PassRun["ZeroIdentityPass::run(F, FAM)"]
+    FAM["FunctionAnalysisManager &FAM"] --> PassRun
+    PassRun --> Decision{"Did the pass modify IR?"}
+    Decision -- "Yes" --> None["PreservedAnalyses::none()<br>(Invalidate cached analyses)"]
+    Decision -- "No" --> All["PreservedAnalyses::all()<br>(Retain cached analyses)"]
+```
+
+> [!TIP]
+> **Out-of-Tree Pass Plugins**:
+> LLVM supports loading custom passes dynamically into `opt` or `clang` as shared objects via the `-load-pass-plugin` flag.  Out-of-tree plugins expose the entrypoint `extern "C" ::llvm::PassPluginLibraryInfo llvmGetPassPluginInfo()` to register passes into the standard `PassBuilder` pipeline callbacks.
+
+---
+
+## Incremental Code Changes
+
+Open `kaleidoscope.cpp` to create a modern LLVM pass.
+
+### 1. Defining a Function Pass with `PassInfoMixin`
 
 To create an optimization pass that operates on individual functions, inherit from `llvm::PassInfoMixin<T>` using the Curiously Recurring Template Pattern (CRTP):
 
@@ -28,9 +49,7 @@ public:
 };
 ```
 
----
-
-## 2. Understanding `PreservedAnalyses`
+### 2. Understanding `PreservedAnalyses`
 
 Notice the return type: **`llvm::PreservedAnalyses`**.
 
@@ -39,9 +58,7 @@ In a compiler pipeline, passes often compute expensive mathematical structures, 
 * If your pass only reads IR without modifying anything, return `PreservedAnalyses::all()`.  LLVM will reuse the existing analyses for future passes without recomputing them.
 * If your pass adds, removes, or rewrites instructions, return `PreservedAnalyses::none()`.  LLVM will safely invalidate outdated analyses and recompute them when needed.
 
----
-
-## 3. Running the Pass Pipeline
+### 3. Running the Pass Pipeline
 
 To run your pass on a function:
 
@@ -61,4 +78,4 @@ FPM.run(TheFunction, FAM);
 
 ---
 
-Next: [Step 16.2: Inspecting and Modifying IR](02-inspecting-modifying-ir.md) - Traverse instructions and eliminate arithmetic identities.
+In [Step 16.2](02-inspecting-modifying-ir.md), we will traverse instructions and eliminate arithmetic identities.
