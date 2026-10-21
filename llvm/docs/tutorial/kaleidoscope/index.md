@@ -95,7 +95,7 @@ If `llvm-config` is present and prints compiler flags along with library names, 
 ## Tutorial Roadmap
 
 ### [Section 1: The Lexer (From Raw Text to Tokens)](01-lexer/index.md)
-- [Step 1.1: Your First Token (The 90-Second Win)](01-lexer/01-first-token.md) - A fifteen-line character echo loop running in under two minutes.
+- [Step 1.1: What is a Token?](01-lexer/01-first-token.md) - Understand tokens as atomic syntax units and build a basic single-character scanner.
 - [Step 1.2: Skipping Whitespace](01-lexer/02-skipping-whitespace.md) - Teach the scanner to discard whitespace with character buffering.
 - [Step 1.3: Numeric Literals](01-lexer/03-numeric-literals.md) - Read multi-digit integers and floating-point decimals.
 - [Step 1.4: Identifiers and Keywords](01-lexer/04-identifiers-keywords.md) - Distinguish `def` and `extern` from variable and function names.

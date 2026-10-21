@@ -8,7 +8,7 @@ In this section, you will build a complete, interactive token inspector from scr
 
 ## Steps in This Section
 
-1.  [Step 1.1: Your First Token (The 90-Second Win)](01-first-token.md) - A fifteen-line character scanner that compiles and runs immediately.
+1.  [Step 1.1: What is a Token?](01-first-token.md) - Understand tokens as atomic syntax units and build a basic single-character scanner.
 2.  [Step 1.2: Skipping Whitespace](02-skipping-whitespace.md) - Teach the scanner to discard spaces and tabs with character buffering.
 3.  [Step 1.3: Numeric Literals](03-numeric-literals.md) - Read multi-digit integers and floating-point decimals.
 4.  [Step 1.4: Identifiers and Keywords](04-identifiers-keywords.md) - Distinguish `def` and `extern` from variable and function names.
