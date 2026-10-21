@@ -4,9 +4,36 @@ Now that prototypes can declare unary operators, your parser and code generator 
 
 ---
 
-## 1. Defining `UnaryExprAST`
+## Recursive Parsing of Unary Operators
 
-Add `UnaryExprAST` to your AST hierarchy:
+In standard grammars, unary prefix operators bind more tightly than binary operators, but looser than primary expressions like numbers, variables, and parentheses:
+
+```mermaid
+flowchart TD
+    Start["ParseUnary()"] --> Check{"Is current token<br>ASCII operator?"}
+    Check -- No --> Primary["ParsePrimary()<br>(number, identifier, parens, if, for)"]
+    Check -- Yes --> ReadOp["Read operator char Opc<br>getNextToken()"]
+    ReadOp --> Recurse["Recursively call ParseUnary()"]
+    Recurse --> Node["UnaryExprAST(Opc, Operand)"]
+```
+
+> [!NOTE]
+> **Unary Chaining and Right-Associativity**:
+> Because `ParseUnary()` calls itself recursively, unary prefix operators chain naturally from right to left (`! ! x` parses as `!(!x)`).  Prefix operators bind tightly before entering the binary precedence climbing loop.
+
+> [!TIP]
+> **Lowering Operators to Function Calls**:
+> Generating IR for a unary operator requires no new LLVM instructions.  In `UnaryExprAST::codegen()`, evaluating `!x` simply looks up the function named `unary!` using `getFunction()` and emits a standard `call` instruction.  This keeps the code generator minimal and reusable.
+
+---
+
+## Incremental Code Changes
+
+Open `kaleidoscope.cpp` to implement unary operators.
+
+### 1. Defining `UnaryExprAST`
+
+Add `UnaryExprAST` to your AST section:
 
 ```cpp
 class UnaryExprAST : public ExprAST {
@@ -21,11 +48,7 @@ public:
 };
 ```
 
----
-
-## 2. Parsing Unary Expressions
-
-In traditional grammars, unary prefix operators bind tighter than binary operators, but looser than primary expressions like parentheses or function calls.
+### 2. Parsing Unary Expressions
 
 Add `ParseUnary()` right below `ParsePrimary()`:
 
@@ -43,8 +66,6 @@ static std::unique_ptr<ExprAST> ParseUnary() {
   return nullptr;
 }
 ```
-
-Notice that `ParseUnary()` calls itself recursively!  This allows chaining unary operators naturally, such as `!!x` or `!-x`.
 
 Update `ParseBinOpRHS()` and `ParseExpression()` to parse unary expressions on the left-hand and right-hand sides instead of primary expressions:
 
@@ -71,8 +92,8 @@ static std::unique_ptr<ExprAST> ParseBinOpRHS(int ExprPrec,
         return nullptr;
     }
 
-    LHS =
-        std::make_unique<BinaryExprAST>(BinOp, std::move(LHS), std::move(RHS));
+    LHS = std::make_unique<BinaryExprAST>(BinOp, std::move(LHS),
+                                          std::move(RHS));
   }
 }
 
@@ -86,11 +107,9 @@ static std::unique_ptr<ExprAST> ParseExpression() {
 }
 ```
 
----
+### 3. Emitting IR for Unary Operators
 
-## 3. Emitting IR for Unary Operators
-
-Generating code for a unary operator is remarkably elegant: look up the user's function named `unary<op>` and emit a call to it:
+Generating code for a unary operator looks up the corresponding function named `unary<op>` and emits an LLVM `call`:
 
 ```cpp
 llvm::Value *UnaryExprAST::codegen() {
@@ -100,12 +119,10 @@ llvm::Value *UnaryExprAST::codegen() {
 
   llvm::Function *F = getFunction(std::string("unary") + Opcode);
   if (!F)
-    return LogErrorV("Unknown unary operator");
+    return LogErrorV("unknown unary operator");
 
   return Builder->CreateCall(F, OperandV, "unop");
 }
 ```
 
----
-
-Next: [Step 8.3: User Binary Operators](03-binary-operators.md) - Register dynamic precedence and emit user binary operators.
+In [Step 8.3](03-binary-operators.md), we will register dynamic precedence and emit user-defined binary operators.
