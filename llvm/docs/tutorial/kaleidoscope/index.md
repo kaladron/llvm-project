@@ -129,3 +129,40 @@ If `llvm-config` is present and prints compiler flags along with library names, 
 - [Step 10.1: Configuring the Target Machine](10-object-files/01-target-machine.md) - Initialise target registries, query the host target triple, and configure `llvm::TargetMachine`.
 - [Step 10.2: Emitting Object Code](10-object-files/02-emitting-object-code.md) - Run LLVM's code emission passes to write a native `.o` object file to disk.
 - [Step 10.3: Linking Standalone Executables](10-object-files/03-linking-standalone-binary.md) - Write a C driver and link with `clang` to produce a standalone executable.
+
+---
+
+## Part 2: Kaleidoscope 201 (Systems Programming & Core LLVM)
+
+In Part 2, you transition from a single-type toy language to core compiler engineering.  You will implement multi-type semantics, memory layouts, DWARF debugging, and custom LLVM transformation passes.
+
+### [Section 11: Primitive Types, Integers, and Casts](11-integers-and-types/index.md)
+- [Step 11.1: Integer Widths and Primitive Types](11-integers-and-types/01-integer-widths.md) - Define explicit types and emit integer constants.
+- [Step 11.2: Signless Registers and Integer Arithmetic](11-integers-and-types/02-signless-integers.md) - Generate integer math and understand the distinction between signed and unsigned operations.
+- [Step 11.3: Integer Comparisons with 'icmp'](11-integers-and-types/03-integer-comparisons.md) - Compare integers with `icmp slt`, `icmp ult`, and equality checks.
+- [Step 11.4: Type Conversions and Casts](11-integers-and-types/04-type-conversions.md) - Convert between integers and floating-point values with `sitofp`, `fptosi`, and bit truncation.
+
+### [Section 12: Global Variables and Constant Strings](12-globals-and-strings/index.md)
+- [Step 12.1: Emitting Global Variables](12-globals-and-strings/01-global-variables.md) - Allocate global variables in `.data` and `.bss`, and configure symbol linkage.
+- [Step 12.2: String Literals and Constant Pools](12-globals-and-strings/02-string-literals.md) - Emit null-terminated string literals into `.rodata` with `CreateGlobalString`.
+- [Step 12.3: Calling the C Standard Library](12-globals-and-strings/03-calling-clib.md) - Declare external functions with pointer arguments and call `puts` and `printf`.
+
+### [Section 13: Pointers, Indirection, and Heap Memory](13-pointers-and-heap/index.md)
+- [Step 13.1: Understanding LLVM Opaque Pointers](13-pointers-and-heap/01-opaque-pointers.md) - Learn how modern LLVM models memory addresses with `ptr`.
+- [Step 13.2: Address-Of and Dereferencing](13-pointers-and-heap/02-address-and-dereference.md) - Implement C-style pointer operators `&` and `*` in LLVM IR.
+- [Step 13.3: Heap Allocation with 'malloc' and 'free'](13-pointers-and-heap/03-heap-malloc-free.md) - Allocate and release dynamic heap buffers at runtime.
+
+### [Section 14: Aggregate Structs, Arrays, and GetElementPtr](14-structs-and-gep/index.md)
+- [Step 14.1: Struct Types and ABI DataLayout](14-structs-and-gep/01-struct-types-layout.md) - Define struct types, inspect memory sizing, and understand hardware padding.
+- [Step 14.2: Demystifying GetElementPtr](14-structs-and-gep/02-understanding-gep.md) - Understand how GEP calculates pointer addresses without accessing memory.
+- [Step 14.3: Arrays and Member Access in Practice](14-structs-and-gep/03-arrays-indexing.md) - Access struct fields and index array elements using GEP.
+
+### [Section 15: Source-Level Debug Information (DWARF)](15-debug-info/index.md)
+- [Step 15.1: Initialising DIBuilder and Compile Units](15-debug-info/01-dibuilder-setup.md) - Set up debug files, compile units, and DWARF standards.
+- [Step 15.2: Subprograms and Instruction Locations](15-debug-info/02-subprograms-locations.md) - Attach line numbers and lexical scopes to generated instructions.
+- [Step 15.3: Stepping Through Code with LLDB](15-debug-info/03-debugging-with-lldb.md) - Compile to object code and step through source lines in a real debugger.
+
+### [Section 16: Writing a Custom LLVM Pass](16-custom-opt-pass/index.md)
+- [Step 16.1: The Modern LLVM Pass Pipeline](16-custom-opt-pass/01-pass-pipeline.md) - Understand `PassInfoMixin`, analysis managers, and the new pass manager architecture.
+- [Step 16.2: Inspecting and Modifying IR](16-custom-opt-pass/02-inspecting-modifying-ir.md) - Traverse basic blocks, match instructions, and eliminate redundant operations.
+- [Step 16.3: Running Your Pass and Verifying Optimisations](16-custom-opt-pass/03-running-pass.md) - Register and execute your pass in a real optimization pipeline.
