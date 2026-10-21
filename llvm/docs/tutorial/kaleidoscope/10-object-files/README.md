@@ -2,7 +2,7 @@
 
 Throughout Sections 5 through 9, you ran Kaleidoscope as an interactive Just-In-Time (JIT) compiler.  While JIT compilation is powerful for interactive exploration, languages intended for production software must be able to compile code **ahead-of-time (AOT)** into standard relocatable object files (`.o`).
 
-In this final section, you will turn Kaleidoscope into a static ahead-of-time compiler.  You will configure LLVM's `TargetMachine`, emit standard object code formatted for your host operating system and CPU architecture, and link the resulting object file with a native C driver into a standalone executable.
+In this section, you will turn Kaleidoscope into a static ahead-of-time compiler, completing the foundational Kaleidoscope compiler pipeline (Milestone 3).  You will configure LLVM's `TargetMachine`, emit standard object code formatted for your host operating system and CPU architecture, and link the resulting object file with a native C driver into a standalone executable.
 
 ---
 

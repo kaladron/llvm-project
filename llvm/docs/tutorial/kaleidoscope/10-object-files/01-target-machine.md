@@ -4,9 +4,33 @@ To emit machine code for a specific CPU, LLVM must know the details of the host 
 
 ---
 
-## 1. Initialising Target Registries
+## Target Machine Configuration
 
-Include the target registry and host parsing headers in `kaleidoscope.cpp`:
+```mermaid
+flowchart TD
+    Host["Host Operating System & CPU"] --> Triple["getDefaultTargetTriple()<br>(e.g. x86_64-unknown-linux-gnu)"]
+    Triple --> Lookup["TargetRegistry::lookupTarget(TargetTriple)"]
+    Lookup --> TM["TargetMachine<br>createTargetMachine(TargetTriple, CPU, Features, opt, PIC_)"]
+    TM --> ConfigMod["TheModule->setTargetTriple(TargetTriple)<br>TheModule->setDataLayout(TM->createDataLayout())"]
+```
+
+> [!NOTE]
+> **Understanding Target Triples**:
+> A target triple is a canonical string specifying the processor architecture, vendor, operating system, and ABI/environment (e.g. `x86_64-unknown-linux-gnu` or `aarch64-apple-darwin`).  LLVM uses this string to determine instruction sets, register names, and object container formats (ELF, Mach-O, COFF).
+
+> [!TIP]
+> **Position-Independent Code (PIC)**:
+> We configure `TheTargetMachine` with `llvm::Reloc::PIC_` (Position-Independent Code).  Position-independent code can be loaded at arbitrary virtual memory addresses without requiring base address fixups, making it compatible with modern shared libraries and Address Space Layout Randomisation (ASLR).
+
+---
+
+## Incremental Code Changes
+
+Open `kaleidoscope.cpp` to configure ahead-of-time target emission.
+
+### 1. Initialising Target Registries
+
+Include the target registry and host parsing headers:
 
 ```cpp
 #include "llvm/MC/TargetRegistry.h"
@@ -28,22 +52,16 @@ In `main()`, initialise all supported LLVM target info, assembly parsers, and ma
   llvm::InitializeAllAsmPrinters();
 ```
 
----
+### 2. Setting the Target Triple
 
-## 2. Setting the Target Triple
-
-A **Target Triple** identifies the target platform using the convention `[architecture]-[vendor]-[operating system]-[environment]`.  For example: `x86_64-unknown-linux-gnu` or `arm64-apple-darwin`.
-
-Query LLVM for your current host triple and set it on the module:
+Query LLVM for the default host target triple and set it on the module:
 
 ```cpp
   llvm::Triple TargetTriple(llvm::sys::getDefaultTargetTriple());
   TheModule->setTargetTriple(TargetTriple);
 ```
 
----
-
-## 3. Creating the `TargetMachine`
+### 3. Creating the TargetMachine
 
 Look up the target architecture in LLVM's registry:
 
@@ -56,7 +74,7 @@ Look up the target architecture in LLVM's registry:
   }
 ```
 
-Now construct the `TargetMachine` using Position-Independent Code (`PIC_`):
+Construct the `TargetMachine` configured with Position-Independent Code (`PIC_`):
 
 ```cpp
   auto CPU = "generic";
@@ -72,6 +90,4 @@ Finally, configure your module's data layout to match the target machine:
   TheModule->setDataLayout(TheTargetMachine->createDataLayout());
 ```
 
----
-
-Next: [Step 10.2: Emitting Object Code](02-emitting-object-code.md) - Run LLVM passes to write a native `.o` file.
+In [Step 10.2](02-emitting-object-code.md), we will run LLVM's code emission passes to write a native `.o` object file to disk.
