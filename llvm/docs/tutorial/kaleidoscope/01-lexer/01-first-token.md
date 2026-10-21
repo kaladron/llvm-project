@@ -62,8 +62,10 @@ Every single grammar rule in the compiler would be buried under the bookkeeping 
 ```mermaid
 flowchart LR
     Bytes["Raw Bytes<br>'4' '2' ' ' '+' ' ' '1' '0'"] -->|Lexer / Scanner| Tokens["Atomic Tokens<br>[42]  [+]  [10]"]
-    Tokens -->|Parser| Ast["Grammar & AST<br>42 + 10"]
+    Tokens -->|Parser| Ast["Syntax Tree (AST)<br>(+ 42 10)"]
 ```
+
+Notice the representation `(+ 42 10)`: in an Abstract Syntax Tree, the operator `+` becomes the root node governing its two operand children, `42` and `10`.  The flat sequence of tokens has become a hierarchical tree.
 
 By establishing tokens as our fundamental building block, we draw a clean boundary:
 * **Below the boundary (The Lexer)**: Slices a messy stream of bytes into a tidy sequence of atomic tokens, throwing away whitespace and comments.
