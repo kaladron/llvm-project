@@ -10,6 +10,17 @@ When reading input character by character, we often need to look at a character 
 
 To handle this, our lexer stores the most recently read character in a static variable named `LastChar`.  `LastChar` is initialised to a space (`' '`) so that the first call to `gettok()` immediately triggers `getchar()` to read from standard input.
 
+### A Note on Static State and Production Code
+
+Notice that `LastChar` is declared `static`, retaining its value across repeated calls to `gettok()`.  In upcoming steps, we will also use global variables (`NumVal` and `IdentifierStr`) to pass token payloads back to the parser.
+
+In production-grade compiler software, you would not use global variables or function-local `static` state:
+* They are not thread-safe or re-entrant, making it impossible to run multiple compiler threads concurrently.
+* They make error recovery and backtracking difficult because state cannot be easily saved or restored.
+* A production lexer would encapsulate this state inside a `Lexer` class, accept an input stream reference, and attach source locations (file, line, and column) to every token for rich compiler diagnostics.
+
+We deliberately forgo that engineering complexity here in favour of clarity.  Keeping the state minimal and straightforward lets you focus directly on compiler concepts and LLVM code generation without getting bogged down in C++ boilerplate.
+
 ---
 
 ## Incremental Code Changes
