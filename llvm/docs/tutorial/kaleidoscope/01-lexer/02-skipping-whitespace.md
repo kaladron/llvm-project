@@ -66,10 +66,14 @@ Notice what happens:
 * Once a non-whitespace character is found, we copy it to `ThisChar`, read the next character into `LastChar` for future calls, and return `ThisChar`.
 
 > [!NOTE]
-> **What `isspace()` Covers**:
-> In Step 1.1, we manually checked `c != '\n' && c != '\r'` to prevent terminal newlines from being printed as tokens.  Standard C and C++ `isspace()` from `<cctype>` classifies all standard whitespace characters:  spaces (`' '`), horizontal tabs (`'\t'`), vertical tabs (`'\v'`), form feeds (`'\f'`), newlines (`'\n'`), and carriage returns (`'\r'`).
+> **Terminal Line Buffering and `isspace()`**:
+> When running `./kaleidoscope` interactively, you will notice that typing spaces or characters does nothing until you press **Enter**.
 > 
-> The `while (isspace(LastChar))` loop automatically swallows newlines alongside spaces and tabs, which is why our earlier manual newline check in `main()` is no longer required.
+> This happens because terminal input operates in **canonical mode** (line-buffered mode) by default:
+> * The operating system kernel holds onto your keystrokes in an internal buffer so you can edit the line (such as using Backspace to correct typos).
+> * The kernel does not release any characters to `getchar()` until you press Enter, which appends a newline (`'\n'`).
+> 
+> Once you press Enter, the entire line is delivered to `stdin` at once.  `gettok()` processes the buffered characters in rapid succession, consuming spaces and returning tokens.  When it reaches the trailing newline produced by the Enter key, standard `isspace()` classifies `'\n'` and `'\r'` as whitespace alongside spaces and tabs.  The `while (isspace(LastChar))` loop automatically swallows the newline and waits for the next line of input, which is why the manual newline check from Step 1.1 is no longer required.
 
 ### 3. A Streamlined `main()` Loop
 
