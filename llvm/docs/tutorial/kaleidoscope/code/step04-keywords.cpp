@@ -24,10 +24,10 @@ static int gettok() {
   while (isspace(LastChar))
     LastChar = getchar();
 
-  // Recognise identifiers and keywords: [a-zA-Z][a-zA-Z0-9]*
-  if (isalpha(LastChar)) {
+  // Recognise identifiers and keywords: [a-zA-Z_][a-zA-Z0-9_]*
+  if (isalpha(LastChar) || LastChar == '_') {
     IdentifierStr = LastChar;
-    while (isalnum((LastChar = getchar())))
+    while (isalnum((LastChar = getchar())) || LastChar == '_')
       IdentifierStr += LastChar;
 
     if (IdentifierStr == "def")

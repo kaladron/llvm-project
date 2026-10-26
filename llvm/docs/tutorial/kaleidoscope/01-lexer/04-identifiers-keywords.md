@@ -8,9 +8,9 @@ In this step, we add the ability to recognise words.  In programming languages, 
 
 ## Recognising Words
 
-In Kaleidoscope, an identifier begins with an alphabetical letter and is followed by any combination of letters and digits (`[a-zA-Z][a-zA-Z0-9]*`).
+In Kaleidoscope, an identifier begins with an alphabetical letter or underscore and is followed by any combination of letters, digits, and underscores (`[a-zA-Z_][a-zA-Z0-9_]*`).
 
-Whenever `gettok()` sees an alphabetical character, it collects characters into a global string named `IdentifierStr`.  Once the word is complete, it checks if the word matches a keyword:
+Whenever `gettok()` sees an alphabetical character or underscore, it collects characters into a global string named `IdentifierStr`.  Once the word is complete, it checks if the word matches a keyword:
 * If `IdentifierStr == "def"`, it returns `tok_def`.
 * If `IdentifierStr == "extern"`, it returns `tok_extern`.
 * Otherwise, it returns `tok_identifier`.
@@ -50,13 +50,13 @@ static double NumVal;             // Filled in if tok_number
 
 ### 2. Scanning Identifiers in `gettok()`
 
-In `gettok()`, right after the `while (isspace(LastChar))` loop skips whitespace, check if `LastChar` is an alphabetical character using `isalpha()`.  Place this block immediately before your numeric literal check:
+In `gettok()`, right after the `while (isspace(LastChar))` loop skips whitespace, check if `LastChar` is an alphabetical character or an underscore.  Place this block immediately before your numeric literal check:
 
 ```cpp
-  // Recognise identifiers and keywords: [a-zA-Z][a-zA-Z0-9]*
-  if (isalpha(LastChar)) {
+  // Recognise identifiers and keywords: [a-zA-Z_][a-zA-Z0-9_]*
+  if (isalpha(LastChar) || LastChar == '_') {
     IdentifierStr = LastChar;
-    while (isalnum((LastChar = getchar())))
+    while (isalnum((LastChar = getchar())) || LastChar == '_')
       IdentifierStr += LastChar;
 
     if (IdentifierStr == "def")
@@ -68,9 +68,9 @@ In `gettok()`, right after the `while (isspace(LastChar))` loop skips whitespace
 ```
 
 Notice how this works:
-* The first character is already known to be alphabetical, so we initialise `IdentifierStr` with it.
-* The `while` loop calls `getchar()` and appends characters as long as they are alphanumeric (`isalnum`).
-* Once a non-alphanumeric character is encountered, the loop finishes.  `LastChar` holds that character, ready for the next token call.
+* The first character is already known to be alphabetical or an underscore, so we initialise `IdentifierStr` with it.
+* The `while` loop calls `getchar()` and appends characters as long as they are alphanumeric (`isalnum`) or underscores.
+* Once a non-identifier character is encountered, the loop finishes.  `LastChar` holds that character, ready for the next token call.
 * We then test `IdentifierStr` against our known keywords.  If it matches `"def"` or `"extern"`, we return the respective keyword token.  Otherwise, it is a user identifier.
 
 ### 3. Updating `main()` to Handle All Tokens
@@ -144,10 +144,10 @@ static int gettok() {
   while (isspace(LastChar))
     LastChar = getchar();
 
-  // Recognise identifiers and keywords: [a-zA-Z][a-zA-Z0-9]*
-  if (isalpha(LastChar)) {
+  // Recognise identifiers and keywords: [a-zA-Z_][a-zA-Z0-9_]*
+  if (isalpha(LastChar) || LastChar == '_') {
     IdentifierStr = LastChar;
-    while (isalnum((LastChar = getchar())))
+    while (isalnum((LastChar = getchar())) || LastChar == '_')
       IdentifierStr += LastChar;
 
     if (IdentifierStr == "def")

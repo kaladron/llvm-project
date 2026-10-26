@@ -112,9 +112,9 @@ static int gettok() {
   while (isspace(LastChar))
     LastChar = getchar();
 
-  if (isalpha(LastChar)) {
+  if (isalpha(LastChar) || LastChar == '_') {
     IdentifierStr = LastChar;
-    while (isalnum((LastChar = getchar())))
+    while (isalnum((LastChar = getchar())) || LastChar == '_')
       IdentifierStr += LastChar;
 
     if (IdentifierStr == "def")
