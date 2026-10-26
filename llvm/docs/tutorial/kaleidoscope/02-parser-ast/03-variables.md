@@ -292,7 +292,9 @@ static void MainLoop() {
         AST->print(std::cout);
         std::cout << "\n";
       } else {
-        getNextToken();
+        // Skip tokens for error recovery until the next semicolon.
+        while (CurTok != ';' && CurTok != tok_eof)
+          getNextToken();
       }
       break;
     }

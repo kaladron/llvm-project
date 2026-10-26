@@ -142,7 +142,9 @@ static void MainLoop() {
         AST->print(std::cout);
         std::cout << "\n";
       } else {
-        getNextToken(); // skip bad token for error recovery
+        // Skip tokens for error recovery until the next semicolon.
+        while (CurTok != ';' && CurTok != tok_eof)
+          getNextToken();
       }
       break;
     }
@@ -165,6 +167,7 @@ int main() {
 Notice how the prompt and input loop interact:
 * In `main()`, we call `Prompt()` to display the initial `ready> ` prompt and then call `getNextToken()` to prime `CurTok` with the first token of input before `MainLoop()` begins.
 * Inside `MainLoop()`, when a top-level semicolon is encountered (`case ';':`), we call `Prompt()` and `getNextToken()` to consume the semicolon and wait for your next command.
+* If expression parsing fails, the `else` block skips tokens until it finds a terminating semicolon (`;`) or end of file, allowing `case ';':` to cleanly recover and display the next `ready> ` prompt.
 
 ---
 
@@ -318,7 +321,9 @@ static void MainLoop() {
         AST->print(std::cout);
         std::cout << "\n";
       } else {
-        getNextToken();
+        // Skip tokens for error recovery until the next semicolon.
+        while (CurTok != ';' && CurTok != tok_eof)
+          getNextToken();
       }
       break;
     }
