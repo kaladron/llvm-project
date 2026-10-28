@@ -334,8 +334,7 @@ TEST(LlvmLibcRegexTest, UnimplementedSyntaxAndFlags) {
   LIBC_NAMESPACE::regfree(&preg);
 
   // Unimplemented ERE metacharacters and special escapes return REG_BADPAT.
-  const char *const bad_patterns[] = {"a{1}", R"(\1)", R"(\b)", "[[:<:]]",
-                                      "[[:>:]]"};
+  const char *const bad_patterns[] = {R"(\1)", R"(\b)", "[[:<:]]", "[[:>:]]"};
   for (const char *pat : bad_patterns) {
     EXPECT_EQ(LIBC_NAMESPACE::regcomp(&preg, pat, REG_EXTENDED), REG_BADPAT);
     LIBC_NAMESPACE::regfree(&preg);
@@ -589,6 +588,18 @@ TEST(LlvmLibcRegexTest, PlusAndQuestionQuantifiers) {
   check(R"(^\d+-\w?$)", "123-a", "7-", "-a", "7-ab");
   check(R"(a\+b\?c)", "a+b?c", "xx a+b?c yy", "abc", "aabbc");
 
+  // Framed near-miss boundary count checks ({n}, {n,m}, {n,}, {0}), anchored
+  // nullable bound, adjacent repeats, and literal '{' fallbacks.
+  check("xa{3}y", "xaaay", "xx xaaay yy", "xaay", "xaaaay");
+  check("xa{2,4}y", "xaay", "xaaaay", "xay", "xaaaaay");
+  check("xa{2,}y", "xaay", "xaaaaay", "xy", "xay");
+  check("xa{0}y", "xy", "xx xy yy", "xay", "xaay");
+  check("^a{0,3}$", "", "aaa", "aaaa", "b");
+  check("^a{2,3}b{1,2}$", "aab", "aaabb", "ab", "aaaabb");
+  check("^(a*$){2}$", "", "aaa", "b", "ab");
+  check("((a{1,10}){1,10}){1,10}", "a", "aaaa", "b", "");
+  check("^{abc|a{b|a{,2}$", "{abc", "a{,2}", "abc", "aa");
+
   // Invalid repetition errors (REG_BADRPT).
   const char *const bad_rpt[] = {"^+",  "$+",  "^?",  "$?",   "a++", "a??",
                                  "a*+", "a+?", "a?*", "(+a)", "(?a)"};
@@ -597,6 +608,16 @@ TEST(LlvmLibcRegexTest, PlusAndQuestionQuantifiers) {
     EXPECT_EQ(LIBC_NAMESPACE::regcomp(&preg, pat, REG_EXTENDED), REG_BADRPT);
     LIBC_NAMESPACE::regfree(&preg);
   }
+  auto check_err = [](const char *pat, int expected_err) {
+    regex_t preg{};
+    EXPECT_EQ(LIBC_NAMESPACE::regcomp(&preg, pat, REG_EXTENDED), expected_err);
+    LIBC_NAMESPACE::regfree(&preg);
+  };
+  check_err("a{2}{2}", REG_BADRPT);
+  check_err("a{1,2", REG_EBRACE);
+  check_err("a{5,2}", REG_BADBR);
+  check_err("a{256}", REG_BADBR);
+  check_err("(a{255}){255}", REG_ESPACE);
 }
 
 #if defined(LIBC_ADD_NULL_CHECKS)

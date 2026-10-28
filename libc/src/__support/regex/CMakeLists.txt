@@ -58,6 +58,7 @@ add_object_library(
     regex_parser.h
   DEPENDS
     .regex_expr_pool
+    libc.hdr.limits_macros
     libc.hdr.regex_macros
     libc.src.__support.alloc_checker
     libc.src.__support.CPP.array

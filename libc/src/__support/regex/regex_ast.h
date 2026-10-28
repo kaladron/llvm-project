@@ -28,6 +28,10 @@ inline constexpr ExprId INVALID_EXPR_ID = 0;
 inline constexpr ExprId EMPTY_SET_ID = 1;
 inline constexpr ExprId EMPTY_STR_ID = 2;
 
+/// Sentinel upper bound representing unbounded repetition in Repeat(body, m,
+/// ∞).
+inline constexpr uint16_t REPEAT_INF = 0xFFFF;
+
 /// One bit per possible byte value (2^CHAR_BIT = 256), allowing O(1)
 /// membership tests for wildcards and bracket expressions.
 inline constexpr size_t BYTE_SET_BITS = size_t(1) << CHAR_BIT;
@@ -57,6 +61,8 @@ enum class ExprKind : uint8_t {
   Alt,
   /// Zero or more repetitions of a sub-expression (body*).
   Star,
+  /// Bounded or lower-bounded repetitions of a sub-expression (body{min,max}).
+  Repeat,
 };
 
 /// A node in the Regular Expression Abstract Syntax Tree.
@@ -81,6 +87,12 @@ struct Expr {
       ExprId left;
       ExprId right;
     } bin = {INVALID_EXPR_ID, INVALID_EXPR_ID};
+    /// Sub-expression and bounds for Repeat nodes.
+    struct {
+      ExprId body;
+      uint16_t min;
+      uint16_t max;
+    } rep;
     /// Sub-expression for Star nodes.
     ExprId body;
     /// Index into ExprPool::byte_sets for ByteSet nodes.
@@ -108,6 +120,11 @@ private:
   /// Create a Star node.
   constexpr Expr(ExprId b, bool anchors)
       : kind(ExprKind::Star), nullable(true), has_anchors(anchors), body(b) {}
+  /// Create a Repeat node.
+  constexpr Expr(ExprId b, uint16_t min_rep, uint16_t max_rep, bool is_null,
+                 bool anchors)
+      : kind(ExprKind::Repeat), nullable(is_null), has_anchors(anchors),
+        rep{b, min_rep, max_rep} {}
   /// Create a binary node (Concat or Alt).
   constexpr Expr(ExprKind k, bool is_null, bool anchors, ExprId l, ExprId r)
       : kind(k), nullable(is_null), has_anchors(anchors), bin{l, r} {}
@@ -126,6 +143,11 @@ public:
   static constexpr Expr make_byte_set(uint32_t bs_id) { return Expr(bs_id); }
   static constexpr Expr make_star(ExprId b, bool anchors = false) {
     return Expr(b, anchors);
+  }
+  static constexpr Expr make_repeat(ExprId b, uint16_t min_rep,
+                                    uint16_t max_rep, bool is_null = false,
+                                    bool anchors = false) {
+    return Expr(b, min_rep, max_rep, is_null, anchors);
   }
   static constexpr Expr make_concat(ExprId l, ExprId r, bool is_null = false,
                                     bool anchors = false) {
@@ -152,6 +174,9 @@ public:
       return byte_set_id == other.byte_set_id;
     case ExprKind::Star:
       return body == other.body;
+    case ExprKind::Repeat:
+      return rep.body == other.rep.body && rep.min == other.rep.min &&
+             rep.max == other.rep.max;
     case ExprKind::Concat:
     case ExprKind::Alt:
       return bin.left == other.bin.left && bin.right == other.bin.right;
