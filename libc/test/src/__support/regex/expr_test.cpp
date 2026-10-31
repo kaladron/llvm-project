@@ -227,8 +227,15 @@ TEST(LlvmLibcRegexExprTest, AlgebraicIdentitiesAltAndStar) {
 
   // Repeat identities and interval coalescing in make_alt.
   const ExprId plus_a = *pool.make_repeat(lit_a, 1, REPEAT_INF);
-  EXPECT_EQ(pool.make_repeat(INVALID_EXPR_ID, 1, 2).error(), REG_BADPAT);
-  EXPECT_EQ(pool.make_repeat(lit_a, 3, 2).error(), REG_BADPAT);
+  auto bad_rep_id = pool.make_repeat(INVALID_EXPR_ID, 1, 2);
+  auto bad_rep_range = pool.make_repeat(lit_a, 3, 2);
+  auto bad_rep_inf = pool.make_repeat(lit_a, REPEAT_INF, REPEAT_INF);
+  ASSERT_FALSE(bad_rep_id.has_value());
+  ASSERT_FALSE(bad_rep_range.has_value());
+  ASSERT_FALSE(bad_rep_inf.has_value());
+  EXPECT_EQ(bad_rep_id.error(), REG_BADPAT);
+  EXPECT_EQ(bad_rep_range.error(), REG_BADPAT);
+  EXPECT_EQ(bad_rep_inf.error(), REG_BADPAT);
   EXPECT_EQ(*pool.make_repeat(lit_a, 0, 0), empty_str);
   EXPECT_EQ(*pool.make_repeat(empty_str, 2, 4), empty_str);
   EXPECT_EQ(*pool.make_repeat(empty_set, 0, 3), empty_str);
@@ -239,14 +246,27 @@ TEST(LlvmLibcRegexExprTest, AlgebraicIdentitiesAltAndStar) {
   EXPECT_EQ(*pool.make_star(plus_a), star_a);
   EXPECT_EQ(*pool.make_repeat(plus_a, 1, REPEAT_INF), plus_a);
 
+  const ExprId rep_1_3 = *pool.make_repeat(lit_a, 1, 3);
   const ExprId rep_2_3 = *pool.make_repeat(lit_a, 2, 3);
   const ExprId rep_4_5 = *pool.make_repeat(lit_a, 4, 5);
-  EXPECT_EQ(*pool.make_alt(rep_2_3, rep_4_5), *pool.make_repeat(lit_a, 2, 5));
-  EXPECT_EQ(*pool.make_alt(lit_a, rep_2_3), *pool.make_repeat(lit_a, 1, 3));
+  const ExprId rep_1_2 = *pool.make_repeat(lit_a, 1, 2);
+  const ExprId rep_2_5 = *pool.make_repeat(lit_a, 2, 5);
+  EXPECT_EQ(*pool.make_alt(rep_2_3, rep_4_5), rep_2_5);
+  EXPECT_EQ(*pool.make_alt(lit_a, rep_2_3), rep_1_3);
   EXPECT_EQ(*pool.make_alt(empty_str, plus_a), star_a);
+  EXPECT_EQ(*pool.make_alt(*pool.make_repeat(lit_a, 2, REPEAT_INF), star_a),
+            star_a);
   EXPECT_EQ(*pool.make_alt(*pool.make_concat(rep_2_3, lit_b),
                            *pool.make_concat(rep_4_5, lit_b)),
-            *pool.make_concat(*pool.make_repeat(lit_a, 2, 5), lit_b));
+            *pool.make_concat(rep_2_5, lit_b));
+  EXPECT_EQ(*pool.make_alt(*pool.make_concat(lit_b, rep_2_3),
+                           *pool.make_concat(lit_b, rep_4_5)),
+            *pool.make_concat(lit_b, rep_2_5));
+  EXPECT_EQ(*pool.make_alt(*pool.make_alt(rep_2_3, lit_c), rep_4_5),
+            *pool.make_alt(rep_2_3, *pool.make_alt(lit_c, rep_4_5)));
+  const ExprId merged = *pool.make_alt(*pool.make_alt(lit_c, rep_2_3), rep_1_2);
+  EXPECT_EQ(merged, *pool.make_alt(lit_c, rep_1_3));
+  EXPECT_LT(pool.get(merged).bin.left, pool.get(merged).bin.right);
   EXPECT_TRUE(pool.is_nullable(*pool.make_repeat(lit_a, 0, 2)));
   EXPECT_FALSE(pool.is_nullable(rep_2_3));
   EXPECT_TRUE(

@@ -333,7 +333,8 @@ TEST(LlvmLibcRegexTest, UnimplementedSyntaxAndFlags) {
             REG_BADPAT);
   LIBC_NAMESPACE::regfree(&preg);
 
-  // Unimplemented ERE metacharacters and special escapes return REG_BADPAT.
+  // Unimplemented ERE backreferences and word-boundary extensions return
+  // REG_BADPAT.
   const char *const bad_patterns[] = {R"(\1)", R"(\b)", "[[:<:]]", "[[:>:]]"};
   for (const char *pat : bad_patterns) {
     EXPECT_EQ(LIBC_NAMESPACE::regcomp(&preg, pat, REG_EXTENDED), REG_BADPAT);
@@ -597,6 +598,9 @@ TEST(LlvmLibcRegexTest, PlusAndQuestionQuantifiers) {
   check("^a{0,3}$", "", "aaa", "aaaa", "b");
   check("^a{2,3}b{1,2}$", "aab", "aaabb", "ab", "aaaabb");
   check("^(a*$){2}$", "", "aaa", "b", "ab");
+  check("^(^|b){2}$", "b", "bb", "bbb", "a");
+  check("^(a{1,2}|a{4,5})$", "aa", "aaaa", "aaa", "aaaaaa");
+  check("^(a{2})*$", "", "aaaa", "a", "aaa");
   check("((a{1,10}){1,10}){1,10}", "a", "aaaa", "b", "");
   check("^{abc|a{b|a{,2}$", "{abc", "a{,2}", "abc", "aa");
 

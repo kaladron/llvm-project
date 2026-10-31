@@ -300,9 +300,10 @@
 
 #ifndef _POSIX2_RE_DUP_MAX
 #define _POSIX2_RE_DUP_MAX 255
-#endif
+#endif // _POSIX2_RE_DUP_MAX
+
 #ifndef RE_DUP_MAX
 #define RE_DUP_MAX _POSIX2_RE_DUP_MAX
-#endif
+#endif // RE_DUP_MAX
 
 #endif // LLVM_LIBC_MACROS_LIMITS_MACROS_H

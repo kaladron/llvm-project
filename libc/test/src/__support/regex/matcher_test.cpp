@@ -625,6 +625,36 @@ TEST(LlvmLibcRegexMatcherTest, RepeatStabilizationAndRfc2822Grammar) {
   EXPECT_EQ(match(rep_pool, *anchored_a255, string_view(buf256, 256)),
             MatchResult::NoMatch);
 
+  // Shared-prefix Concat derivatives (^(a+){255}$, (ab?){255}b) and interleaved
+  // multi-branch spines (x?.{255}a|.{255}b) coalesce without hitting
+  // MAX_NODE_LIMIT, and cached Expr::rep_expansion parses 30-deep nested '+'
+  // inside '{2}' in O(1) per node.
+  ExprPool prefix_pool;
+  ErrorOr<ExprId> plus_255 =
+      parse_ere("^(a+){255}$", REG_EXTENDED, prefix_pool);
+  ErrorOr<ExprId> opt_255b =
+      parse_ere("(ab?){255}b", REG_EXTENDED, prefix_pool);
+  ErrorOr<ExprId> inter_255 =
+      parse_ere("x?.{255}a|.{255}b", REG_EXTENDED, prefix_pool);
+  ASSERT_TRUE(plus_255.has_value());
+  ASSERT_TRUE(opt_255b.has_value());
+  ASSERT_TRUE(inter_255.has_value());
+  EXPECT_EQ(match(prefix_pool, *plus_255, string_view(buf256, 255)),
+            MatchResult::Match);
+  buf256[255] = 'b';
+  EXPECT_EQ(match(prefix_pool, *opt_255b, string_view(buf256, 256)),
+            MatchResult::Match);
+  EXPECT_EQ(match(prefix_pool, *inter_255, string_view(buf256, 256)),
+            MatchResult::Match);
+
+  ExprPool dag_exp_pool;
+  ErrorOr<ExprId> deep_plus_rep = parse_ere(
+      "(((((((((((((((((((((((((((((((a)+)+)+)+)+)+)+)+)+)+)+)+)+)+)+)+"
+      ")+)+)+)+)+)+)+)+)+)+)+)+)+)+){2}",
+      REG_EXTENDED, dag_exp_pool);
+  ASSERT_TRUE(deep_plus_rep.has_value());
+  EXPECT_EQ(match(dag_exp_pool, *deep_plus_rep, "aa"), MatchResult::Match);
+
   // Build a >7 KiB ERE from RFC-2822 Section 3.4.1 addr-spec EBNF productions
   // (F = FWS, C = CFWS, T = atext, W = word, S = addr-spec) and verify
   // hash-consed DAG deduplication keeps the pool under 32 KiB.
@@ -632,21 +662,29 @@ TEST(LlvmLibcRegexMatcherTest, RepeatStabilizationAndRfc2822Grammar) {
   size_t rfc_len = 0;
   auto expand = [&](auto &self, string_view str) -> void {
     for (char ch : str) {
-      if (ch == 'F')
+      if (ch == 'F') {
         self(self, "(([ \t]*\r\n)?[ \t]+)");
-      else if (ch == 'C')
-        self(self, R"(((F?\((F?([!-'*-[^-~]|\\([ -~]|[ 	])))*F?\))+F?|F)?)");
-      else if (ch == 'T')
+      } else if (ch == 'C') {
+        self(self, R"(((F?\((F?([!-'*-[^-~]|\\([ -~]|[ )"
+                   "\t"
+                   R"(])))*F?\))+F?|F)?)");
+      } else if (ch == 'T') {
         self(self, R"([[:alnum:]!#$%&'*+/=?^_`{|}~-])");
-      else if (ch == 'W')
-        self(self, R"(((CT+C)|(C"(F?([!#-[^-~]|\\([ -~]|[ 	])))*F?"C)))");
-      else if (ch == 'S')
+      } else if (ch == 'W') {
+        self(self, R"(((CT+C)|(C"(F?([!#-[^-~]|\\([ -~]|[ )"
+                   "\t"
+                   R"(])))*F?"C)))");
+      } else if (ch == 'S') {
         self(self, R"((((CT+(\.T+)*C)|W|(W(\.W{1,1}){0,31}))@)"
                    R"(((CT+(\.T+)*C)|(C\[(([0-9]{1,3}\.){3}[0-9]{1,3}|)"
-                   R"((F?([!-Z^-~]|\\([ -~]|[ 	])))*F?)\]C)|)"
+                   R"((F?([!-Z^-~]|\\([ -~]|[ )"
+                   "\t"
+                   R"(])))*F?)\]C)|)"
                    R"(((CT+C)(\.(CT+C){1,1}){1,31}))))");
-      else
-        rfc_buf[rfc_len++] = ch;
+      } else if (rfc_len < sizeof(rfc_buf)) {
+        rfc_buf[rfc_len] = ch;
+        ++rfc_len;
+      }
     }
   };
   expand(expand, "^(S|W{0,8}<S>)$");

@@ -44,7 +44,7 @@ uint8_t ctx_at(cpp::string_view input, size_t pos, int cflags, int eflags) {
 
 bool nullable(ExprId id, uint8_t anchor_ctx, const ExprPool &pool) {
   const Expr &e = pool.get(id);
-  if (!e.has_anchors)
+  if (e.nullable || !e.has_anchors)
     return e.nullable;
   switch (e.kind) {
   case ExprKind::Anchor:
@@ -56,7 +56,7 @@ bool nullable(ExprId id, uint8_t anchor_ctx, const ExprPool &pool) {
     return nullable(e.bin.left, anchor_ctx, pool) ||
            nullable(e.bin.right, anchor_ctx, pool);
   case ExprKind::Repeat:
-    return (e.rep.min == 0) || nullable(e.rep.body, anchor_ctx, pool);
+    return nullable(e.rep.body, anchor_ctx, pool);
   default:
     return e.nullable;
   }
@@ -110,12 +110,17 @@ ErrorOr<ExprId> derivative(ExprId id, char c, ExprPool &pool,
     return pool.make_concat(*d_body, id);
   }
   case ExprKind::Repeat: {
-    // Bounded Repetition Rule: D_c(R{m,n}) = D_c(R) . R{max(0,m-1), n-1}
+    // Bounded Repetition Rule:
+    // D_c(R{m,n}) = D_c(R) . R{nullable(R, ctx_before) ? 0 : max(0,m-1), n-1}.
+    // When R is nullable at ctx_before (e.g. via '^'), up to m - 1 leading
+    // copies may match empty at ctx_before before the copy that consumes c.
     ErrorOr<ExprId> d_body = derivative(e.rep.body, c, pool, ctx_before);
     if (!d_body.has_value() || *d_body == EMPTY_SET_ID)
       return d_body;
     uint16_t next_min =
-        (e.rep.min > 0) ? static_cast<uint16_t>(e.rep.min - 1) : uint16_t(0);
+        (e.rep.min > 0 && !nullable(e.rep.body, ctx_before, pool))
+            ? static_cast<uint16_t>(e.rep.min - 1)
+            : static_cast<uint16_t>(0);
     uint16_t next_max = (e.rep.max == REPEAT_INF)
                             ? REPEAT_INF
                             : static_cast<uint16_t>(e.rep.max - 1);
