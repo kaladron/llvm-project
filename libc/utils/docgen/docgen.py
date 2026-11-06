@@ -8,12 +8,14 @@
 # ===----------------------------------------------------------------------===##
 from argparse import ArgumentParser, Namespace
 import html
-from pathlib import Path
-from typing import Callable, Dict
 import os
+from pathlib import Path
+import re
 import sys
+from typing import Callable, Dict
 
 from header import Header
+from links import cppreference_url, posix_url
 
 
 class DocgenAPIFormatError(Exception):
@@ -110,29 +112,41 @@ def _status_badge_html(implemented: bool) -> str:
     )
 
 
-def _c_section_html(item: Dict) -> str:
+_C_SECTION_RE = re.compile(r"^([0-9]+|[FGHJK])\.")
+
+
+def _c_section_html(header: Header, name: str, kind: str, item: Dict) -> str:
     sec = item.get("c-definition")
-    if sec:
-        return f'<span class="hc-sec-badge">{html.escape(str(sec))}</span>'
-    return '<span class="hc-status-no" aria-label="Not in C23">&ndash;</span>'
+    if not sec:
+        return '<span class="hc-status-no" aria-label="Not in C23">&ndash;</span>'
+    label = html.escape(str(sec))
+    if _C_SECTION_RE.match(str(sec)):
+        url = cppreference_url(header, name, kind)
+        if url:
+            href = html.escape(url, quote=True)
+            return (
+                f'<a class="hc-c-link" href="{href}" '
+                f'title="C23 section {label} on cppreference.com">'
+                f'{label} <span aria-hidden="true">&#8599;</span></a>'
+            )
+    return f'<span class="hc-sec-badge">{label}</span>'
 
 
 def _posix_link_html(header: Header, name: str, kind: str, item: Dict) -> str:
-    base = (
-        f"functions/{name}.html"
-        if kind == "function"
-        else f"basedefs/{header.name.replace('/', '_')}.html"
-    )
-    if "in-latest-posix" in item:
-        url = f"https://pubs.opengroup.org/onlinepubs/9799919799/{base}"
-        return f'<a class="hc-posix-link" href="{url}">POSIX.1-2024 &#8599;</a>'
+    url = posix_url(header, name, kind, item)
+    if not url:
+        return '<span class="hc-status-no" aria-label="Not in POSIX">&ndash;</span>'
     if "removed-in-posix-2008" in item:
-        url = f"https://pubs.opengroup.org/onlinepubs/007904875/{base}"
-        return f'<a class="hc-posix-link" href="{url}">Removed (2008) &#8599;</a>'
-    if "removed-in-posix-2024" in item:
-        url = f"https://pubs.opengroup.org/onlinepubs/9699919799.2018edition/{base}"
-        return f'<a class="hc-posix-link" href="{url}">Removed (2024) &#8599;</a>'
-    return '<span class="hc-status-no" aria-label="Not in POSIX">&ndash;</span>'
+        label = "Removed (2008)"
+    elif "removed-in-posix-2024" in item:
+        label = "Removed (2024)"
+    else:
+        label = "POSIX.1-2024"
+    href = html.escape(url, quote=True)
+    return (
+        f'<a class="hc-posix-link" href="{href}">'
+        f'{label} <span aria-hidden="true">&#8599;</span></a>'
+    )
 
 
 def print_symbol_table_md(
@@ -156,7 +170,7 @@ def print_symbol_table_md(
         obj = items[name] or {}
         row_id = html.escape(f"{kind}-{name.replace(' ', '-')}", quote=True)
         status = _status_badge_html(is_implemented_fn(name))
-        c_sec = _c_section_html(obj)
+        c_sec = _c_section_html(header, name, kind, obj)
         posix = _posix_link_html(header, name, kind, obj)
         print(
             f'    <tr id="{row_id}">'

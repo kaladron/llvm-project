@@ -18,6 +18,7 @@ import unittest
 sys.path.insert(0, str(Path(__file__).parent))
 from docgen import print_header_status_md
 from header import Header, _is_stub_file
+from links import cppreference_url, posix_url
 
 
 class DocgenTest(unittest.TestCase):
@@ -81,7 +82,9 @@ class DocgenTest(unittest.TestCase):
             "macros": {"EOF": {"c-definition": "7.23.1", "in-latest-posix": None}},
             "functions": {
                 "printf": {"c-definition": "7.23.6.3", "in-latest-posix": None},
+                "printf_s": {"c-definition": "K.3.5.3.3"},
                 "missing_fn": {"c-definition": "7.23.6.99"},
+                "gnu_fn": {"c-definition": "TODO: glibc extension"},
             },
         }
         buf = io.StringIO()
@@ -97,7 +100,9 @@ class DocgenTest(unittest.TestCase):
             any(
                 'id="macro-EOF"' in l
                 and 'title="Implemented"' in l
+                and 'href="https://en.cppreference.com/w/c/io"' in l
                 and "basedefs/stdio.h.html" in l
+                and '<span aria-hidden="true">&#8599;</span>' in l
                 for l in lines
             )
         )
@@ -105,7 +110,15 @@ class DocgenTest(unittest.TestCase):
             any(
                 'id="function-printf"' in l
                 and 'title="Implemented"' in l
+                and 'href="https://en.cppreference.com/w/c/io/fprintf"' in l
                 and "functions/printf.html" in l
+                for l in lines
+            )
+        )
+        self.assertTrue(
+            any(
+                'id="function-printf_s"' in l
+                and 'href="https://en.cppreference.com/w/c/io/fprintf"' in l
                 for l in lines
             )
         )
@@ -115,6 +128,121 @@ class DocgenTest(unittest.TestCase):
                 for l in lines
             )
         )
+        self.assertTrue(
+            any(
+                'id="function-gnu_fn"' in l
+                and '<span class="hc-sec-badge">TODO: glibc extension</span>' in l
+                for l in lines
+            )
+        )
+
+    def test_external_urls(self):
+        cases = [
+            (
+                "stdio.h",
+                "printf",
+                "function",
+                "https://en.cppreference.com/w/c/io/fprintf",
+            ),
+            (
+                "stdlib.h",
+                "malloc",
+                "function",
+                "https://en.cppreference.com/w/c/memory/malloc",
+            ),
+            (
+                "stdlib.h",
+                "strfromf128",
+                "function",
+                "https://en.cppreference.com/w/c/string/byte/strfromf",
+            ),
+            (
+                "math.h",
+                "acosf128",
+                "function",
+                "https://en.cppreference.com/w/c/numeric/math/acos",
+            ),
+            (
+                "math.h",
+                "erf",
+                "function",
+                "https://en.cppreference.com/w/c/numeric/math/erf",
+            ),
+            (
+                "math.h",
+                "ilogbf16",
+                "function",
+                "https://en.cppreference.com/w/c/numeric/math/ilogb",
+            ),
+            (
+                "math.h",
+                "ilogbbf16",
+                "function",
+                "https://en.cppreference.com/w/c/numeric/math/ilogb",
+            ),
+            (
+                "math.h",
+                "log_bf16",
+                "function",
+                "https://en.cppreference.com/w/c/numeric/math/log",
+            ),
+            (
+                "complex.h",
+                "creall",
+                "function",
+                "https://en.cppreference.com/w/c/numeric/complex/creal",
+            ),
+            (
+                "stdbit.h",
+                "stdc_bit_ceil_ui",
+                "function",
+                "https://en.cppreference.com/w/c/numeric/bit/stdc_bit_ceil",
+            ),
+            (
+                "time.h",
+                "gmtime_r",
+                "function",
+                "https://en.cppreference.com/w/c/chrono/gmtime",
+            ),
+            (
+                "time.h",
+                "struct tm",
+                "type",
+                "https://en.cppreference.com/w/c/chrono/tm",
+            ),
+            ("unistd.h", "fork", "function", ""),
+        ]
+        for hname, sym, kind, expected in cases:
+            with self.subTest(header=hname, symbol=sym):
+                self.assertEqual(cppreference_url(Header(hname), sym, kind), expected)
+        self.assertEqual(
+            posix_url(
+                Header("sys/stat.h"), "chmod", "function", {"in-latest-posix": None}
+            ),
+            "https://pubs.opengroup.org/onlinepubs/9799919799/functions/chmod.html",
+        )
+        self.assertEqual(
+            posix_url(
+                Header("sys/stat.h"), "S_IRUSR", "macro", {"in-latest-posix": None}
+            ),
+            "https://pubs.opengroup.org/onlinepubs/9799919799/basedefs/sys_stat.h.html",
+        )
+        self.assertEqual(
+            posix_url(
+                Header("strings.h"), "bcmp", "function", {"removed-in-posix-2008": None}
+            ),
+            "https://pubs.opengroup.org/onlinepubs/007904875/functions/bcmp.html",
+        )
+        self.assertEqual(
+            posix_url(
+                Header("sys/time.h"),
+                "gettimeofday",
+                "function",
+                {"removed-in-posix-2024": None},
+            ),
+            "https://pubs.opengroup.org/onlinepubs/9699919799.2018edition/functions/gettimeofday.html",
+        )
+        self.assertEqual(posix_url(Header("stdio.h"), "printf", "function", {}), "")
 
 
 if __name__ == "__main__":
