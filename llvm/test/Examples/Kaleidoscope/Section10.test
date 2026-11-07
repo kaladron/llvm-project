@@ -1,0 +1,8 @@
+# RUN: Kaleidoscope-Sec10 --emit-obj %t.o < %s 2>&1 | FileCheck %s
+# RUN: llvm-nm %t.o | FileCheck %s --check-prefix=NM
+# REQUIRES: default_triple
+
+def average(x y) (x + y) * 0.5;
+
+# CHECK: Wrote {{.*}}.o
+# NM: T {{_?}}average

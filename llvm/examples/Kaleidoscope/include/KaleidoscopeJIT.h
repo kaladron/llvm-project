@@ -57,8 +57,10 @@ public:
         MainJD(this->ES->createBareJITDylib("<main>")) {
     MainJD.addGenerator(
         cantFail(DynamicLibrarySearchGenerator::GetForCurrentProcess(
-            DL.getGlobalPrefix())));
-    if (JTMB.getTargetTriple().isOSBinFormatCOFF()) {
+            this->DL.getGlobalPrefix())));
+    if (this->ES->getExecutorProcessControl()
+            .getTargetTriple()
+            .isOSBinFormatCOFF()) {
       ObjectLayer.setOverrideObjectFlagsWithResponsibilityFlags(true);
       ObjectLayer.setAutoClaimResponsibilityForObjectSymbols(true);
     }
@@ -88,6 +90,10 @@ public:
   }
 
   const DataLayout &getDataLayout() const { return DL; }
+
+  const Triple &getTargetTriple() const {
+    return ES->getExecutorProcessControl().getTargetTriple();
+  }
 
   JITDylib &getMainJITDylib() { return MainJD; }
 

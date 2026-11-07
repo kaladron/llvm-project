@@ -1,35 +1,36 @@
 # Step 1.2: Skipping Whitespace
 
-In programming languages, whitespace between tokens (spaces, tabs, and newlines) carries no semantic meaning.  In this step, we restructure our code by extracting token scanning into a dedicated function named `gettok()` that silently skips whitespace before returning the next token.
+In [Step 1.1](01-first-token.md), our scanner printed `ASCII 32` for every space we typed.  In programming languages, whitespace between tokens (spaces, tabs, and newlines) carries no semantic meaning.  In this step, we restructure our code by extracting token scanning into a dedicated function named `gettok()` that silently skips whitespace before returning the next token.
 
 ---
 
-## Character Buffering with LastChar
+## Character Buffering with `LastChar`
 
-When reading input character by character, we often need to look at a character to decide whether a token has ended, without discarding that character for the next token.
+When reading input character by character, a scanner almost always needs one character of lookahead: we have to inspect the character *after* a token to tell that the current token has ended, without losing that character for the next call.
 
-To handle this, our lexer stores the most recently read character in a static variable named `LastChar`.  `LastChar` is initialised to a space (`' '`) so that the first call to `gettok()` immediately triggers `getchar()` to read from standard input.
+To handle this cleanly, `gettok()` stores the most recently read character in a `static` variable named `LastChar`.  We initialise `LastChar` to a space (`' '`) so that the very first call to `gettok()` enters the whitespace-skipping loop and calls `getchar()` to read from standard input.
 
-> [!NOTE]
-> **Production Code vs Pedagogical Clarity**:
-> Notice that `LastChar` is declared `static`, retaining its value across repeated calls to `gettok()`.  In upcoming steps, we will also use global variables (`NumVal` and `IdentifierStr`) to pass token payloads back to the parser.
-> 
-> In production-grade compiler software, you would not use global variables or function-local `static` state:
-> * They are not thread-safe or re-entrant, making it impossible to run multiple compiler threads concurrently.
-> * They make error recovery and backtracking difficult because state cannot be easily saved or restored.
-> * A production lexer would encapsulate this state inside a `Lexer` class, accept an input stream reference, and attach source locations (file, line, and column) to every token for rich compiler diagnostics.
-> 
-> We deliberately forgo that engineering complexity here in favour of clarity.  Keeping the state minimal and straightforward lets you focus directly on compiler concepts and LLVM code generation without getting bogged down in C++ boilerplate.
+:::{note}
+**Production Code vs Pedagogical Clarity**:
+Notice that `LastChar` is declared `static`, retaining its value across repeated calls to `gettok()`.  In upcoming steps, we will also use file-scope `static` variables (`NumVal` and `IdentifierStr`) to pass token payloads back to the parser.
+
+In a production compiler, you would encapsulate this state inside a `Lexer` class rather than keeping it in `static` variables:
+* Function-local and global state is neither thread-safe nor re-entrant, so multiple compiler instances cannot run concurrently in the same process.
+* Saving and restoring scanner state for speculative lookahead is much easier when state lives in an object.
+* A production lexer also tracks source locations (file, line, and column) on every token to print caret diagnostics.
+
+We deliberately keep state minimal here in favour of clarity.  Skipping the extra plumbing lets you focus directly on lexing, parsing, and LLVM IR generation.
+:::
 
 ---
 
 ## Incremental Code Changes
 
-Open your `kaleidoscope.cpp` file.  You will transform the raw loop from Step 1.1 into a structured lexer through three targeted updates.
+Open your `kaleidoscope.cpp` file.  Let us transform the raw loop from [Step 1.1](01-first-token.md) into a structured lexer with three small updates.
 
 ### 1. Header Inclusion
 
-At the top of `kaleidoscope.cpp`, include `<cctype>` for the `isspace()` function:
+At the top of `kaleidoscope.cpp`, include `<cctype>` right above `<cstdio>` so we can call `isspace()`:
 
 ```cpp
 #include <cctype>
@@ -49,39 +50,39 @@ static int gettok() {
   while (isspace(LastChar))
     LastChar = getchar();
 
-  // Check for end of file.
   if (LastChar == EOF)
     return -1;
 
-  // Otherwise, return the character as its ASCII value.
   int ThisChar = LastChar;
   LastChar = getchar();
   return ThisChar;
 }
 ```
 
-Notice what happens:
+Trace how `LastChar` flows from one call to the next:
 * `LastChar` persists across calls to `gettok()` because it is `static`.
-* The `while (isspace(LastChar))` loop repeatedly calls `getchar()` until it finds a non-whitespace character.
-* Once a non-whitespace character is found, we copy it to `ThisChar`, read the next character into `LastChar` for future calls, and return `ThisChar`.
+* The `while (isspace(LastChar))` loop repeatedly calls `getchar()` until `LastChar` holds a non-whitespace character (or `EOF`).
+* If `LastChar == EOF`, we return `-1` to signal the end of input.
+* Otherwise, we save `LastChar` in `ThisChar`, prime `LastChar` with the *next* character from `getchar()` for future calls, and return `ThisChar`.
 
-> [!NOTE]
-> **Terminal Line Buffering and `isspace()`**:
-> When running `./kaleidoscope` interactively, you will notice that typing spaces or characters does nothing until you press **Enter**.
-> 
-> This happens because terminal input operates in **canonical mode** (line-buffered mode) by default:
-> * The operating system kernel holds onto your keystrokes in an internal buffer so you can edit the line (such as using Backspace to correct typos).
-> * The kernel does not release any characters to `getchar()` until you press Enter, which appends a newline (`'\n'`).
-> 
-> Once you press Enter, the entire line is delivered to `stdin` at once.  `gettok()` processes the buffered characters in rapid succession, consuming spaces and returning tokens.  When it reaches the trailing newline produced by the Enter key, standard `isspace()` classifies `'\n'` and `'\r'` as whitespace alongside spaces and tabs.  The `while (isspace(LastChar))` loop automatically swallows the newline and waits for the next line of input, which is why the manual newline check from Step 1.1 is no longer required.
+:::{note}
+**Terminal Line Buffering and `isspace()`**:
+When running `./kaleidoscope` interactively, typing spaces or characters produces no output until you press **Enter**.
+
+This happens because terminal input operates in **canonical mode** (line-buffered mode) by default:
+* The operating system kernel holds your keystrokes in a line buffer so you can edit typos with Backspace.
+* Nothing is delivered to `getchar()` until you press Enter, which appends a newline (`'\n'`).
+
+Once you press Enter, `gettok()` consumes the buffered characters in rapid succession.  Because standard `isspace()` classifies `'\n'` and `'\r'` as whitespace right alongside `' '` and `'\t'`, the `while (isspace(LastChar))` loop swallows the trailing newline automatically and blocks cleanly on `getchar()` for your next line.  That is why the manual `c != '\n' && c != '\r'` check from Step 1.1 is no longer needed!
+:::
 
 ### 3. A Streamlined `main()` Loop
 
-With `gettok()` handling token extraction, your `main()` function simplifies into a clean consumer loop:
+Replace the body of `main()` so it updates the step banner and calls `gettok()` instead of `getchar()`:
 
 ```cpp
 int main() {
-  printf("Kaleidoscope Token Inspector (Step 2: Whitespace Skipping)\n");
+  printf("Kaleidoscope Token Inspector (Step 1.2: Whitespace Skipping)\n");
   printf("Type characters with spaces and press Enter (Ctrl+D to exit):\n\n");
 
   int tok;
@@ -97,7 +98,7 @@ int main() {
 
 ## Verifying Your Code
 
-Before compiling, check that your `kaleidoscope.cpp` has all changes in place.
+Compare your `kaleidoscope.cpp` against the complete reference file for this step:
 
 <details>
 <summary>Click here to compare against the reference kaleidoscope.cpp</summary>
@@ -114,18 +115,16 @@ static int gettok() {
   while (isspace(LastChar))
     LastChar = getchar();
 
-  // Check for end of file.
   if (LastChar == EOF)
     return -1;
 
-  // Otherwise, return the character as its ASCII value.
   int ThisChar = LastChar;
   LastChar = getchar();
   return ThisChar;
 }
 
 int main() {
-  printf("Kaleidoscope Token Inspector (Step 2: Whitespace Skipping)\n");
+  printf("Kaleidoscope Token Inspector (Step 1.2: Whitespace Skipping)\n");
   printf("Type characters with spaces and press Enter (Ctrl+D to exit):\n\n");
 
   int tok;
@@ -145,7 +144,7 @@ int main() {
 Recompile:
 
 ```bash
-clang++ -Wall -Wextra kaleidoscope.cpp -o kaleidoscope
+clang++ -std=c++17 -fno-rtti -Wall -Wextra kaleidoscope.cpp -o kaleidoscope
 ```
 
 Run the binary:
@@ -154,18 +153,23 @@ Run the binary:
 ./kaleidoscope
 ```
 
-Type operators separated by multiple spaces or tabs:
+Type operators separated by generous runs of spaces or tabs, press Enter, and finish with `Ctrl+D`:
 
 ```text
-Kaleidoscope Token Inspector (Step 2: Whitespace Skipping)
+Kaleidoscope Token Inspector (Step 1.2: Whitespace Skipping)
 Type characters with spaces and press Enter (Ctrl+D to exit):
 
    +       *     ;   
 Token: '+' (ASCII 43)
 Token: '*' (ASCII 42)
 Token: ';' (ASCII 59)
+[EOF]
 ```
 
-The spaces vanished completely.  `gettok()` silently swallowed all whitespace characters and returned only the operator tokens.
+Every space, tab, and newline vanished.  `gettok()` swallowed all whitespace and returned only the meaningful operator tokens.
 
-In [Step 1.3](03-numeric-literals.md), we will teach `gettok()` to group digits and decimals into single numeric tokens.
+In [Step 1.3](03-numeric-literals.md), we will teach `gettok()` to group runs of digits and decimal points into numeric literal tokens.
+
+---
+
+[Previous: Step 1.1 - What is a Token?](01-first-token.md) | [Section 1 Overview](index.md) | [Next: Step 1.3 - Numeric Literals](03-numeric-literals.md)

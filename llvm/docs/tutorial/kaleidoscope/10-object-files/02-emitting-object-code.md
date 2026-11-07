@@ -1,74 +1,99 @@
 # Step 10.2: Emitting Object Code
 
-Once `TargetMachine` is configured, emitting an object file requires only a few lines of code.
+With `TheTargetMachine` configured and all Kaleidoscope definitions accumulated and `mem2reg`-optimised inside `TheModule`, writing a native relocatable `.o` object file to disk takes fewer than twenty lines of C++!
 
 ---
 
-## The Object Emission Pipeline
+## How LLVM Lowers IR to an Object File
 
-```mermaid
-flowchart LR
-    IR["TheModule<br>(LLVM IR)"] --> PassManager["PassManager<br>addPassesToEmitFile(pass, dest, ObjectFile)"]
-    PassManager --> MC["LLVM CodeGen & MC Layer<br>(Selection, RegAlloc, AsmPrinter)"]
-    MC --> Dest["raw_fd_ostream('output.o')<br>(native relocatable object file)"]
+```text
++----------------------------------+     +----------------------------------+
+|     TheModule (Optimised IR)     |     |   TargetMachine Backend Passes   |
+|  define double @average(...)     | --> |  1. Instruction Selection (ISel) |
+|  define double @fib(...)         |     |  2. Register Allocation          |
++----------------------------------+     |  3. Prologue/Epilogue & Sched    |
+                                         |  4. MC Object Streamer           |
+                                         +-----------------+----------------+
+                                                           |
+                                                           v
+                                         +----------------------------------+
+                                         |   raw_fd_ostream ("output.o")    |
+                                         |  Native ELF / Mach-O / COFF .o   |
+                                         +----------------------------------+
 ```
 
-> [!NOTE]
-> **The LLVM Backend Pipeline**:
-> The call to `addPassesToEmitFile` populates a pass manager with LLVM's complete code generation pipeline: instruction selection, register allocation, instruction scheduling, and direct machine code emission.  When `pass.run(*TheModule)` executes, LLVM translates your IR into binary machine instructions formatted for your operating system's object loader.
+:::{note}
+**Why Does Target Code Emission Still Use `llvm::legacy::PassManager`?**
 
-> [!TIP]
-> **Emitting Human-Readable Assembly**:
-> If you want to inspect assembly instructions rather than binary object bytes, change `llvm::CodeGenFileType::ObjectFile` to `llvm::CodeGenFileType::AssemblyFile` and write to `output.s`.  LLVM will output annotated assembly code ready for an assembler.
+You might do a double take when you see `llvm::legacy::PassManager CodeGenPasses;` right next to the modern `llvm::FunctionPassManager` (`TheFPM`) you configured in [Step 9.3](../09-local-variables/03-mem2reg-optimisation.md)!
+
+Here is why both appear in real-world LLVM frontends (including Clang itself): LLVM's **middle-end IR optimisers** (`PromotePass`, `InstCombinePass`, `GVNPass`, `SimplifyCFGPass`) migrated completely to the New Pass Manager, whereas LLVM's **backend `MachineFunction` code-generation pipeline** (`TargetMachine::addPassesToEmitFile`) still exposes its stable public C++ API through `llvm::legacy::PassManager`.  Using the New Pass Manager for IR optimisation and `legacy::PassManager` solely for `addPassesToEmitFile` is the exact idiomatic pattern used across LLVM tools today!
+:::
 
 ---
 
 ## Incremental Code Changes
 
-Open `kaleidoscope.cpp` to write the object emission pipeline.
+Open `kaleidoscope.cpp` and apply the two small additions below.
 
-### 1. Opening the Output File
+### 1. Writing `EmitObjectFile()`
 
-Create an output stream writing to a binary file named `output.o`:
+Add `EmitObjectFile()` right after `ConfigureTargetMachine()` (just above `main()`).  It opens a binary `llvm::raw_fd_ostream`, asks `TheTargetMachine` to populate `CodeGenPasses` for `llvm::CodeGenFileType::ObjectFile`, runs those backend passes over `*TheModule`, and flushes the file:
 
 ```cpp
+static int EmitObjectFile(const std::string &Filename) {
   std::error_code EC;
-  llvm::raw_fd_ostream dest("output.o", EC, llvm::sys::fs::OF_None);
+  llvm::raw_fd_ostream Dest(Filename, EC, llvm::sys::fs::OF_None);
   if (EC) {
-    llvm::errs() << "Could not open file: " << EC.message();
+    llvm::errs() << "Could not open file: " << EC.message() << "\n";
     return 1;
   }
+
+  llvm::legacy::PassManager CodeGenPasses;
+  if (TheTargetMachine->addPassesToEmitFile(
+          CodeGenPasses, Dest, nullptr, llvm::CodeGenFileType::ObjectFile)) {
+    llvm::errs() << "TargetMachine cannot emit an object file\n";
+    return 1;
+  }
+
+  CodeGenPasses.run(*TheModule);
+  Dest.flush();
+  fprintf(stderr, "Wrote %s\n", Filename.c_str());
+  return 0;
+}
 ```
 
-### 2. Running the Object Emission Pass
+### 2. Calling `EmitObjectFile()` at the End of `main()`
 
-Use `TargetMachine::addPassesToEmitFile` to configure the pass manager for object emission, run it on your module, and flush the file stream:
+In `main()`, update the REPL banner string to Step 10.2, and right after `MainLoop();` finishes reading all definitions up to `EOF`, invoke `EmitObjectFile(ObjectOutputPath)` when `EmitObjectMode` is active:
 
 ```cpp
-  llvm::legacy::PassManager pass;
-  auto FileType = llvm::CodeGenFileType::ObjectFile;
+    printf("Kaleidoscope Compiler (Step 10.2: Object File Emission)\n");
+```
 
-  if (TheTargetMachine->addPassesToEmitFile(pass, dest, nullptr, FileType)) {
-    llvm::errs() << "TheTargetMachine can't emit a file of this type";
-    return 1;
-  }
+```cpp
+  Prompt();
+  getNextToken();
+  MainLoop();
 
-  pass.run(*TheModule);
-  dest.flush();
+  if (EmitObjectMode)
+    return EmitObjectFile(ObjectOutputPath);
 
-  fprintf(stderr, "Wrote output.o successfully!\n");
+  return 0;
+}
 ```
 
 ---
 
 ## Verifying Your Code
 
-Before compiling, verify your complete `kaleidoscope.cpp` against the reference file.
+Compare your `kaleidoscope.cpp` against the complete reference file:
 
 <details>
 <summary>Click here to compare against the reference kaleidoscope.cpp</summary>
 
 ```cpp
+#include "KaleidoscopeJIT.h"
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/IR/BasicBlock.h"
@@ -80,15 +105,24 @@ Before compiling, verify your complete `kaleidoscope.cpp` against the reference 
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/LegacyPassManager.h"
 #include "llvm/IR/Module.h"
+#include "llvm/IR/PassManager.h"
 #include "llvm/IR/Type.h"
 #include "llvm/IR/Verifier.h"
 #include "llvm/MC/TargetRegistry.h"
+#include "llvm/Passes/PassBuilder.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Target/TargetOptions.h"
 #include "llvm/TargetParser/Host.h"
+#include "llvm/TargetParser/Triple.h"
+#include "llvm/Transforms/InstCombine/InstCombine.h"
+#include "llvm/Transforms/Scalar/GVN.h"
+#include "llvm/Transforms/Scalar/Reassociate.h"
+#include "llvm/Transforms/Scalar/SimplifyCFG.h"
+#include "llvm/Transforms/Utils/Mem2Reg.h"
+#include <cstring>
 
 #include <cctype>
 #include <cstdio>
@@ -99,20 +133,32 @@ Before compiling, verify your complete `kaleidoscope.cpp` against the reference 
 #include <utility>
 #include <vector>
 
+//===----------------------------------------------------------------------===//
+// Lexer
+//===----------------------------------------------------------------------===//
+
 enum Token {
   tok_eof = -1,
 
   // Commands / Keywords
   tok_def = -100,
   tok_extern = -101,
+  tok_if = -102,
+  tok_then = -103,
+  tok_else = -104,
+  tok_for = -105,
+  tok_in = -106,
+  tok_binary = -107,
+  tok_unary = -108,
+  tok_var = -109,
 
   // Primary
   tok_identifier = -200,
   tok_number = -201,
 };
 
-static std::string IdentifierStr;
-static double NumVal;
+static std::string IdentifierStr; // Filled in if tok_identifier
+static double NumVal;             // Filled in if tok_number
 
 static int gettok() {
   static int LastChar = ' ';
@@ -120,6 +166,7 @@ static int gettok() {
   while (isspace(LastChar))
     LastChar = getchar();
 
+  // Recognise identifiers and keywords: [a-zA-Z_][a-zA-Z0-9_]*
   if (isalpha(LastChar) || LastChar == '_') {
     IdentifierStr = LastChar;
     while (isalnum((LastChar = getchar())) || LastChar == '_')
@@ -129,9 +176,26 @@ static int gettok() {
       return tok_def;
     if (IdentifierStr == "extern")
       return tok_extern;
+    if (IdentifierStr == "if")
+      return tok_if;
+    if (IdentifierStr == "then")
+      return tok_then;
+    if (IdentifierStr == "else")
+      return tok_else;
+    if (IdentifierStr == "for")
+      return tok_for;
+    if (IdentifierStr == "in")
+      return tok_in;
+    if (IdentifierStr == "binary")
+      return tok_binary;
+    if (IdentifierStr == "unary")
+      return tok_unary;
+    if (IdentifierStr == "var")
+      return tok_var;
     return tok_identifier;
   }
 
+  // Recognise numeric literals: [0-9.]+
   if (isdigit(LastChar) || LastChar == '.') {
     std::string NumStr;
     do {
@@ -143,6 +207,7 @@ static int gettok() {
     return tok_number;
   }
 
+  // Recognise comments: '#' through end of line.
   if (LastChar == '#') {
     do
       LastChar = getchar();
@@ -160,10 +225,15 @@ static int gettok() {
   return ThisChar;
 }
 
+//===----------------------------------------------------------------------===//
+// Abstract Syntax Tree (AST)
+//===----------------------------------------------------------------------===//
+
 class ExprAST {
 public:
   virtual ~ExprAST() = default;
   virtual llvm::Value *codegen() = 0;
+  virtual llvm::Value *codegenAddress();
 };
 
 class NumberExprAST : public ExprAST {
@@ -179,6 +249,18 @@ class VariableExprAST : public ExprAST {
 
 public:
   explicit VariableExprAST(std::string Name) : Name(std::move(Name)) {}
+  const std::string &getName() const { return Name; }
+  llvm::Value *codegen() override;
+  llvm::Value *codegenAddress() override;
+};
+
+class UnaryExprAST : public ExprAST {
+  char Opcode;
+  std::unique_ptr<ExprAST> Operand;
+
+public:
+  UnaryExprAST(char Opcode, std::unique_ptr<ExprAST> Operand)
+      : Opcode(Opcode), Operand(std::move(Operand)) {}
   llvm::Value *codegen() override;
 };
 
@@ -203,15 +285,60 @@ public:
   llvm::Value *codegen() override;
 };
 
+class IfExprAST : public ExprAST {
+  std::unique_ptr<ExprAST> Cond, Then, Else;
+
+public:
+  IfExprAST(std::unique_ptr<ExprAST> Cond, std::unique_ptr<ExprAST> Then,
+            std::unique_ptr<ExprAST> Else)
+      : Cond(std::move(Cond)), Then(std::move(Then)), Else(std::move(Else)) {}
+  llvm::Value *codegen() override;
+};
+
+class ForExprAST : public ExprAST {
+  std::string VarName;
+  std::unique_ptr<ExprAST> Start, End, Step, Body;
+
+public:
+  ForExprAST(std::string VarName, std::unique_ptr<ExprAST> Start,
+             std::unique_ptr<ExprAST> End, std::unique_ptr<ExprAST> Step,
+             std::unique_ptr<ExprAST> Body)
+      : VarName(std::move(VarName)), Start(std::move(Start)),
+        End(std::move(End)), Step(std::move(Step)), Body(std::move(Body)) {}
+  llvm::Value *codegen() override;
+};
+
+class VarExprAST : public ExprAST {
+  std::vector<std::pair<std::string, std::unique_ptr<ExprAST>>> VarNames;
+  std::unique_ptr<ExprAST> Body;
+
+public:
+  VarExprAST(
+      std::vector<std::pair<std::string, std::unique_ptr<ExprAST>>> VarNames,
+      std::unique_ptr<ExprAST> Body)
+      : VarNames(std::move(VarNames)), Body(std::move(Body)) {}
+
+  llvm::Value *codegen() override;
+};
+
 class PrototypeAST {
   std::string Name;
   std::vector<std::string> Args;
+  bool IsOperator;
+  unsigned Precedence;
 
 public:
-  PrototypeAST(const std::string &Name, std::vector<std::string> Args)
-      : Name(Name), Args(std::move(Args)) {}
-  llvm::Function *codegen();
+  PrototypeAST(std::string Name, std::vector<std::string> Args,
+               bool IsOperator = false, unsigned Prec = 0)
+      : Name(std::move(Name)), Args(std::move(Args)), IsOperator(IsOperator),
+        Precedence(Prec) {}
+
   const std::string &getName() const { return Name; }
+  bool isUnaryOp() const { return IsOperator && Args.size() == 1; }
+  bool isBinaryOp() const { return IsOperator && Args.size() == 2; }
+  char getOperatorName() const { return Name[Name.size() - 1]; }
+  unsigned getBinaryPrecedence() const { return Precedence; }
+  llvm::Function *codegen();
 };
 
 class FunctionAST {
@@ -222,8 +349,13 @@ public:
   FunctionAST(std::unique_ptr<PrototypeAST> Proto,
               std::unique_ptr<ExprAST> Body)
       : Proto(std::move(Proto)), Body(std::move(Body)) {}
+
   llvm::Function *codegen();
 };
+
+//===----------------------------------------------------------------------===//
+// Parser
+//===----------------------------------------------------------------------===//
 
 static int CurTok;
 static int getNextToken() { return CurTok = gettok(); }
@@ -234,7 +366,7 @@ static int GetTokPrecedence() {
   if (!isascii(CurTok))
     return -1;
 
-  int TokPrec = BinopPrecedence[CurTok];
+  int TokPrec = BinopPrecedence[static_cast<char>(CurTok)];
   if (TokPrec <= 0)
     return -1;
   return TokPrec;
@@ -242,11 +374,6 @@ static int GetTokPrecedence() {
 
 static std::unique_ptr<ExprAST> LogError(const char *Str) {
   fprintf(stderr, "Error: %s\n", Str);
-  return nullptr;
-}
-
-static std::unique_ptr<PrototypeAST> LogErrorP(const char *Str) {
-  LogError(Str);
   return nullptr;
 }
 
@@ -259,30 +386,32 @@ static std::unique_ptr<ExprAST> ParseExpression();
 
 static std::unique_ptr<ExprAST> ParseNumberExpr() {
   auto Result = std::make_unique<NumberExprAST>(NumVal);
-  getNextToken();
+  getNextToken(); // consume the number
   return Result;
 }
 
 static std::unique_ptr<ExprAST> ParseParenExpr() {
-  getNextToken();
+  getNextToken(); // eat '('
   auto V = ParseExpression();
   if (!V)
     return nullptr;
 
   if (CurTok != ')')
     return LogError("expected ')'");
-  getNextToken();
+  getNextToken(); // eat ')'
   return V;
 }
 
 static std::unique_ptr<ExprAST> ParseIdentifierExpr() {
   std::string IdName = IdentifierStr;
-  getNextToken();
+  getNextToken(); // eat identifier
 
+  // Simple variable reference.
   if (CurTok != '(')
-    return std::make_unique<VariableExprAST>(IdName);
+    return std::make_unique<VariableExprAST>(std::move(IdName));
 
-  getNextToken();
+  // Function call.
+  getNextToken(); // eat '('
   std::vector<std::unique_ptr<ExprAST>> Args;
   if (CurTok != ')') {
     while (true) {
@@ -296,12 +425,126 @@ static std::unique_ptr<ExprAST> ParseIdentifierExpr() {
 
       if (CurTok != ',')
         return LogError("expected ')' or ',' in argument list");
-      getNextToken();
+      getNextToken(); // eat ','
     }
   }
 
-  getNextToken();
-  return std::make_unique<CallExprAST>(IdName, std::move(Args));
+  getNextToken(); // eat ')'
+  return std::make_unique<CallExprAST>(std::move(IdName), std::move(Args));
+}
+
+static std::unique_ptr<ExprAST> ParseIfExpr() {
+  getNextToken(); // eat 'if'
+
+  auto Cond = ParseExpression();
+  if (!Cond)
+    return nullptr;
+
+  if (CurTok != tok_then)
+    return LogError("expected 'then'");
+  getNextToken(); // eat 'then'
+
+  auto Then = ParseExpression();
+  if (!Then)
+    return nullptr;
+
+  if (CurTok != tok_else)
+    return LogError("expected 'else'");
+  getNextToken(); // eat 'else'
+
+  auto Else = ParseExpression();
+  if (!Else)
+    return nullptr;
+
+  return std::make_unique<IfExprAST>(std::move(Cond), std::move(Then),
+                                     std::move(Else));
+}
+
+static std::unique_ptr<ExprAST> ParseForExpr() {
+  getNextToken(); // eat 'for'
+
+  if (CurTok != tok_identifier)
+    return LogError("expected identifier after 'for'");
+
+  std::string IdName = IdentifierStr;
+  getNextToken(); // eat identifier
+
+  if (CurTok != '=')
+    return LogError("expected '=' after 'for'");
+  getNextToken(); // eat '='
+
+  auto Start = ParseExpression();
+  if (!Start)
+    return nullptr;
+  if (CurTok != ',')
+    return LogError("expected ',' after for start value");
+  getNextToken(); // eat ','
+
+  auto End = ParseExpression();
+  if (!End)
+    return nullptr;
+
+  // The step value is optional.
+  std::unique_ptr<ExprAST> Step;
+  if (CurTok == ',') {
+    getNextToken(); // eat ','
+    Step = ParseExpression();
+    if (!Step)
+      return nullptr;
+  }
+
+  if (CurTok != tok_in)
+    return LogError("expected 'in' after 'for'");
+  getNextToken(); // eat 'in'
+
+  auto Body = ParseExpression();
+  if (!Body)
+    return nullptr;
+
+  return std::make_unique<ForExprAST>(std::move(IdName), std::move(Start),
+                                      std::move(End), std::move(Step),
+                                      std::move(Body));
+}
+
+static std::unique_ptr<ExprAST> ParseVarExpr() {
+  getNextToken(); // eat 'var'
+
+  std::vector<std::pair<std::string, std::unique_ptr<ExprAST>>> VarNames;
+
+  if (CurTok != tok_identifier)
+    return LogError("expected identifier after 'var'");
+
+  while (true) {
+    std::string Name = IdentifierStr;
+    getNextToken(); // eat identifier
+
+    std::unique_ptr<ExprAST> Init;
+    if (CurTok == '=') {
+      getNextToken(); // eat '='
+      Init = ParseExpression();
+      if (!Init)
+        return nullptr;
+    }
+
+    VarNames.emplace_back(std::move(Name), std::move(Init));
+
+    if (CurTok != ',')
+      break;
+    getNextToken(); // eat ','
+
+    if (CurTok != tok_identifier)
+      return LogError("expected identifier list after 'var'");
+  }
+
+  if (CurTok != tok_in)
+    return LogError("expected 'in' keyword after 'var'");
+  getNextToken(); // eat 'in'
+
+  auto Body = ParseExpression();
+  if (!Body)
+    return nullptr;
+
+  return std::make_unique<VarExprAST>(std::move(VarNames), std::move(Body));
 }
 
 static std::unique_ptr<ExprAST> ParsePrimary() {
@@ -312,11 +555,30 @@ static std::unique_ptr<ExprAST> ParsePrimary() {
     return ParseNumberExpr();
   case '(':
     return ParseParenExpr();
+  case tok_if:
+    return ParseIfExpr();
+  case tok_for:
+    return ParseForExpr();
+  case tok_var:
+    return ParseVarExpr();
   default:
     return LogError("unknown token when expecting an expression");
   }
 }
 
+static std::unique_ptr<ExprAST> ParseUnary() {
+  if (!isascii(CurTok) || CurTok == '(' || CurTok == ',')
+    return ParsePrimary();
+
+  int Opc = CurTok;
+  getNextToken();
+  if (auto Operand = ParseUnary())
+    return std::make_unique<UnaryExprAST>(static_cast<char>(Opc),
+                                          std::move(Operand));
+  return nullptr;
+}
+
+/// binoprhs ::= (binop unary)*
 static std::unique_ptr<ExprAST> ParseBinOpRHS(int ExprPrec,
                                               std::unique_ptr<ExprAST> LHS) {
   while (true) {
@@ -326,9 +588,9 @@ static std::unique_ptr<ExprAST> ParseBinOpRHS(int ExprPrec,
       return LHS;
 
     int BinOp = CurTok;
-    getNextToken();
+    getNextToken(); // eat binary operator
 
-    auto RHS = ParsePrimary();
+    auto RHS = ParseUnary();
     if (!RHS)
       return nullptr;
 
@@ -339,25 +601,63 @@ static std::unique_ptr<ExprAST> ParseBinOpRHS(int ExprPrec,
         return nullptr;
     }
 
-    LHS = std::make_unique<BinaryExprAST>(BinOp, std::move(LHS),
-                                          std::move(RHS));
+    LHS = std::make_unique<BinaryExprAST>(static_cast<char>(BinOp),
+                                          std::move(LHS), std::move(RHS));
   }
 }
 
 static std::unique_ptr<ExprAST> ParseExpression() {
-  auto LHS = ParsePrimary();
+  auto LHS = ParseUnary();
   if (!LHS)
     return nullptr;
 
   return ParseBinOpRHS(0, std::move(LHS));
 }
 
-static std::unique_ptr<PrototypeAST> ParsePrototype() {
-  if (CurTok != tok_identifier)
-    return LogErrorP("expected function name in prototype");
+static std::unique_ptr<PrototypeAST> LogErrorP(const char *Str) {
+  LogError(Str);
+  return nullptr;
+}
 
-  std::string FnName = IdentifierStr;
-  getNextToken();
+static std::unique_ptr<PrototypeAST> ParsePrototype() {
+  std::string FnName;
+  unsigned Kind = 0; // 0 = identifier, 1 = unary, 2 = binary
+  unsigned BinaryPrecedence = 30;
+
+  switch (CurTok) {
+  case tok_identifier:
+    FnName = IdentifierStr;
+    Kind = 0;
+    getNextToken();
+    break;
+  case tok_unary:
+    getNextToken();
+    if (!isascii(CurTok))
+      return LogErrorP("expected unary operator");
+    FnName = "unary";
+    FnName += static_cast<char>(CurTok);
+    Kind = 1;
+    getNextToken();
+    break;
+  case tok_binary:
+    getNextToken();
+    if (!isascii(CurTok))
+      return LogErrorP("expected binary operator");
+    FnName = "binary";
+    FnName += static_cast<char>(CurTok);
+    Kind = 2;
+    getNextToken();
+
+    if (CurTok == tok_number) {
+      if (NumVal < 1 || NumVal > 100)
+        return LogErrorP("invalid precedence: must be 1..100");
+      BinaryPrecedence = static_cast<unsigned>(NumVal);
+      getNextToken();
+    }
+    break;
+  default:
+    return LogErrorP("expected function name in prototype");
+  }
 
   if (CurTok != '(')
     return LogErrorP("expected '(' in prototype");
@@ -365,15 +665,21 @@ static std::unique_ptr<PrototypeAST> ParsePrototype() {
   std::vector<std::string> ArgNames;
   while (getNextToken() == tok_identifier)
     ArgNames.push_back(IdentifierStr);
+
   if (CurTok != ')')
     return LogErrorP("expected ')' in prototype");
 
-  getNextToken();
-  return std::make_unique<PrototypeAST>(FnName, std::move(ArgNames));
+  getNextToken(); // eat ')'
+
+  if (Kind && ArgNames.size() != Kind)
+    return LogErrorP("invalid number of operands for operator");
+
+  return std::make_unique<PrototypeAST>(std::move(FnName), std::move(ArgNames),
+                                        Kind != 0, BinaryPrecedence);
 }
 
 static std::unique_ptr<FunctionAST> ParseDefinition() {
-  getNextToken();
+  getNextToken(); // eat 'def'
   auto Proto = ParsePrototype();
   if (!Proto)
     return nullptr;
@@ -383,34 +689,139 @@ static std::unique_ptr<FunctionAST> ParseDefinition() {
   return nullptr;
 }
 
+static std::unique_ptr<FunctionAST> ParseTopLevelExpr() {
+  if (auto E = ParseExpression()) {
+    auto Proto = std::make_unique<PrototypeAST>("__anon_expr",
+                                                std::vector<std::string>());
+    return std::make_unique<FunctionAST>(std::move(Proto), std::move(E));
+  }
+  return nullptr;
+}
+
 static std::unique_ptr<PrototypeAST> ParseExtern() {
-  getNextToken();
+  getNextToken(); // eat 'extern'
   return ParsePrototype();
 }
+
+//===----------------------------------------------------------------------===//
+// Code Generation
+//===----------------------------------------------------------------------===//
 
 static std::unique_ptr<llvm::LLVMContext> TheContext;
 static std::unique_ptr<llvm::Module> TheModule;
 static std::unique_ptr<llvm::IRBuilder<>> Builder;
-static std::map<std::string, llvm::Value *> NamedValues;
+static std::map<std::string, llvm::AllocaInst *> NamedValues;
 
-static void InitializeModule() {
+static llvm::AllocaInst *CreateEntryBlockAlloca(llvm::Function *TheFunction,
+                                                llvm::StringRef VarName) {
+  llvm::IRBuilder<> TmpB(&TheFunction->getEntryBlock(),
+                         TheFunction->getEntryBlock().begin());
+  return TmpB.CreateAlloca(llvm::Type::getDoubleTy(*TheContext), nullptr,
+                           VarName);
+}
+static std::unique_ptr<llvm::orc::KaleidoscopeJIT> TheJIT;
+static std::map<std::string, std::unique_ptr<PrototypeAST>> FunctionProtos;
+static std::map<std::string, llvm::orc::ResourceTrackerSP> FunctionRTs;
+static llvm::ExitOnError ExitOnErr;
+static std::unique_ptr<llvm::TargetMachine> TheTargetMachine;
+static std::string ObjectOutputPath;
+static bool EmitObjectMode = false;
+static std::unique_ptr<llvm::FunctionPassManager> TheFPM;
+static std::unique_ptr<llvm::LoopAnalysisManager> TheLAM;
+static std::unique_ptr<llvm::FunctionAnalysisManager> TheFAM;
+static std::unique_ptr<llvm::CGSCCAnalysisManager> TheCGAM;
+static std::unique_ptr<llvm::ModuleAnalysisManager> TheMAM;
+
+static llvm::Function *getFunction(std::string Name) {
+  if (auto *F = TheModule->getFunction(Name))
+    return F;
+
+  auto FI = FunctionProtos.find(Name);
+  if (FI != FunctionProtos.end())
+    return FI->second->codegen();
+
+  return nullptr;
+}
+
+static void InitializeModuleAndManagers() {
   TheContext = std::make_unique<llvm::LLVMContext>();
   TheModule = std::make_unique<llvm::Module>("Kaleidoscope", *TheContext);
+  if (EmitObjectMode) {
+    TheModule->setTargetTriple(TheTargetMachine->getTargetTriple());
+    TheModule->setDataLayout(TheTargetMachine->createDataLayout());
+  } else {
+    TheModule->setDataLayout(TheJIT->getDataLayout());
+  }
   Builder = std::make_unique<llvm::IRBuilder<>>(*TheContext);
+
+  TheFPM = std::make_unique<llvm::FunctionPassManager>();
+  TheLAM = std::make_unique<llvm::LoopAnalysisManager>();
+  TheFAM = std::make_unique<llvm::FunctionAnalysisManager>();
+  TheCGAM = std::make_unique<llvm::CGSCCAnalysisManager>();
+  TheMAM = std::make_unique<llvm::ModuleAnalysisManager>();
+
+  // Promote allocas to SSA registers (mem2reg) and simplify expressions.
+  TheFPM->addPass(llvm::PromotePass());
+  TheFPM->addPass(llvm::InstCombinePass());
+  TheFPM->addPass(llvm::ReassociatePass());
+  TheFPM->addPass(llvm::GVNPass());
+  TheFPM->addPass(llvm::SimplifyCFGPass());
+
+  llvm::PassBuilder PB;
+  PB.registerModuleAnalyses(*TheMAM);
+  PB.registerCGSCCAnalyses(*TheCGAM);
+  PB.registerFunctionAnalyses(*TheFAM);
+  PB.registerLoopAnalyses(*TheLAM);
+  PB.crossRegisterProxies(*TheLAM, *TheFAM, *TheCGAM, *TheMAM);
+}
+
+llvm::Value *ExprAST::codegenAddress() {
+  return LogErrorV("destination of '=' must be a variable");
 }
 
 llvm::Value *NumberExprAST::codegen() {
   return llvm::ConstantFP::get(*TheContext, llvm::APFloat(Val));
 }
 
-llvm::Value *VariableExprAST::codegen() {
-  llvm::Value *V = NamedValues[Name];
-  if (!V)
+llvm::Value *VariableExprAST::codegenAddress() {
+  llvm::AllocaInst *A = NamedValues[Name];
+  if (!A)
     return LogErrorV("unknown variable name");
-  return V;
+  return A;
+}
+
+llvm::Value *VariableExprAST::codegen() {
+  llvm::Value *Addr = codegenAddress();
+  if (!Addr)
+    return nullptr;
+  return Builder->CreateLoad(llvm::Type::getDoubleTy(*TheContext), Addr,
+                             Name.c_str());
+}
+
+llvm::Value *UnaryExprAST::codegen() {
+  llvm::Value *OperandV = Operand->codegen();
+  if (!OperandV)
+    return nullptr;
+
+  llvm::Function *F = getFunction(std::string("unary") + Opcode);
+  if (!F)
+    return LogErrorV("unknown unary operator");
+
+  return Builder->CreateCall(F, OperandV, "unop");
 }
 
 llvm::Value *BinaryExprAST::codegen() {
+  if (Op == '=') {
+    llvm::Value *Variable = LHS->codegenAddress();
+    if (!Variable)
+      return nullptr;
+    llvm::Value *Val = RHS->codegen();
+    if (!Val)
+      return nullptr;
+    Builder->CreateStore(Val, Variable);
+    return Val;
+  }
+
   llvm::Value *L = LHS->codegen();
   llvm::Value *R = RHS->codegen();
   if (!L || !R)
@@ -430,17 +841,24 @@ llvm::Value *BinaryExprAST::codegen() {
     return Builder->CreateUIToFP(L, llvm::Type::getDoubleTy(*TheContext),
                                  "booltmp");
   default:
-    return LogErrorV("invalid binary operator");
+    break;
   }
+
+  llvm::Function *F = getFunction(std::string("binary") + Op);
+  if (!F)
+    return LogErrorV("binary operator not found");
+
+  llvm::Value *Ops[2] = {L, R};
+  return Builder->CreateCall(F, Ops, "binop");
 }
 
 llvm::Value *CallExprAST::codegen() {
-  llvm::Function *CalleeF = TheModule->getFunction(Callee);
+  llvm::Function *CalleeF = getFunction(Callee);
   if (!CalleeF)
     return LogErrorV("unknown function referenced");
 
   if (CalleeF->arg_size() != Args.size())
-    return LogErrorV("incorrect number of arguments passed");
+    return LogErrorV("incorrect # arguments passed");
 
   std::vector<llvm::Value *> ArgsV;
   for (unsigned i = 0, e = Args.size(); i != e; ++i) {
@@ -452,14 +870,154 @@ llvm::Value *CallExprAST::codegen() {
   return Builder->CreateCall(CalleeF, ArgsV, "calltmp");
 }
 
+llvm::Value *IfExprAST::codegen() {
+  llvm::Value *CondV = Cond->codegen();
+  if (!CondV)
+    return nullptr;
+
+  CondV = Builder->CreateFCmpONE(
+      CondV, llvm::ConstantFP::get(*TheContext, llvm::APFloat(0.0)), "ifcond");
+
+  llvm::Function *TheFunction = Builder->GetInsertBlock()->getParent();
+
+  llvm::BasicBlock *ThenBB =
+      llvm::BasicBlock::Create(*TheContext, "then", TheFunction);
+  llvm::BasicBlock *ElseBB = llvm::BasicBlock::Create(*TheContext, "else");
+  llvm::BasicBlock *MergeBB = llvm::BasicBlock::Create(*TheContext, "ifcont");
+
+  Builder->CreateCondBr(CondV, ThenBB, ElseBB);
+
+  // Emit 'then' block.
+  Builder->SetInsertPoint(ThenBB);
+  llvm::Value *ThenV = Then->codegen();
+  if (!ThenV)
+    return nullptr;
+  Builder->CreateBr(MergeBB);
+  ThenBB = Builder->GetInsertBlock();
+
+  // Emit 'else' block.
+  TheFunction->insert(TheFunction->end(), ElseBB);
+  Builder->SetInsertPoint(ElseBB);
+  llvm::Value *ElseV = Else->codegen();
+  if (!ElseV)
+    return nullptr;
+  Builder->CreateBr(MergeBB);
+  ElseBB = Builder->GetInsertBlock();
+
+  // Emit 'ifcont' merge block with SSA PHI node.
+  TheFunction->insert(TheFunction->end(), MergeBB);
+  Builder->SetInsertPoint(MergeBB);
+  llvm::PHINode *PN =
+      Builder->CreatePHI(llvm::Type::getDoubleTy(*TheContext), 2, "iftmp");
+  PN->addIncoming(ThenV, ThenBB);
+  PN->addIncoming(ElseV, ElseBB);
+  return PN;
+}
+
+llvm::Value *ForExprAST::codegen() {
+  llvm::Function *TheFunction = Builder->GetInsertBlock()->getParent();
+
+  llvm::AllocaInst *Alloca = CreateEntryBlockAlloca(TheFunction, VarName);
+
+  llvm::Value *StartVal = Start->codegen();
+  if (!StartVal)
+    return nullptr;
+
+  Builder->CreateStore(StartVal, Alloca);
+
+  llvm::BasicBlock *LoopBB =
+      llvm::BasicBlock::Create(*TheContext, "loop", TheFunction);
+
+  Builder->CreateBr(LoopBB);
+  Builder->SetInsertPoint(LoopBB);
+
+  llvm::AllocaInst *OldVal = NamedValues[VarName];
+  NamedValues[VarName] = Alloca;
+
+  if (!Body->codegen())
+    return nullptr;
+
+  llvm::Value *StepVal = nullptr;
+  if (Step) {
+    StepVal = Step->codegen();
+    if (!StepVal)
+      return nullptr;
+  } else {
+    StepVal = llvm::ConstantFP::get(*TheContext, llvm::APFloat(1.0));
+  }
+
+  llvm::Value *EndCond = End->codegen();
+  if (!EndCond)
+    return nullptr;
+
+  llvm::Value *CurVar =
+      Builder->CreateLoad(Alloca->getAllocatedType(), Alloca, VarName.c_str());
+  llvm::Value *NextVar = Builder->CreateFAdd(CurVar, StepVal, "nextvar");
+  Builder->CreateStore(NextVar, Alloca);
+
+  EndCond = Builder->CreateFCmpONE(
+      EndCond, llvm::ConstantFP::get(*TheContext, llvm::APFloat(0.0)),
+      "loopcond");
+
+  llvm::BasicBlock *AfterBB =
+      llvm::BasicBlock::Create(*TheContext, "afterloop", TheFunction);
+
+  Builder->CreateCondBr(EndCond, LoopBB, AfterBB);
+  Builder->SetInsertPoint(AfterBB);
+
+  if (OldVal)
+    NamedValues[VarName] = OldVal;
+  else
+    NamedValues.erase(VarName);
+
+  return llvm::Constant::getNullValue(llvm::Type::getDoubleTy(*TheContext));
+}
+
+llvm::Value *VarExprAST::codegen() {
+  std::vector<llvm::AllocaInst *> OldBindings;
+  llvm::Function *TheFunction = Builder->GetInsertBlock()->getParent();
+
+  for (unsigned i = 0, e = VarNames.size(); i != e; ++i) {
+    const std::string &VarName = VarNames[i].first;
+    ExprAST *Init = VarNames[i].second.get();
+
+    llvm::Value *InitVal;
+    if (Init) {
+      InitVal = Init->codegen();
+      if (!InitVal)
+        return nullptr;
+    } else {
+      InitVal = llvm::ConstantFP::get(*TheContext, llvm::APFloat(0.0));
+    }
+
+    llvm::AllocaInst *Alloca = CreateEntryBlockAlloca(TheFunction, VarName);
+    Builder->CreateStore(InitVal, Alloca);
+
+    OldBindings.push_back(NamedValues[VarName]);
+    NamedValues[VarName] = Alloca;
+  }
+
+  llvm::Value *BodyVal = Body->codegen();
+  if (!BodyVal)
+    return nullptr;
+
+  for (unsigned i = 0, e = VarNames.size(); i != e; ++i) {
+    if (OldBindings[i])
+      NamedValues[VarNames[i].first] = OldBindings[i];
+    else
+      NamedValues.erase(VarNames[i].first);
+  }
+
+  return BodyVal;
+}
+
 llvm::Function *PrototypeAST::codegen() {
   std::vector<llvm::Type *> Doubles(Args.size(),
                                     llvm::Type::getDoubleTy(*TheContext));
-  llvm::FunctionType *FT = llvm::FunctionType::get(
-      llvm::Type::getDoubleTy(*TheContext), Doubles, false);
-
-  llvm::Function *F = llvm::Function::Create(
-      FT, llvm::Function::ExternalLinkage, Name, TheModule.get());
+  auto *FT = llvm::FunctionType::get(llvm::Type::getDoubleTy(*TheContext),
+                                     Doubles, false);
+  auto *F = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, Name,
+                                   TheModule.get());
 
   unsigned Idx = 0;
   for (auto &Arg : F->args())
@@ -469,39 +1027,93 @@ llvm::Function *PrototypeAST::codegen() {
 }
 
 llvm::Function *FunctionAST::codegen() {
-  auto *TheFunction = TheModule->getFunction(Proto->getName());
-  if (!TheFunction)
-    TheFunction = Proto->codegen();
+  auto &P = *Proto;
+  FunctionProtos[Proto->getName()] = std::move(Proto);
+  llvm::Function *TheFunction = getFunction(P.getName());
   if (!TheFunction)
     return nullptr;
 
-  llvm::BasicBlock *BB =
-      llvm::BasicBlock::Create(*TheContext, "entry", TheFunction);
+  if (P.isBinaryOp())
+    BinopPrecedence[P.getOperatorName()] = P.getBinaryPrecedence();
+
+  auto *BB = llvm::BasicBlock::Create(*TheContext, "entry", TheFunction);
   Builder->SetInsertPoint(BB);
 
   NamedValues.clear();
-  for (auto &Arg : TheFunction->args())
-    NamedValues[std::string(Arg.getName())] = &Arg;
+  for (auto &Arg : TheFunction->args()) {
+    llvm::AllocaInst *Alloca =
+        CreateEntryBlockAlloca(TheFunction, Arg.getName());
+    Builder->CreateStore(&Arg, Alloca);
+    NamedValues[std::string(Arg.getName())] = Alloca;
+  }
 
   if (llvm::Value *RetVal = Body->codegen()) {
     Builder->CreateRet(RetVal);
-    llvm::verifyFunction(*TheFunction);
+    if (llvm::verifyFunction(*TheFunction, &llvm::errs())) {
+      TheFunction->eraseFromParent();
+      return nullptr;
+    }
+
+    TheFPM->run(*TheFunction, *TheFAM);
     return TheFunction;
   }
 
   TheFunction->eraseFromParent();
+  if (P.isBinaryOp())
+    BinopPrecedence.erase(P.getOperatorName());
   return nullptr;
 }
+
+//===----------------------------------------------------------------------===//
+// Host Library Helpers
+//===----------------------------------------------------------------------===//
+
+#ifdef _WIN32
+#define DLLEXPORT __declspec(dllexport)
+#else
+#define DLLEXPORT
+#endif
+
+/// putchard - putchar that takes a double and returns 0.
+extern "C" DLLEXPORT double putchard(double X) {
+  fputc(static_cast<char>(X), stderr);
+  return 0;
+}
+
+/// printd - printf that takes a double prints it as "%f\n", returning 0.
+extern "C" DLLEXPORT double printd(double X) {
+  fprintf(stderr, "%f\n", X);
+  return 0;
+}
+
+//===----------------------------------------------------------------------===//
+// Interactive Driver Loop
+//===----------------------------------------------------------------------===//
 
 static void HandleDefinition() {
   if (auto FnAST = ParseDefinition()) {
     if (auto *FnIR = FnAST->codegen()) {
+      std::string FnName = std::string(FnIR->getName());
       fprintf(stderr, "Read function definition:\n");
       FnIR->print(llvm::errs());
       fprintf(stderr, "\n");
+
+      if (!EmitObjectMode) {
+        if (auto It = FunctionRTs.find(FnName); It != FunctionRTs.end()) {
+          ExitOnErr(It->second->remove());
+          FunctionRTs.erase(It);
+        }
+
+        auto RT = TheJIT->getMainJITDylib().createResourceTracker();
+        ExitOnErr(
+            TheJIT->addModule(llvm::orc::ThreadSafeModule(
+                                  std::move(TheModule), std::move(TheContext)),
+                              RT));
+        FunctionRTs[FnName] = std::move(RT);
+        InitializeModuleAndManagers();
+      }
     }
   } else {
-    // Skip token for error recovery.
     while (CurTok != ';' && CurTok != tok_eof)
       getNextToken();
   }
@@ -513,15 +1125,54 @@ static void HandleExtern() {
       fprintf(stderr, "Read extern:\n");
       FnIR->print(llvm::errs());
       fprintf(stderr, "\n");
+      FunctionProtos[ProtoAST->getName()] = std::move(ProtoAST);
     }
   } else {
-    // Skip token for error recovery.
     while (CurTok != ';' && CurTok != tok_eof)
       getNextToken();
   }
 }
 
-static void Prompt() { fprintf(stderr, "ready> "); }
+static void HandleTopLevelExpression() {
+  if (EmitObjectMode) {
+    if (auto FnAST = ParseTopLevelExpr()) {
+      if (auto *FnIR = FnAST->codegen())
+        FnIR->eraseFromParent();
+    } else {
+      while (CurTok != ';' && CurTok != tok_eof)
+        getNextToken();
+    }
+    return;
+  }
+  if (auto FnAST = ParseTopLevelExpr()) {
+    if (FnAST->codegen()) {
+      auto RT = TheJIT->getMainJITDylib().createResourceTracker();
+
+      auto TSM = llvm::orc::ThreadSafeModule(std::move(TheModule),
+                                             std::move(TheContext));
+      ExitOnErr(TheJIT->addModule(std::move(TSM), RT));
+      InitializeModuleAndManagers();
+
+      if (auto ExprSymbol = TheJIT->lookup("__anon_expr")) {
+        double (*FP)() = ExprSymbol->getAddress().toPtr<double (*)()>();
+        fprintf(stderr, "Evaluated to %f\n", FP());
+      } else {
+        llvm::logAllUnhandledErrors(ExprSymbol.takeError(), llvm::errs(),
+                                    "JIT Error: ");
+      }
+
+      ExitOnErr(RT->remove());
+    }
+  } else {
+    while (CurTok != ';' && CurTok != tok_eof)
+      getNextToken();
+  }
+}
+
+static void Prompt() {
+  if (!EmitObjectMode)
+    fprintf(stderr, "ready> ");
+}
 
 static void MainLoop() {
   while (true) {
@@ -539,68 +1190,98 @@ static void MainLoop() {
       HandleExtern();
       break;
     default:
-      getNextToken();
+      HandleTopLevelExpression();
       break;
     }
   }
 }
 
-int main() {
-  BinopPrecedence['<'] = 10;
-  BinopPrecedence['+'] = 20;
-  BinopPrecedence['-'] = 20;
-  BinopPrecedence['*'] = 40;
-  BinopPrecedence['/'] = 40;
-
-  InitializeModule();
-
-  // Prime the first token.
-  Prompt();
-  getNextToken();
-  MainLoop();
-
+static bool ConfigureTargetMachine() {
   llvm::InitializeAllTargetInfos();
   llvm::InitializeAllTargets();
   llvm::InitializeAllTargetMCs();
   llvm::InitializeAllAsmParsers();
   llvm::InitializeAllAsmPrinters();
 
-  llvm::Triple TargetTriple(llvm::sys::getDefaultTargetTriple());
-  TheModule->setTargetTriple(TargetTriple);
+  std::string TargetTripleStr = llvm::sys::getDefaultTargetTriple();
+  llvm::Triple TargetTriple(TargetTripleStr);
 
   std::string Error;
-  auto Target = llvm::TargetRegistry::lookupTarget(TargetTriple, Error);
+  const llvm::Target *Target =
+      llvm::TargetRegistry::lookupTarget(TargetTriple, Error);
   if (!Target) {
-    llvm::errs() << Error;
-    return 1;
+    llvm::errs() << "Target lookup error: " << Error << "\n";
+    return false;
   }
 
-  auto CPU = "generic";
-  auto Features = "";
-  llvm::TargetOptions opt;
-  auto TheTargetMachine = Target->createTargetMachine(
-      TargetTriple, CPU, Features, opt, llvm::Reloc::PIC_);
+  llvm::TargetOptions Opt;
+  TheTargetMachine.reset(Target->createTargetMachine(
+      TargetTriple, "generic", "", Opt, llvm::Reloc::PIC_));
+  fprintf(stderr, "Configured TargetMachine for %s\n", TargetTripleStr.c_str());
+  return true;
+}
 
-  TheModule->setDataLayout(TheTargetMachine->createDataLayout());
-
+static int EmitObjectFile(const std::string &Filename) {
   std::error_code EC;
-  llvm::raw_fd_ostream dest("output.o", EC, llvm::sys::fs::OF_None);
+  llvm::raw_fd_ostream Dest(Filename, EC, llvm::sys::fs::OF_None);
   if (EC) {
-    llvm::errs() << "Could not open file: " << EC.message();
+    llvm::errs() << "Could not open file: " << EC.message() << "\n";
     return 1;
   }
 
-  llvm::legacy::PassManager pass;
-  auto FileType = llvm::CodeGenFileType::ObjectFile;
-  if (TheTargetMachine->addPassesToEmitFile(pass, dest, nullptr, FileType)) {
-    llvm::errs() << "TheTargetMachine can't emit a file of this type";
+  llvm::legacy::PassManager CodeGenPasses;
+  if (TheTargetMachine->addPassesToEmitFile(
+          CodeGenPasses, Dest, nullptr, llvm::CodeGenFileType::ObjectFile)) {
+    llvm::errs() << "TargetMachine cannot emit an object file\n";
     return 1;
   }
 
-  pass.run(*TheModule);
-  dest.flush();
+  CodeGenPasses.run(*TheModule);
+  Dest.flush();
+  fprintf(stderr, "Wrote %s\n", Filename.c_str());
+  return 0;
+}
 
-  fprintf(stderr, "Wrote output.o successfully!\n");
+int main(int argc, char **argv) {
+  for (int i = 1; i < argc; ++i) {
+    if (std::strcmp(argv[i], "--emit-obj") == 0 && i + 1 < argc) {
+      EmitObjectMode = true;
+      ObjectOutputPath = argv[++i];
+    } else {
+      fprintf(stderr, "Usage: %s [--emit-obj <output.o>]\n", argv[0]);
+      return 1;
+    }
+  }
+
+  BinopPrecedence['='] = 2;
+  BinopPrecedence['<'] = 10;
+  BinopPrecedence['+'] = 20;
+  BinopPrecedence['-'] = 20;
+  BinopPrecedence['*'] = 40;
+  BinopPrecedence['/'] = 40;
+
+  if (EmitObjectMode) {
+    if (!ConfigureTargetMachine())
+      return 1;
+  } else {
+    llvm::InitializeNativeTarget();
+    llvm::InitializeNativeTargetAsmPrinter();
+    llvm::InitializeNativeTargetAsmParser();
+    TheJIT = ExitOnErr(llvm::orc::KaleidoscopeJIT::Create());
+    printf("Kaleidoscope Compiler (Step 10.2: Object File Emission)\n");
+    printf("Type definitions, externs, or expressions followed by ';' (Ctrl+D "
+           "to exit):\n\n");
+  }
+
+  InitializeModuleAndManagers();
+
+  Prompt();
+  getNextToken();
+  MainLoop();
+
+  if (EmitObjectMode)
+    return EmitObjectFile(ObjectOutputPath);
+
   return 0;
 }
 ```
@@ -608,18 +1289,22 @@ int main() {
 
 ---
 
-## Compiling and Running
+## Compiling and Generating a Real `.o` File
 
-Compile your compiler:
+Compile `kaleidoscope.cpp`:
 
 ```bash
-clang++ -Iinclude -Wall -Wextra kaleidoscope.cpp $(llvm-config --cxxflags --ldflags --system-libs --libs core target native codegen) -o kaleidoscope
+clang++ -std=c++17 -fno-rtti -Wall -Wextra -rdynamic -Iinclude kaleidoscope.cpp $(llvm-config --cxxflags --ldflags --system-libs --libs core orcjit native passes all-targets) -isystem $(llvm-config --includedir) -o kaleidoscope
 ```
 
-Run `./kaleidoscope` and define a function:
+Feed two Kaleidoscope functions (`average` and recursive `fib`) into `./kaleidoscope --emit-obj output.o`:
 
 ```text
-ready> def average(x y) (x + y) * 0.5;
+$ ./kaleidoscope --emit-obj output.o << 'EOF'
+def average(x y) (x + y) * 0.5;
+def fib(x) if x < 3 then 1 else fib(x - 1) + fib(x - 2);
+EOF
+Configured TargetMachine for x86_64-pc-linux-gnu
 Read function definition:
 define double @average(double %x, double %y) {
 entry:
@@ -627,26 +1312,33 @@ entry:
   %multmp = fmul double %addtmp, 5.000000e-01
   ret double %multmp
 }
+
+Read function definition:
+define double @fib(double %x) {
+entry:
+  %cmptmp = fcmp ult double %x, 3.000000e+00
+  br i1 %cmptmp, label %ifcont, label %else
+
+else:                                             ; preds = %entry
+  %subtmp = fadd double %x, -1.000000e+00
+  %calltmp = call double @fib(double %subtmp)
+  %subtmp5 = fadd double %x, -2.000000e+00
+  %calltmp6 = call double @fib(double %subtmp5)
+  %addtmp = fadd double %calltmp, %calltmp6
+  br label %ifcont
+
+ifcont:                                           ; preds = %entry, %else
+  %iftmp = phi double [ %addtmp, %else ], [ 1.000000e+00, %entry ]
+  ret double %iftmp
+}
+
+Wrote output.o
 ```
 
-Press `Ctrl+D` to end input.  Your compiler runs the object emission pipeline:
+Look at `@fib` above before it even hits the backend: `PromotePass` eliminated `%x`'s `alloca`, `InstCombinePass` turned `fcmp` + `uitofp` + `fcmp` into a single `fcmp ult`, and `SimplifyCFGPass` deleted the empty `then:` block altogether (`br i1 %cmptmp, label %ifcont, label %else`)!  Then `CodeGenPasses.run(*TheModule)` assembled both functions into `output.o` on disk!
 
-```text
-Wrote output.o successfully!
-```
+In [Step 10.3](03-linking-standalone-binary.md), you will inspect `output.o` with `nm`, link it with a C `main.c` program using `clang`, and run your standalone native executable!
 
-Check the generated object file:
+---
 
-```bash
-file output.o
-```
-
-On Linux x86-64, the system reports:
-
-```text
-output.o: ELF 64-bit LSB relocatable, x86-64, version 1 (SYSV), not stripped
-```
-
-You have generated a real, relocatable object file containing machine code for your host processor.
-
-In [Step 10.3](03-linking-standalone-binary.md), we will link `output.o` with a native C driver into a standalone binary.
+[Previous: Configuring the Target Machine](01-target-machine.md) | [Section Overview](index.md) | [Next: Linking Standalone Executables](03-linking-standalone-binary.md)

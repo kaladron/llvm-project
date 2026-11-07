@@ -1,0 +1,18 @@
+# RUN: Kaleidoscope-Sec15 -g %s --emit-obj %t.o 2>&1 | FileCheck %s
+# RUN: llvm-dwarfdump %t.o | FileCheck %s --check-prefix=DWARF
+# REQUIRES: default_triple
+
+def binary : 1 (x y) y;
+
+def factorial(n: int) -> int
+  var acc: int = 1 in
+  (for i: int = 1, i < n in
+     acc = acc * i) :
+  acc;
+
+# CHECK: Wrote {{.*}}.o
+# DWARF: DW_TAG_compile_unit
+# DWARF: DW_TAG_subprogram
+# DWARF: DW_AT_name ("factorial")
+# DWARF: DW_TAG_formal_parameter
+# DWARF: DW_AT_name ("n")

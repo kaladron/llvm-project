@@ -1,24 +1,29 @@
 # Step 1.5: Skipping Comments and Active Learning Challenge
 
-In this step, we add the final feature to complete our lexer: ignoring single-line comments.  Kaleidoscope uses `#` for comments, similar to Python, Bash, or Ruby.
+In this step, we add the final feature to complete our lexer: ignoring single-line comments.  Kaleidoscope uses `#` to start a comment that runs to the end of the line, just like Python, Bash, and Ruby.
 
 ---
 
 ## Comment Skipping Mechanics
 
-Single-line comments in Kaleidoscope begin with `#` and extend through the end of the line.  Because comments carry no syntactic meaning for the parser, our lexer discards comment text completely.
+Because comments exist purely for human readers and carry no syntactic meaning for the parser, `gettok()` discards them completely.
 
-When `gettok()` encounters a `#` character, it consumes all subsequent characters until it reaches a newline (`'\n'`), a carriage return (`'\r'`), or the end of the file (`EOF`).  Once the comment line has been consumed, `gettok()` recursively calls itself to return the first meaningful token on the following line.
+When `gettok()` sees `LastChar == '#'`, it consumes characters in a loop until it reaches a newline (`'\n'`), a carriage return (`'\r'`), or `EOF`.  As long as the input has not ended (`LastChar != EOF`), `gettok()` tail-calls itself (`return gettok();`) to fetch and return the next real token on a subsequent line.
 
-> [!NOTE]
-> **Leaving Newlines for the Scanner**:
-> Notice that the loop stops as soon as it hits `'\n'` or `'\r'`, leaving `LastChar` holding that character.  When `gettok()` calls itself recursively, the `while (isspace(LastChar))` loop at the start of `gettok()` immediately consumes that newline as whitespace and proceeds to scan the next token.
+:::{note}
+**Leaving Newlines for the Whitespace Loop**:
+Notice that the comment loop stops as soon as `LastChar` becomes `'\n'` or `'\r'`, leaving `LastChar` holding that newline character.  When `gettok()` calls itself recursively on the next line, the `while (isspace(LastChar))` loop from [Step 1.2](02-skipping-whitespace.md) immediately swallows that newline (plus any indentation on the next line!) before scanning the next token.
+:::
 
 ---
 
 ## Incremental Code Changes
 
-Open your `kaleidoscope.cpp` file.  Insert the comment-skipping block inside `gettok()`, directly after the numeric literal check:
+Open your `kaleidoscope.cpp` file and make two quick updates on top of [Step 1.4](04-identifiers-keywords.md).
+
+### 1. Skip `#` Comments in `gettok()`
+
+Insert the comment-skipping block inside `gettok()`, directly after the numeric literal block and right before `if (LastChar == EOF)`:
 
 ```cpp
   // Recognise comments: '#' through end of line.
@@ -32,15 +37,24 @@ Open your `kaleidoscope.cpp` file.  Insert the comment-skipping block inside `ge
   }
 ```
 
-Notice what happens:
-* If a line contains only a comment, `gettok()` skips to the end of the line, calls itself, and retrieves the token on the next line.
-* If a file ends with a comment, `LastChar` becomes `EOF`, so `gettok()` skips the recursive call, falls through, and returns `tok_eof`.
+Check both edge cases:
+* **Comment followed by more code**: `LastChar` stops on `'\n'`, `LastChar != EOF` is true, and `return gettok();` scans the next line transparently.
+* **File ending mid-comment without a trailing newline**: `LastChar` becomes `EOF`, `if (LastChar != EOF)` is false, execution falls through to `if (LastChar == EOF) return tok_eof;`, and the lexer exits cleanly.
+
+### 2. Update the Banner in `main()`
+
+Update the two `printf` lines at the top of `main()` so the inspector announces `Step 1.5: Full Lexer`:
+
+```cpp
+  printf("Kaleidoscope Token Inspector (Step 1.5: Full Lexer)\n");
+  printf("Type code with comments and press Enter (Ctrl+D to exit):\n\n");
+```
 
 ---
 
 ## Verifying Your Code
 
-Before compiling, check that your `kaleidoscope.cpp` has all changes in place.
+Compare your `kaleidoscope.cpp` against the complete reference lexer:
 
 <details>
 <summary>Click here to compare against the reference kaleidoscope.cpp</summary>
@@ -116,7 +130,7 @@ static int gettok() {
 }
 
 int main() {
-  printf("Kaleidoscope Token Inspector (Step 5: Full Lexer)\n");
+  printf("Kaleidoscope Token Inspector (Step 1.5: Full Lexer)\n");
   printf("Type code with comments and press Enter (Ctrl+D to exit):\n\n");
 
   int tok;
@@ -153,55 +167,59 @@ int main() {
 Recompile:
 
 ```bash
-clang++ -Wall -Wextra kaleidoscope.cpp -o kaleidoscope
+clang++ -std=c++17 -fno-rtti -Wall -Wextra kaleidoscope.cpp -o kaleidoscope
 ```
 
-Run the binary:
+Run the binary and enter a multi-line snippet with an inline `#` comment:
 
 ```bash
 ./kaleidoscope
 ```
 
-Type a line containing code and a comment:
-
 ```text
-Kaleidoscope Token Inspector (Step 5: Full Lexer)
+Kaleidoscope Token Inspector (Step 1.5: Full Lexer)
 Type code with comments and press Enter (Ctrl+D to exit):
 
 def foo(x) # this is a comment
+  x + 1;
 Token: KEYWORD(def)
 Token: IDENTIFIER("foo")
 Token: '(' (ASCII 40)
 Token: IDENTIFIER("x")
 Token: ')' (ASCII 41)
+Token: IDENTIFIER("x")
+Token: '+' (ASCII 43)
+Token: NUMBER(1.000000)
+Token: ';' (ASCII 59)
+[EOF]
 ```
 
-The comment after `#` was discarded silently, leaving only the tokens.
+Everything from `#` to the end of the first line vanished, and the scanner picked right up on `x + 1;` on the next line!
 
 ---
 
-## Active Learning Challenge: Adding New Keywords
+## Active Learning Challenge: Adding Conditional Keywords
 
-Now that you have built the entire lexer by hand, test your understanding by adding new language keywords yourself.
+Now that you have built the entire lexer by hand, stretch your muscles by adding three new language keywords on your own.
 
 ### The Challenge
 
-Later in this tutorial, we will add conditional branches to Kaleidoscope using this syntax:
+Later in [Section 6](../06-control-flow/index.md), we will add conditional expressions to Kaleidoscope with this syntax:
 
 ```text
 if x < 3 then 1 else 2;
 ```
 
-Modify your `kaleidoscope.cpp` to recognise three new keywords:
-1.  `if` (returning `tok_if = -102`)
-2.  `then` (returning `tok_then = -103`)
-3.  `else` (returning `tok_else = -104`)
+Temporarily extend your `kaleidoscope.cpp` to recognise three new keywords:
+1.  `if` (`tok_if = -102`)
+2.  `then` (`tok_then = -103`)
+3.  `else` (`tok_else = -104`)
 
-Because we separated keywords (starting at `-100`) from primary expressions (starting at `-200`) in Step 1.4, you can simply append these new keywords to your Commands and Keywords group without renumbering or displacing any other tokens.
+Notice how our reserved enum ranges from [Step 1.3](03-numeric-literals.md) and [Step 1.4](04-identifiers-keywords.md) pay off here: appending `-102`, `-103`, and `-104` to the Commands / Keywords block leaves `tok_identifier = -200` and `tok_number = -201` completely untouched!
 
-### Testing Your Changes
+### Testing Your Challenge Solution
 
-When you recompile and type `if x then 1 else 2;`, your binary should print:
+When you recompile and type `if x then 1 else 2;`, your inspector should print:
 
 ```text
 Token: KEYWORD(if)
@@ -213,14 +231,14 @@ Token: NUMBER(2.000000)
 Token: ';' (ASCII 59)
 ```
 
-Try implementing this yourself before opening the solution fold below.
+Try implementing all three edits (`enum Token`, `gettok()`, and `main()`) yourself before peeking at the solution fold below.
 
 <details>
-<summary>Click here to reveal the solution</summary>
+<summary>Click here to reveal the challenge solution</summary>
 
-Here are the required changes:
+Here are the three spots to update:
 
-1.  Add the new token enumerations to `enum Token`:
+1.  Add the token values to `enum Token`:
 ```cpp
 enum Token {
   tok_eof = -1,
@@ -238,7 +256,7 @@ enum Token {
 };
 ```
 
-2.  Add checks in `gettok()` inside the identifier block:
+2.  Recognise the words inside the identifier block of `gettok()`:
 ```cpp
     if (IdentifierStr == "def")
       return tok_def;
@@ -253,7 +271,7 @@ enum Token {
     return tok_identifier;
 ```
 
-3.  Add print handlers in `main()`:
+3.  Print them in the `switch` inside `main()`:
 ```cpp
     case tok_if:
       printf("Token: KEYWORD(if)\n");
@@ -267,10 +285,19 @@ enum Token {
 ```
 </details>
 
+:::{important}
+**Revert the Challenge Keywords Before Starting Section 2!**
+Once you have verified your `if`, `then`, and `else` tokens, **remove those three challenge additions** so your `kaleidoscope.cpp` matches the Step 1.5 reference fold above (`tok_def` and `tok_extern` only).  Keeping `enum Token` aligned with the baseline ensures `-Wall -Wextra` stays warning-free throughout Sections 2 through 5, and `if` / `then` / `else` will return officially in [Step 6.1](../06-control-flow/01-if-ast.md)!
+:::
+
 ---
 
 ## Next Steps
 
-Congratulations!  You have written a complete, interactive token scanner from scratch.
+Congratulations!  You have written a complete, working lexical scanner from scratch in under ninety lines of C++.
 
-In [Section 2: The Parser and AST](../02-parser-ast/README.md), we will start assembling these tokens into an in-memory Abstract Syntax Tree, building an interactive tree pretty-printer along the way.
+In [Section 2: The Parser and AST](../02-parser-ast/index.md), we will replace the token-printing `main()` loop with a recursive-descent parser that assembles tokens into an in-memory Abstract Syntax Tree.
+
+---
+
+[Previous: Step 1.4 - Identifiers and Keywords](04-identifiers-keywords.md) | [Section 1 Overview](index.md) | [Next: Section 2 - The Parser and AST](../02-parser-ast/index.md)

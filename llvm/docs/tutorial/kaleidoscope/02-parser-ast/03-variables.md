@@ -1,23 +1,36 @@
 # Step 2.3: Variables
 
-In this step, we add support for variable references, such as `x` or `total_count`.
+In [Step 1.4](../01-lexer/04-identifiers-keywords.md), our lexer learned to scan identifiers like `x` and `my_variable` into `IdentifierStr` and return `tok_identifier`.  In this step, we represent variable references in our AST and wire `tok_identifier` into the parser.
 
 ---
 
 ## Representing Variables in the AST
 
-When an expression references a variable name, the AST captures that identifier so later compiler stages can look up its value in an environment or symbol table:
+When an expression mentions a variable name, the AST stores that identifier string so later compiler phases can look it up in a symbol table:
 
-```mermaid
-flowchart TD
-    Src["Source Text: 'x'"] -->|Parser| Ast["AST Node: VariableExprAST('x')"]
+```text
++-------------------+   Lexer    +-------------------------------------+   Parser   +-----------------------+
+| Source Text: "x"  | ---------> | tok_identifier (IdentifierStr = "x")| ---------> | VariableExprAST("x")  |
++-------------------+            +-------------------------------------+            +-----------------------+
 ```
 
 ---
 
-## Active Authoring: Writing VariableExprAST
+## Stretch: Authoring `VariableExprAST` Yourself
 
-In Step 2.1, you wrote `NumberExprAST`:
+First, include `<utility>` right after `<string>` at the top of `kaleidoscope.cpp` so we can move `std::string` values efficiently with `std::move`:
+
+```cpp
+#include <cctype>
+#include <cstdio>
+#include <cstdlib>
+#include <iostream>
+#include <memory>
+#include <string>
+#include <utility>
+```
+
+Now recall `NumberExprAST` from [Step 2.1](01-first-ast-node.md):
 
 ```cpp
 class NumberExprAST : public ExprAST {
@@ -25,34 +38,34 @@ class NumberExprAST : public ExprAST {
 
 public:
   explicit NumberExprAST(double Val) : Val(Val) {}
-  void print(std::ostream &OS) const override { OS << "(Number " << Val << ")"; }
+
+  void print(std::ostream &OS) const override {
+    OS << "(Number " << Val << ")";
+  }
 };
 ```
 
-`VariableExprAST` follows the exact same structural pattern, but stores a `std::string Name` instead of a `double Val`.
+`VariableExprAST` follows the exact same shape, storing a `std::string Name` instead of a `double Val`!
 
-Try writing `VariableExprAST` yourself directly below `NumberExprAST` in `kaleidoscope.cpp`:
-* It should inherit from `ExprAST`.
-* It needs a private member variable `std::string Name`.
-* Its constructor should take `std::string Name`.
-* Its `print()` method should output `(Var Name)`.
+**Your Stretch**: Write `class VariableExprAST` directly below `NumberExprAST` in `kaleidoscope.cpp`:
+* Inherit publicly from `ExprAST`.
+* Store a private `std::string Name;` member.
+* Write an `explicit VariableExprAST(std::string Name)` constructor that initialises `Name(std::move(Name))`.
+* Override `void print(std::ostream &OS) const override` to stream `"(Var " << Name << ")"`.
 
-Type it out in your editor before expanding the fold below.
+Type it out yourself before peeking at the fold below!
 
 <details>
-<summary>Click here to reveal the VariableExprAST class</summary>
+<summary>Click here to check your VariableExprAST class</summary>
 
 ```cpp
-/// VariableExprAST - Expression class for referencing a variable, like "a".
 class VariableExprAST : public ExprAST {
   std::string Name;
 
 public:
   explicit VariableExprAST(std::string Name) : Name(std::move(Name)) {}
 
-  void print(std::ostream &OS) const override {
-    OS << "(Var " << Name << ")";
-  }
+  void print(std::ostream &OS) const override { OS << "(Var " << Name << ")"; }
 };
 ```
 </details>
@@ -61,30 +74,25 @@ public:
 
 ## Incremental Code Changes: Parsing Identifiers
 
-Now that your AST node exists, update your parser to recognise identifier tokens.
+With `VariableExprAST` in place, update the parser and `main()` banner.
 
-### 1. Add ParseIdentifierExpr()
+### 1. Add `ParseIdentifierExpr()`
 
-In the parser section of `kaleidoscope.cpp`, directly below `ParseParenExpr()`, add `ParseIdentifierExpr()`:
+Directly below `ParseParenExpr()`, add `ParseIdentifierExpr()`:
 
 ```cpp
-/// identifierexpr ::= identifier
 static std::unique_ptr<ExprAST> ParseIdentifierExpr() {
   std::string IdName = IdentifierStr;
   getNextToken(); // eat identifier
-  return std::make_unique<VariableExprAST>(IdName);
+  return std::make_unique<VariableExprAST>(std::move(IdName));
 }
 ```
 
-Notice what happens:
-* The lexer has already stored the identifier's name in `IdentifierStr`.
-* We save `IdentifierStr` in a local variable `IdName`.
-* We consume the identifier token using `getNextToken()`.
-* We return a `VariableExprAST` wrapping `IdName`.
+Why copy `IdentifierStr` into a local `IdName` *before* calling `getNextToken()`?  Because `getNextToken()` immediately calls `gettok()` to read the *next* token, and if that next token also happens to be a word, `gettok()` would overwrite the global `IdentifierStr`!  Capturing `IdName` first keeps our variable's name safe, and `std::move(IdName)` transfers the string buffer into `VariableExprAST` without a second heap allocation.
 
-### 2. Update ParsePrimary()
+### 2. Add `tok_identifier` to `ParsePrimary()` and Update `main()`
 
-In `ParsePrimary()`, add a case for `tok_identifier` above `tok_number`:
+In `ParsePrimary()`, add `case tok_identifier:` at the top of the `switch`:
 
 ```cpp
 static std::unique_ptr<ExprAST> ParsePrimary() {
@@ -101,11 +109,17 @@ static std::unique_ptr<ExprAST> ParsePrimary() {
 }
 ```
 
+And update the first `printf` line in `main()` to `Step 2.3: Variables`:
+
+```cpp
+  printf("Kaleidoscope AST Inspector (Step 2.3: Variables)\n");
+```
+
 ---
 
 ## Verifying Your Code
 
-Before compiling, check that your `kaleidoscope.cpp` has all additions in place.
+Compare your `kaleidoscope.cpp` against the complete reference file:
 
 <details>
 <summary>Click here to compare against the reference kaleidoscope.cpp</summary>
@@ -117,6 +131,7 @@ Before compiling, check that your `kaleidoscope.cpp` has all additions in place.
 #include <iostream>
 #include <memory>
 #include <string>
+#include <utility>
 
 //===----------------------------------------------------------------------===//
 // Lexer
@@ -134,8 +149,8 @@ enum Token {
   tok_number = -201,
 };
 
-static std::string IdentifierStr;
-static double NumVal;
+static std::string IdentifierStr; // Filled in if tok_identifier
+static double NumVal;             // Filled in if tok_number
 
 static int gettok() {
   static int LastChar = ' ';
@@ -143,6 +158,7 @@ static int gettok() {
   while (isspace(LastChar))
     LastChar = getchar();
 
+  // Recognise identifiers and keywords: [a-zA-Z_][a-zA-Z0-9_]*
   if (isalpha(LastChar) || LastChar == '_') {
     IdentifierStr = LastChar;
     while (isalnum((LastChar = getchar())) || LastChar == '_')
@@ -155,6 +171,7 @@ static int gettok() {
     return tok_identifier;
   }
 
+  // Recognise numeric literals: [0-9.]+
   if (isdigit(LastChar) || LastChar == '.') {
     std::string NumStr;
     do {
@@ -166,6 +183,7 @@ static int gettok() {
     return tok_number;
   }
 
+  // Recognise comments: '#' through end of line.
   if (LastChar == '#') {
     do
       LastChar = getchar();
@@ -210,9 +228,7 @@ class VariableExprAST : public ExprAST {
 public:
   explicit VariableExprAST(std::string Name) : Name(std::move(Name)) {}
 
-  void print(std::ostream &OS) const override {
-    OS << "(Var " << Name << ")";
-  }
+  void print(std::ostream &OS) const override { OS << "(Var " << Name << ")"; }
 };
 
 //===----------------------------------------------------------------------===//
@@ -231,7 +247,7 @@ static std::unique_ptr<ExprAST> ParseExpression();
 
 static std::unique_ptr<ExprAST> ParseNumberExpr() {
   auto Result = std::make_unique<NumberExprAST>(NumVal);
-  getNextToken();
+  getNextToken(); // consume the number
   return Result;
 }
 
@@ -247,11 +263,10 @@ static std::unique_ptr<ExprAST> ParseParenExpr() {
   return V;
 }
 
-/// identifierexpr ::= identifier
 static std::unique_ptr<ExprAST> ParseIdentifierExpr() {
   std::string IdName = IdentifierStr;
   getNextToken(); // eat identifier
-  return std::make_unique<VariableExprAST>(IdName);
+  return std::make_unique<VariableExprAST>(std::move(IdName));
 }
 
 static std::unique_ptr<ExprAST> ParsePrimary() {
@@ -267,9 +282,7 @@ static std::unique_ptr<ExprAST> ParsePrimary() {
   }
 }
 
-static std::unique_ptr<ExprAST> ParseExpression() {
-  return ParsePrimary();
-}
+static std::unique_ptr<ExprAST> ParseExpression() { return ParsePrimary(); }
 
 //===----------------------------------------------------------------------===//
 // Interactive Driver Loop
@@ -306,11 +319,9 @@ int main() {
   printf(
       "Type expressions followed by ';' and press Enter (Ctrl+D to exit):\n\n");
 
-  // Prime the first token.
   Prompt();
   getNextToken();
   MainLoop();
-
   return 0;
 }
 ```
@@ -323,25 +334,30 @@ int main() {
 Recompile:
 
 ```bash
-clang++ -Wall -Wextra kaleidoscope.cpp -o kaleidoscope
+clang++ -std=c++17 -fno-rtti -Wall -Wextra kaleidoscope.cpp -o kaleidoscope
 ```
 
-Run the binary:
+Run `./kaleidoscope` and test bare and parenthesised variable names:
 
 ```bash
 ./kaleidoscope
 ```
 
-Type variable names and parenthesised variables:
-
 ```text
 Kaleidoscope AST Inspector (Step 2.3: Variables)
-Type expressions and press Enter (Ctrl+D to exit):
+Type expressions followed by ';' and press Enter (Ctrl+D to exit):
 
 ready> x;
 Parsed AST: (Var x)
 ready> (my_variable);
 Parsed AST: (Var my_variable)
+ready>
 ```
 
-In [Step 2.4](04-function-calls.md), we will extend `ParseIdentifierExpr()` to recognise function calls like `foo(x, 10)`.
+Notice how `(my_variable);` combines your parenthesis parser from [Step 2.2](02-parentheses.md) with your brand-new `VariableExprAST` without a single extra line of glue code!
+
+In [Step 2.4](04-function-calls.md), we will extend `ParseIdentifierExpr()` to tell simple variables (`x`) apart from function calls (`foo(x, 10)`).
+
+---
+
+[Previous: Step 2.2 - Parentheses and Grouping](02-parentheses.md) | [Section 2 Overview](index.md) | [Next: Step 2.4 - Function Calls](04-function-calls.md)

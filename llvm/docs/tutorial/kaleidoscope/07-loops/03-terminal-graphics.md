@@ -1,63 +1,79 @@
 # Step 7.3: Terminal Graphics and Host Calls
 
-With `for` loops in place, Kaleidoscope can execute repeated operations.  To observe the loop in action, we need a way to output characters to the screen.
+Back in [Step 5.4](../05-jit/04-functions-and-externs.md), you saw that `extern sin(x);` works out of the box because ORCv2 searches standard shared libraries (like `libm`) loaded into your process.  Even better: because `KaleidoscopeJIT` attaches `DynamicLibrarySearchGenerator::GetForCurrentProcess(...)` (from [Step 5.2](../05-jit/02-jit-engine.md)), JIT-compiled Kaleidoscope code can also call C functions defined **right inside `kaleidoscope.cpp` itself**!
 
-In this step, you will expose native C helper functions from your compiler's binary to the JIT using the `-rdynamic` compiler flag, and write a Kaleidoscope function that prints terminal patterns.
+In this step, you will add two tiny C output functions (`putchard` and `printd`) to your host binary and call them from Kaleidoscope loops to print numbers and draw ASCII patterns.
 
 ---
 
-## Host Symbol Resolution and C Linkage
+## How the JIT Finds Symbols in Your Own Executable
 
-```mermaid
-flowchart LR
-    Host["Host Binary (kaleidoscope)<br>extern 'C' putchard(double X)"] --> Dynamic["Dynamic Symbol Table<br>(preserved via -rdynamic)"]
-    Dynamic --> JIT["KaleidoscopeJIT<br>(DynamicLibrarySearchGenerator)"]
-    JIT --> Exec["Running JIT Code<br>call double @putchard(...)"]
+```text
++----------------------------------+     +----------------------------------+
+|   Host Binary (kaleidoscope)     |     |      Dynamic Symbol Table        |
+|  extern "C" double putchard(X)   | --> |  Preserved by -rdynamic on ELF   |
+|  extern "C" double printd(X)     |     |  (or DLLEXPORT on Windows)       |
++----------------------------------+     +-----------------+----------------+
+                                                           |
+                                                           v
++----------------------------------+     +----------------------------------+
+|    Running JIT Machine Code      | <-- |         KaleidoscopeJIT          |
+|  call double @putchard(42.0)     |     |  DynamicLibrarySearchGenerator   |
++----------------------------------+     +----------------------------------+
 ```
 
-> [!IMPORTANT]
-> **Why `-rdynamic` is Essential**:
-> On Linux and other ELF systems, the static linker discards internal symbols from the dynamic symbol table unless they are referenced by an external shared library.  Because your JIT compiles code in memory after your executable has already started running, the dynamic linker must be able to locate `putchard` by name inside your running process.  Passing `-rdynamic` instructs the linker to preserve all global symbols in the dynamic symbol table so `KaleidoscopeJIT` can resolve them.
+Two small details make this bridge work reliably across platforms:
 
-> [!NOTE]
-> **C Linkage Disables Name Mangling**:
-> Host helper functions called by JIT-compiled Kaleidoscope code must use `extern "C"` to prevent C++ name mangling.  Without `extern "C"`, the C++ compiler mangles `putchard` into a symbol like `_Z8putchardd`, preventing the JIT from finding it by its plain identifier name.
+1.  **`extern "C"` disables C++ name mangling**: A C++ compiler normally mangles `double putchard(double)` into `_Z8putchardd` so overloaded functions get distinct linker names.  Kaleidoscope emits `call double @putchard(double ...)`, so `extern "C"` keeps the symbol name plain `putchard`.
+2.  **`-rdynamic` (ELF/Linux) and `DLLEXPORT` (Windows)**: On Linux and BSD, the static linker normally strips unreferenced executable functions out of the dynamic symbol table (`.dynsym`) because no shared library needed them at link time.  Passing `-rdynamic` tells the linker to export all global symbols of `kaleidoscope` into `.dynsym` so the JIT can look up `putchard` and `printd` at runtime.
+
+:::{note}
+**Why Write to `stderr`?**
+
+Both `putchard` and `printd` write to `stderr` (`fputc(..., stderr)` and `fprintf(stderr, ...)`), matching our REPL's `"ready> "` prompt and `"Evaluated to ..."` diagnostics so characters appear immediately without waiting for `stdout` line buffering!
+:::
 
 ---
 
 ## Incremental Code Changes
 
-Open `kaleidoscope.cpp` to add the host output helpers.
-
-### 1. Exposing Host Functions
-
-Directly below your `#include` directives and above your lexer section, define two C-linkage helper functions:
+Open `kaleidoscope.cpp` and add the host library helpers right after `FunctionAST::codegen()` (just above the `// Interactive Driver Loop` banner):
 
 ```cpp
+//===----------------------------------------------------------------------===//
+// Host Library Helpers
+//===----------------------------------------------------------------------===//
+
 #ifdef _WIN32
 #define DLLEXPORT __declspec(dllexport)
 #else
 #define DLLEXPORT
 #endif
 
+/// putchard - putchar that takes a double and returns 0.
 extern "C" DLLEXPORT double putchard(double X) {
   fputc(static_cast<char>(X), stderr);
   return 0;
 }
 
+/// printd - printf that takes a double prints it as "%f\n", returning 0.
 extern "C" DLLEXPORT double printd(double X) {
   fprintf(stderr, "%f\n", X);
   return 0;
 }
 ```
 
-Because Kaleidoscope operates exclusively on 64-bit floating-point values, `putchard` accepts a `double`, casts it to an ASCII `char`, writes it to standard error, and returns `0.0`.
+Then update the startup banner in `main()`:
+
+```cpp
+  printf("Kaleidoscope JIT REPL (Step 7.3: Terminal Graphics)\n");
+```
 
 ---
 
 ## Verifying Your Code
 
-Before compiling, check your `kaleidoscope.cpp` against the reference file.
+Compare your `kaleidoscope.cpp` against the complete Section 7 reference implementation:
 
 <details>
 <summary>Click here to compare against the reference kaleidoscope.cpp</summary>
@@ -74,18 +90,11 @@ Before compiling, check your `kaleidoscope.cpp` against the reference file.
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
-#include "llvm/IR/PassManager.h"
 #include "llvm/IR/Type.h"
 #include "llvm/IR/Verifier.h"
-#include "llvm/Passes/PassBuilder.h"
-#include "llvm/Passes/StandardInstrumentations.h"
 #include "llvm/Support/TargetSelect.h"
-#include "llvm/Target/TargetMachine.h"
-#include "llvm/Transforms/InstCombine/InstCombine.h"
-#include "llvm/Transforms/Scalar.h"
-#include "llvm/Transforms/Scalar/GVN.h"
-#include "llvm/Transforms/Scalar/Reassociate.h"
-#include "llvm/Transforms/Scalar/SimplifyCFG.h"
+#include "llvm/Support/raw_ostream.h"
+
 #include <cctype>
 #include <cstdio>
 #include <cstdlib>
@@ -95,21 +104,9 @@ Before compiling, check your `kaleidoscope.cpp` against the reference file.
 #include <utility>
 #include <vector>
 
-#ifdef _WIN32
-#define DLLEXPORT __declspec(dllexport)
-#else
-#define DLLEXPORT
-#endif
-
-extern "C" DLLEXPORT double putchard(double X) {
-  fputc(static_cast<char>(X), stderr);
-  return 0;
-}
-
-extern "C" DLLEXPORT double printd(double X) {
-  fprintf(stderr, "%f\n", X);
-  return 0;
-}
+//===----------------------------------------------------------------------===//
+// Lexer
+//===----------------------------------------------------------------------===//
 
 enum Token {
   tok_eof = -1,
@@ -128,8 +125,8 @@ enum Token {
   tok_number = -201,
 };
 
-static std::string IdentifierStr;
-static double NumVal;
+static std::string IdentifierStr; // Filled in if tok_identifier
+static double NumVal;             // Filled in if tok_number
 
 static int gettok() {
   static int LastChar = ' ';
@@ -137,6 +134,7 @@ static int gettok() {
   while (isspace(LastChar))
     LastChar = getchar();
 
+  // Recognise identifiers and keywords: [a-zA-Z_][a-zA-Z0-9_]*
   if (isalpha(LastChar) || LastChar == '_') {
     IdentifierStr = LastChar;
     while (isalnum((LastChar = getchar())) || LastChar == '_')
@@ -159,6 +157,7 @@ static int gettok() {
     return tok_identifier;
   }
 
+  // Recognise numeric literals: [0-9.]+
   if (isdigit(LastChar) || LastChar == '.') {
     std::string NumStr;
     do {
@@ -170,6 +169,7 @@ static int gettok() {
     return tok_number;
   }
 
+  // Recognise comments: '#' through end of line.
   if (LastChar == '#') {
     do
       LastChar = getchar();
@@ -186,6 +186,10 @@ static int gettok() {
   LastChar = getchar();
   return ThisChar;
 }
+
+//===----------------------------------------------------------------------===//
+// Abstract Syntax Tree (AST)
+//===----------------------------------------------------------------------===//
 
 class ExprAST {
 public:
@@ -206,6 +210,7 @@ class VariableExprAST : public ExprAST {
 
 public:
   explicit VariableExprAST(std::string Name) : Name(std::move(Name)) {}
+  const std::string &getName() const { return Name; }
   llvm::Value *codegen() override;
 };
 
@@ -237,7 +242,6 @@ public:
   IfExprAST(std::unique_ptr<ExprAST> Cond, std::unique_ptr<ExprAST> Then,
             std::unique_ptr<ExprAST> Else)
       : Cond(std::move(Cond)), Then(std::move(Then)), Else(std::move(Else)) {}
-
   llvm::Value *codegen() override;
 };
 
@@ -246,12 +250,11 @@ class ForExprAST : public ExprAST {
   std::unique_ptr<ExprAST> Start, End, Step, Body;
 
 public:
-  ForExprAST(const std::string &VarName, std::unique_ptr<ExprAST> Start,
+  ForExprAST(std::string VarName, std::unique_ptr<ExprAST> Start,
              std::unique_ptr<ExprAST> End, std::unique_ptr<ExprAST> Step,
              std::unique_ptr<ExprAST> Body)
-      : VarName(VarName), Start(std::move(Start)), End(std::move(End)),
-        Step(std::move(Step)), Body(std::move(Body)) {}
-
+      : VarName(std::move(VarName)), Start(std::move(Start)),
+        End(std::move(End)), Step(std::move(Step)), Body(std::move(Body)) {}
   llvm::Value *codegen() override;
 };
 
@@ -260,10 +263,11 @@ class PrototypeAST {
   std::vector<std::string> Args;
 
 public:
-  PrototypeAST(const std::string &Name, std::vector<std::string> Args)
-      : Name(Name), Args(std::move(Args)) {}
-  llvm::Function *codegen();
+  PrototypeAST(std::string Name, std::vector<std::string> Args)
+      : Name(std::move(Name)), Args(std::move(Args)) {}
+
   const std::string &getName() const { return Name; }
+  llvm::Function *codegen();
 };
 
 class FunctionAST {
@@ -274,8 +278,13 @@ public:
   FunctionAST(std::unique_ptr<PrototypeAST> Proto,
               std::unique_ptr<ExprAST> Body)
       : Proto(std::move(Proto)), Body(std::move(Body)) {}
+
   llvm::Function *codegen();
 };
+
+//===----------------------------------------------------------------------===//
+// Parser
+//===----------------------------------------------------------------------===//
 
 static int CurTok;
 static int getNextToken() { return CurTok = gettok(); }
@@ -286,7 +295,7 @@ static int GetTokPrecedence() {
   if (!isascii(CurTok))
     return -1;
 
-  int TokPrec = BinopPrecedence[CurTok];
+  int TokPrec = BinopPrecedence[static_cast<char>(CurTok)];
   if (TokPrec <= 0)
     return -1;
   return TokPrec;
@@ -302,39 +311,36 @@ static llvm::Value *LogErrorV(const char *Str) {
   return nullptr;
 }
 
-static std::unique_ptr<PrototypeAST> LogErrorP(const char *Str) {
-  LogError(Str);
-  return nullptr;
-}
-
 static std::unique_ptr<ExprAST> ParseExpression();
 
 static std::unique_ptr<ExprAST> ParseNumberExpr() {
   auto Result = std::make_unique<NumberExprAST>(NumVal);
-  getNextToken();
+  getNextToken(); // consume the number
   return Result;
 }
 
 static std::unique_ptr<ExprAST> ParseParenExpr() {
-  getNextToken();
+  getNextToken(); // eat '('
   auto V = ParseExpression();
   if (!V)
     return nullptr;
 
   if (CurTok != ')')
     return LogError("expected ')'");
-  getNextToken();
+  getNextToken(); // eat ')'
   return V;
 }
 
 static std::unique_ptr<ExprAST> ParseIdentifierExpr() {
   std::string IdName = IdentifierStr;
-  getNextToken();
+  getNextToken(); // eat identifier
 
+  // Simple variable reference.
   if (CurTok != '(')
-    return std::make_unique<VariableExprAST>(IdName);
+    return std::make_unique<VariableExprAST>(std::move(IdName));
 
-  getNextToken();
+  // Function call.
+  getNextToken(); // eat '('
   std::vector<std::unique_ptr<ExprAST>> Args;
   if (CurTok != ')') {
     while (true) {
@@ -348,16 +354,16 @@ static std::unique_ptr<ExprAST> ParseIdentifierExpr() {
 
       if (CurTok != ',')
         return LogError("expected ')' or ',' in argument list");
-      getNextToken();
+      getNextToken(); // eat ','
     }
   }
 
-  getNextToken();
-  return std::make_unique<CallExprAST>(IdName, std::move(Args));
+  getNextToken(); // eat ')'
+  return std::make_unique<CallExprAST>(std::move(IdName), std::move(Args));
 }
 
 static std::unique_ptr<ExprAST> ParseIfExpr() {
-  getNextToken();
+  getNextToken(); // eat 'if'
 
   auto Cond = ParseExpression();
   if (!Cond)
@@ -365,7 +371,7 @@ static std::unique_ptr<ExprAST> ParseIfExpr() {
 
   if (CurTok != tok_then)
     return LogError("expected 'then'");
-  getNextToken();
+  getNextToken(); // eat 'then'
 
   auto Then = ParseExpression();
   if (!Then)
@@ -373,7 +379,7 @@ static std::unique_ptr<ExprAST> ParseIfExpr() {
 
   if (CurTok != tok_else)
     return LogError("expected 'else'");
-  getNextToken();
+  getNextToken(); // eat 'else'
 
   auto Else = ParseExpression();
   if (!Else)
@@ -384,47 +390,49 @@ static std::unique_ptr<ExprAST> ParseIfExpr() {
 }
 
 static std::unique_ptr<ExprAST> ParseForExpr() {
-  getNextToken();
+  getNextToken(); // eat 'for'
 
   if (CurTok != tok_identifier)
-    return LogError("expected identifier after for");
+    return LogError("expected identifier after 'for'");
 
   std::string IdName = IdentifierStr;
-  getNextToken();
+  getNextToken(); // eat identifier
 
   if (CurTok != '=')
-    return LogError("expected '=' after for");
-  getNextToken();
+    return LogError("expected '=' after 'for'");
+  getNextToken(); // eat '='
 
   auto Start = ParseExpression();
   if (!Start)
     return nullptr;
   if (CurTok != ',')
     return LogError("expected ',' after for start value");
-  getNextToken();
+  getNextToken(); // eat ','
 
   auto End = ParseExpression();
   if (!End)
     return nullptr;
 
+  // The step value is optional.
   std::unique_ptr<ExprAST> Step;
   if (CurTok == ',') {
-    getNextToken();
+    getNextToken(); // eat ','
     Step = ParseExpression();
     if (!Step)
       return nullptr;
   }
 
   if (CurTok != tok_in)
-    return LogError("expected 'in' after for");
-  getNextToken();
+    return LogError("expected 'in' after 'for'");
+  getNextToken(); // eat 'in'
 
   auto Body = ParseExpression();
   if (!Body)
     return nullptr;
 
-  return std::make_unique<ForExprAST>(IdName, std::move(Start), std::move(End),
-                                      std::move(Step), std::move(Body));
+  return std::make_unique<ForExprAST>(std::move(IdName), std::move(Start),
+                                      std::move(End), std::move(Step),
+                                      std::move(Body));
 }
 
 static std::unique_ptr<ExprAST> ParsePrimary() {
@@ -444,6 +452,7 @@ static std::unique_ptr<ExprAST> ParsePrimary() {
   }
 }
 
+/// binoprhs ::= (binop primary)*
 static std::unique_ptr<ExprAST> ParseBinOpRHS(int ExprPrec,
                                               std::unique_ptr<ExprAST> LHS) {
   while (true) {
@@ -453,7 +462,7 @@ static std::unique_ptr<ExprAST> ParseBinOpRHS(int ExprPrec,
       return LHS;
 
     int BinOp = CurTok;
-    getNextToken();
+    getNextToken(); // eat binary operator
 
     auto RHS = ParsePrimary();
     if (!RHS)
@@ -466,8 +475,8 @@ static std::unique_ptr<ExprAST> ParseBinOpRHS(int ExprPrec,
         return nullptr;
     }
 
-    LHS = std::make_unique<BinaryExprAST>(BinOp, std::move(LHS),
-                                          std::move(RHS));
+    LHS = std::make_unique<BinaryExprAST>(static_cast<char>(BinOp),
+                                          std::move(LHS), std::move(RHS));
   }
 }
 
@@ -477,6 +486,11 @@ static std::unique_ptr<ExprAST> ParseExpression() {
     return nullptr;
 
   return ParseBinOpRHS(0, std::move(LHS));
+}
+
+static std::unique_ptr<PrototypeAST> LogErrorP(const char *Str) {
+  LogError(Str);
+  return nullptr;
 }
 
 static std::unique_ptr<PrototypeAST> ParsePrototype() {
@@ -492,15 +506,16 @@ static std::unique_ptr<PrototypeAST> ParsePrototype() {
   std::vector<std::string> ArgNames;
   while (getNextToken() == tok_identifier)
     ArgNames.push_back(IdentifierStr);
+
   if (CurTok != ')')
     return LogErrorP("expected ')' in prototype");
 
-  getNextToken();
-  return std::make_unique<PrototypeAST>(FnName, std::move(ArgNames));
+  getNextToken(); // eat ')'
+  return std::make_unique<PrototypeAST>(std::move(FnName), std::move(ArgNames));
 }
 
 static std::unique_ptr<FunctionAST> ParseDefinition() {
-  getNextToken();
+  getNextToken(); // eat 'def'
   auto Proto = ParsePrototype();
   if (!Proto)
     return nullptr;
@@ -520,9 +535,13 @@ static std::unique_ptr<FunctionAST> ParseTopLevelExpr() {
 }
 
 static std::unique_ptr<PrototypeAST> ParseExtern() {
-  getNextToken();
+  getNextToken(); // eat 'extern'
   return ParsePrototype();
 }
+
+//===----------------------------------------------------------------------===//
+// Code Generation
+//===----------------------------------------------------------------------===//
 
 static std::unique_ptr<llvm::LLVMContext> TheContext;
 static std::unique_ptr<llvm::Module> TheModule;
@@ -530,14 +549,8 @@ static std::unique_ptr<llvm::IRBuilder<>> Builder;
 static std::map<std::string, llvm::Value *> NamedValues;
 static std::unique_ptr<llvm::orc::KaleidoscopeJIT> TheJIT;
 static std::map<std::string, std::unique_ptr<PrototypeAST>> FunctionProtos;
+static std::map<std::string, llvm::orc::ResourceTrackerSP> FunctionRTs;
 static llvm::ExitOnError ExitOnErr;
-
-static void InitializeModuleAndManagers() {
-  TheContext = std::make_unique<llvm::LLVMContext>();
-  TheModule = std::make_unique<llvm::Module>("KaleidoscopeJIT", *TheContext);
-  TheModule->setDataLayout(TheJIT->getDataLayout());
-  Builder = std::make_unique<llvm::IRBuilder<>>(*TheContext);
-}
 
 static llvm::Function *getFunction(std::string Name) {
   if (auto *F = TheModule->getFunction(Name))
@@ -548,6 +561,13 @@ static llvm::Function *getFunction(std::string Name) {
     return FI->second->codegen();
 
   return nullptr;
+}
+
+static void InitializeModuleAndManagers() {
+  TheContext = std::make_unique<llvm::LLVMContext>();
+  TheModule = std::make_unique<llvm::Module>("KaleidoscopeJIT", *TheContext);
+  TheModule->setDataLayout(TheJIT->getDataLayout());
+  Builder = std::make_unique<llvm::IRBuilder<>>(*TheContext);
 }
 
 llvm::Value *NumberExprAST::codegen() {
@@ -591,7 +611,7 @@ llvm::Value *CallExprAST::codegen() {
     return LogErrorV("unknown function referenced");
 
   if (CalleeF->arg_size() != Args.size())
-    return LogErrorV("incorrect number of arguments passed");
+    return LogErrorV("incorrect # arguments passed");
 
   std::vector<llvm::Value *> ArgsV;
   for (unsigned i = 0, e = Args.size(); i != e; ++i) {
@@ -620,30 +640,28 @@ llvm::Value *IfExprAST::codegen() {
 
   Builder->CreateCondBr(CondV, ThenBB, ElseBB);
 
+  // Emit 'then' block.
   Builder->SetInsertPoint(ThenBB);
   llvm::Value *ThenV = Then->codegen();
   if (!ThenV)
     return nullptr;
-
   Builder->CreateBr(MergeBB);
   ThenBB = Builder->GetInsertBlock();
 
+  // Emit 'else' block.
   TheFunction->insert(TheFunction->end(), ElseBB);
   Builder->SetInsertPoint(ElseBB);
-
   llvm::Value *ElseV = Else->codegen();
   if (!ElseV)
     return nullptr;
-
   Builder->CreateBr(MergeBB);
   ElseBB = Builder->GetInsertBlock();
 
+  // Emit 'ifcont' merge block with SSA PHI node.
   TheFunction->insert(TheFunction->end(), MergeBB);
   Builder->SetInsertPoint(MergeBB);
-
   llvm::PHINode *PN =
       Builder->CreatePHI(llvm::Type::getDoubleTy(*TheContext), 2, "iftmp");
-
   PN->addIncoming(ThenV, ThenBB);
   PN->addIncoming(ElseV, ElseBB);
   return PN;
@@ -711,11 +729,10 @@ llvm::Value *ForExprAST::codegen() {
 llvm::Function *PrototypeAST::codegen() {
   std::vector<llvm::Type *> Doubles(Args.size(),
                                     llvm::Type::getDoubleTy(*TheContext));
-  llvm::FunctionType *FT = llvm::FunctionType::get(
-      llvm::Type::getDoubleTy(*TheContext), Doubles, false);
-
-  llvm::Function *F = llvm::Function::Create(
-      FT, llvm::Function::ExternalLinkage, Name, TheModule.get());
+  auto *FT = llvm::FunctionType::get(llvm::Type::getDoubleTy(*TheContext),
+                                     Doubles, false);
+  auto *F = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, Name,
+                                   TheModule.get());
 
   unsigned Idx = 0;
   for (auto &Arg : F->args())
@@ -731,8 +748,7 @@ llvm::Function *FunctionAST::codegen() {
   if (!TheFunction)
     return nullptr;
 
-  llvm::BasicBlock *BB =
-      llvm::BasicBlock::Create(*TheContext, "entry", TheFunction);
+  auto *BB = llvm::BasicBlock::Create(*TheContext, "entry", TheFunction);
   Builder->SetInsertPoint(BB);
 
   NamedValues.clear();
@@ -741,7 +757,10 @@ llvm::Function *FunctionAST::codegen() {
 
   if (llvm::Value *RetVal = Body->codegen()) {
     Builder->CreateRet(RetVal);
-    llvm::verifyFunction(*TheFunction);
+    if (llvm::verifyFunction(*TheFunction, &llvm::errs())) {
+      TheFunction->eraseFromParent();
+      return nullptr;
+    }
     return TheFunction;
   }
 
@@ -749,18 +768,55 @@ llvm::Function *FunctionAST::codegen() {
   return nullptr;
 }
 
+//===----------------------------------------------------------------------===//
+// Host Library Helpers
+//===----------------------------------------------------------------------===//
+
+#ifdef _WIN32
+#define DLLEXPORT __declspec(dllexport)
+#else
+#define DLLEXPORT
+#endif
+
+/// putchard - putchar that takes a double and returns 0.
+extern "C" DLLEXPORT double putchard(double X) {
+  fputc(static_cast<char>(X), stderr);
+  return 0;
+}
+
+/// printd - printf that takes a double prints it as "%f\n", returning 0.
+extern "C" DLLEXPORT double printd(double X) {
+  fprintf(stderr, "%f\n", X);
+  return 0;
+}
+
+//===----------------------------------------------------------------------===//
+// Interactive Driver Loop
+//===----------------------------------------------------------------------===//
+
 static void HandleDefinition() {
   if (auto FnAST = ParseDefinition()) {
     if (auto *FnIR = FnAST->codegen()) {
+      std::string FnName = std::string(FnIR->getName());
       fprintf(stderr, "Read function definition:\n");
       FnIR->print(llvm::errs());
       fprintf(stderr, "\n");
-      ExitOnErr(TheJIT->addModule(llvm::orc::ThreadSafeModule(
-          std::move(TheModule), std::move(TheContext))));
+
+      // If redefining an existing JIT function, remove its previous code first.
+      if (auto It = FunctionRTs.find(FnName); It != FunctionRTs.end()) {
+        ExitOnErr(It->second->remove());
+        FunctionRTs.erase(It);
+      }
+
+      auto RT = TheJIT->getMainJITDylib().createResourceTracker();
+      ExitOnErr(
+          TheJIT->addModule(llvm::orc::ThreadSafeModule(std::move(TheModule),
+                                                        std::move(TheContext)),
+                            RT));
+      FunctionRTs[FnName] = std::move(RT);
       InitializeModuleAndManagers();
     }
   } else {
-    // Skip token for error recovery.
     while (CurTok != ';' && CurTok != tok_eof)
       getNextToken();
   }
@@ -775,7 +831,6 @@ static void HandleExtern() {
       FunctionProtos[ProtoAST->getName()] = std::move(ProtoAST);
     }
   } else {
-    // Skip token for error recovery.
     while (CurTok != ';' && CurTok != tok_eof)
       getNextToken();
   }
@@ -791,15 +846,17 @@ static void HandleTopLevelExpression() {
       ExitOnErr(TheJIT->addModule(std::move(TSM), RT));
       InitializeModuleAndManagers();
 
-      auto ExprSymbol = ExitOnErr(TheJIT->lookup("__anon_expr"));
-
-      double (*FP)() = ExprSymbol.toPtr<double (*)()>();
-      fprintf(stderr, "Evaluated to %f\n", FP());
+      if (auto ExprSymbol = TheJIT->lookup("__anon_expr")) {
+        double (*FP)() = ExprSymbol->getAddress().toPtr<double (*)()>();
+        fprintf(stderr, "Evaluated to %f\n", FP());
+      } else {
+        llvm::logAllUnhandledErrors(ExprSymbol.takeError(), llvm::errs(),
+                                    "JIT Error: ");
+      }
 
       ExitOnErr(RT->remove());
     }
   } else {
-    // Skip token for error recovery.
     while (CurTok != ';' && CurTok != tok_eof)
       getNextToken();
   }
@@ -843,11 +900,13 @@ int main() {
   TheJIT = ExitOnErr(llvm::orc::KaleidoscopeJIT::Create());
   InitializeModuleAndManagers();
 
-  // Prime the first token.
+  printf("Kaleidoscope JIT REPL (Step 7.3: Terminal Graphics)\n");
+  printf("Type definitions, externs, or expressions followed by ';' (Ctrl+D to "
+         "exit):\n\n");
+
   Prompt();
   getNextToken();
   MainLoop();
-
   return 0;
 }
 ```
@@ -855,32 +914,31 @@ int main() {
 
 ---
 
-## Compiling with `-rdynamic`
+## Compiling and Drawing in the Terminal
 
-Compile your compiler, adding `-rdynamic`:
+Compile `kaleidoscope.cpp` (making sure `-rdynamic` is present!):
 
 ```bash
-clang++ -rdynamic -Iinclude -Wall -Wextra kaleidoscope.cpp $(llvm-config --cxxflags --ldflags --system-libs --libs core orcjit native) -o kaleidoscope
+clang++ -std=c++17 -fno-rtti -Wall -Wextra -rdynamic -Iinclude kaleidoscope.cpp $(llvm-config --cxxflags --ldflags --system-libs --libs core orcjit native) -isystem $(llvm-config --includedir) -o kaleidoscope
 ```
 
----
-
-## Running Loops in the JIT
-
-Launch `./kaleidoscope` and declare the external `putchard` helper:
+Launch `./kaleidoscope`, declare `putchard` and `printd` with `extern`, and watch JIT-compiled loops write directly to your terminal (`42` is the ASCII code for `'*'`):
 
 ```text
-ready> extern putchard(x);
+Kaleidoscope JIT REPL (Step 7.3: Terminal Graphics)
+Type definitions, externs, or expressions followed by ';' (Ctrl+D to exit):
+
+ready> extern putchard(char);
 Read extern:
 declare double @putchard(double)
-```
 
-Now define a loop function `printstar` that outputs `n` asterisks (ASCII 42):
+ready> extern printd(x);
+Read extern:
+declare double @printd(double)
 
-```text
 ready> def printstar(n)
-         for i = 1, i < n, 1.0 in
-           putchard(42);
+  for i = 1, i < n, 1.0 in
+    putchard(42);
 Read function definition:
 define double @printstar(double %n) {
 entry:
@@ -898,22 +956,24 @@ loop:                                             ; preds = %loop, %entry
 afterloop:                                        ; preds = %loop
   ret double 0.000000e+00
 }
-```
 
-Execute `printstar(10)`:
-
-```text
 ready> printstar(10);
-*********Evaluated to 0.000000
+**********Evaluated to 0.000000
+ready> for i = 1, i < 4 in printd(i);
+1.000000
+2.000000
+3.000000
+4.000000
+Evaluated to 0.000000
 ```
 
-Asterisks appear directly in your terminal, output by machine code running natively on your CPU!
+Count those asterisks: `printstar(10);` printed **10** stars (`**********`), and `for i = 1, i < 4 in printd(i);` printed `1.000000` through `4.000000`, confirming the post-tested loop behaviour from [Step 7.2](02-loop-codegen.md)!
 
 ---
 
-## Active Learning Challenge: Drawing Shapes with Nested Loops
+## Try It Yourself: Right Triangle of Stars
 
-Combine your `for` loop with a newline (ASCII 10) to draw a right-angled triangle of stars:
+Can you combine `printstar` with ASCII newline (`putchard(10)`) to draw a 5-row right-angled triangle of stars in the REPL using only the built-in operators you already have (`<`, `+`, `*`)?
 
 ```text
 *
@@ -923,32 +983,33 @@ Combine your `for` loop with a newline (ASCII 10) to draw a right-angled triangl
 *****
 ```
 
-### The Challenge
-
-Write a helper function `printline(row)` that prints `row` stars and then prints a newline (ASCII 10).  Then write `triangle(n)` that loops from 1 to `n` calling `printline(i)`.
+**Hint**: Remember that in `a + b`, Kaleidoscope evaluates `a` first and `b` second, and both `printstar` and `putchard` return `0.0`!
 
 <details>
-<summary>Click here to reveal the solution</summary>
+<summary>Click here to reveal a sample solution</summary>
 
-```kaleidoscope
-extern putchard(x);
-
-def printline(n)
-  if (for i = 0, i < n, 1 in putchard(42)) == 0 then
-    putchard(10)
-  else
-    0;
-
-def triangle(n)
-  for row = 1, row < n + 1, 1 in
-    printline(row);
+```text
+ready> def triangle(n)
+  for row = 1, row < n, 1.0 in
+    printstar(row) + putchard(10);
+ready> triangle(5);
+*
+**
+***
+****
+*****
+Evaluated to 0.000000
 ```
 
-Test it in your REPL with `triangle(5);`!
+Using `+` as an improvised sequencing operator works when both sides return numbers, though it looks a bit quirky!  In the next section, you will let Kaleidoscope programmers define real custom operators (including a clean `:` sequencing operator, logical `&` and `|`, unary `!` and `-`, and `>`) right inside the language itself.
 </details>
 
 ---
 
 ## Next Steps
 
-In [Section 8: User-Defined Operators](../08-user-defined-ops/README.md), we will extend Kaleidoscope to let users define custom binary and unary operators dynamically in the language itself.
+In [Section 8: User-Defined Operators](../08-user-defined-ops/index.md), you will teach Kaleidoscope to parse and JIT-compile custom unary and binary operators with user-chosen precedence, culminating in an interactive ASCII Mandelbrot fractal renderer!
+
+---
+
+[Previous: Emitting Loop Basic Blocks and PHI Nodes](02-loop-codegen.md) | [Section Overview](index.md) | [Next: Section 8 - User-Defined Operators](../08-user-defined-ops/index.md)

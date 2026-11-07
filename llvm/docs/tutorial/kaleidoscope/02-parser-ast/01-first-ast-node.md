@@ -1,32 +1,30 @@
 # Step 2.1: The Base AST and Numbers
 
-Welcome to Step 2.1.  In this step, we establish our Abstract Syntax Tree (AST) foundation and parse our first language construct: numeric literals.
+Welcome to Section 2!  In [Section 1](../01-lexer/index.md), our scanner learned to turn raw source text into atomic tokens.  Now we establish our Abstract Syntax Tree (AST) class hierarchy and parse our first language construct: numeric literals.
 
 ---
 
 ## What is an Abstract Syntax Tree?
 
-In Section 1, our scanner converted raw characters into a stream of tokens.  However, a flat list of tokens does not tell the compiler how expressions relate to each other.
+A flat list of tokens tells us *which* words and numbers appeared in the file, but not how expressions nest inside one another.  An **Abstract Syntax Tree (AST)** captures that hierarchical structure in memory:
 
-An **Abstract Syntax Tree (AST)** captures the hierarchical structure of a program in memory:
-
-```mermaid
-flowchart TD
-    Src["Source Text: '42'"] -->|Lexer| Tok["Token: tok_number (NumVal = 42.0)"]
-    Tok -->|Parser| Ast["AST: NumberExprAST(42.0)"]
+```text
++-------------------+   Lexer    +----------------------------------+   Parser   +------------------------+
+| Source Text: "42" | ---------> | Token: tok_number (NumVal = 42)  | ---------> | AST: NumberExprAST(42) |
++-------------------+            +----------------------------------+            +------------------------+
 ```
 
-In the AST, trivia like whitespace, comments, and delimiters are gone.  Only the semantic operations and values remain.  Later stages of our compiler will traverse this tree to generate machine code.
+Why is it called *Abstract*?  Because concrete surface trivia (spaces, `#` comments, semicolons, and later parentheses) has been stripped away.  Only the operations and values that matter to execution remain.
 
 ---
 
 ## Incremental Code Changes
 
-Open your `kaleidoscope.cpp` file from Section 1.  You will make four targeted additions.
+Open your `kaleidoscope.cpp` file from [Step 1.5](../01-lexer/05-skipping-comments.md).  Make sure you reverted the optional `if`/`then`/`else` challenge tokens so `enum Token` only contains `tok_eof`, `tok_def`, `tok_extern`, `tok_identifier`, and `tok_number`.  Now apply four updates.
 
-### 1. New Header Includes
+### 1. New Header Includes and a Lexer Banner
 
-At the very top of `kaleidoscope.cpp`, include `<iostream>` (for stream printing) and `<memory>` (for `std::unique_ptr`):
+At the top of `kaleidoscope.cpp`, include `<iostream>` (for `std::ostream` printing) and `<memory>` (for `std::unique_ptr`), and add an LLVM-style section banner right above `enum Token` so our growing file stays easy to navigate:
 
 ```cpp
 #include <cctype>
@@ -35,27 +33,29 @@ At the very top of `kaleidoscope.cpp`, include `<iostream>` (for stream printing
 #include <iostream>
 #include <memory>
 #include <string>
+
+//===----------------------------------------------------------------------===//
+// Lexer
+//===----------------------------------------------------------------------===//
 ```
 
-### 2. The Base AST Class and NumberExprAST
+### 2. `ExprAST` and `NumberExprAST`
 
-In C++, each AST node is represented by a class that inherits from a common base class, `ExprAST`.
+Every expression node in Kaleidoscope inherits from a polymorphic base class named `ExprAST`.  To give ourselves immediate visual feedback in Sections 2 and 3, we equip `ExprAST` with a pure virtual `print()` method that formats nodes as S-expressions like `(Number 42)`.
 
-To give us immediate visual confirmation that our parser works, we give `ExprAST` a virtual `print()` method.  Directly below your `gettok()` function, add our AST node hierarchy:
+Directly below `gettok()` (replacing the old token-inspector `main()`), add the AST section:
 
 ```cpp
 //===----------------------------------------------------------------------===//
 // Abstract Syntax Tree (AST)
 //===----------------------------------------------------------------------===//
 
-/// ExprAST - Base class for all expression nodes.
 class ExprAST {
 public:
   virtual ~ExprAST() = default;
   virtual void print(std::ostream &OS) const = 0;
 };
 
-/// NumberExprAST - Expression class for numeric literals like "1.0".
 class NumberExprAST : public ExprAST {
   double Val;
 
@@ -68,13 +68,11 @@ public:
 };
 ```
 
-Whenever we parse a number, we will instantiate a `NumberExprAST` node storing its value.
+### 3. One-Token Lookahead and Recursive-Descent Parsing
 
-### 3. Parsing Numbers
+Just as our lexer in [Step 1.2](../01-lexer/02-skipping-whitespace.md) kept one character of lookahead in `LastChar`, our parser keeps **one token of lookahead** in a `static int CurTok`.  Calling `getNextToken()` pulls the next token from `gettok()` into `CurTok`.
 
-Parsing is driven by a global token buffer named `CurTok`.  Whenever the parser consumes a token, it advances to the next token by calling `getNextToken()`.
-
-Directly below `NumberExprAST`, add our initial parser functions:
+Directly below `NumberExprAST`, add the parser section:
 
 ```cpp
 //===----------------------------------------------------------------------===//
@@ -89,36 +87,38 @@ static std::unique_ptr<ExprAST> LogError(const char *Str) {
   return nullptr;
 }
 
-/// numberexpr ::= number
 static std::unique_ptr<ExprAST> ParseNumberExpr() {
   auto Result = std::make_unique<NumberExprAST>(NumVal);
-  getNextToken(); // consume number token
+  getNextToken(); // consume the number
   return Result;
 }
 
-/// expression ::= numberexpr
-static std::unique_ptr<ExprAST> ParseExpression() {
-  if (CurTok == tok_number)
+static std::unique_ptr<ExprAST> ParsePrimary() {
+  switch (CurTok) {
+  case tok_number:
     return ParseNumberExpr();
-  return LogError("expected a number");
+  default:
+    return LogError("unknown token when expecting an expression");
+  }
 }
+
+static std::unique_ptr<ExprAST> ParseExpression() { return ParsePrimary(); }
 ```
 
-Notice what `ParseNumberExpr()` does: it takes `NumVal` (populated by our lexer), wraps it in a `NumberExprAST`, advances the token stream with `getNextToken()`, and returns the AST pointer.
+Look at two clean design habits already visible here:
+* **Ownership via `std::unique_ptr<ExprAST>`**: Every parse routine returns a `std::unique_ptr`, handing exclusive ownership of the newly allocated AST subtree up to its caller (or returning `nullptr` on a syntax error via `LogError`).
+* **`ParsePrimary()` from day one**: Routing `ParseExpression()` through `ParsePrimary()` means adding parentheses, variables, and function calls in Steps 2.2 through 2.4 is as simple as adding new `case` arms to `ParsePrimary()`.
 
 ### 4. The Interactive AST REPL
 
-In Section 1, our test loop printed each token individually as soon as you pressed Enter.  Now that we are parsing complete expressions, our parser needs to know where an expression ends so it can finish assembling the syntax tree and report the result.
+In Section 1, our test loop printed tokens one by one.  Now that we are parsing full expressions, the REPL uses semicolons (`;`) as top-level statement delimiters so it knows where one expression finishes and the next prompt should appear.
 
-Kaleidoscope uses semicolons (`;`) as top-level expression delimiters (`top ::= expression ';'`).
+:::{tip}
+**Remember the Trailing Semicolon (`;`)**:
+Always end your interactive inputs with a semicolon (for example, `42;`).  If you omit the semicolon and press Enter, the parser assumes your expression is still continuing on the next line and waits patiently for more tokens!
+:::
 
-> [!TIP]
-> **Top-Level Semicolons are Required**:
-> In Section 1, the lexer emitted tokens immediately upon pressing Enter.  Now that we are parsing structured grammar expressions, the parser needs an explicit delimiter to recognise that an expression is complete.
-> 
-> Always terminate your interactive inputs with a semicolon (for example, `42;`).  If you omit the semicolon, the parser assumes the expression is still continuing and will pause waiting for subsequent tokens or operators before building the tree.
-
-Replace your old token-testing `main()` function with an interactive driver loop:
+Below `ParseExpression()`, add the interactive driver loop and `main()`:
 
 ```cpp
 //===----------------------------------------------------------------------===//
@@ -132,7 +132,7 @@ static void MainLoop() {
     switch (CurTok) {
     case tok_eof:
       return;
-    case ';': // ignore top-level semicolons
+    case ';':
       Prompt();
       getNextToken();
       break;
@@ -155,25 +155,24 @@ int main() {
   printf("Kaleidoscope AST Inspector (Step 2.1: Numbers)\n");
   printf("Type a number followed by ';' and press Enter (Ctrl+D to exit):\n\n");
 
-  // Prime the first token.
   Prompt();
   getNextToken();
-
   MainLoop();
   return 0;
 }
 ```
 
-Notice how the prompt and input loop interact:
-* In `main()`, we call `Prompt()` to display the initial `ready> ` prompt and then call `getNextToken()` to prime `CurTok` with the first token of input before `MainLoop()` begins.
-* Inside `MainLoop()`, when a top-level semicolon is encountered (`case ';':`), we call `Prompt()` and `getNextToken()` to consume the semicolon and wait for your next command.
-* If expression parsing fails, the `else` block skips tokens until it finds a terminating semicolon (`;`) or end of file, allowing `case ';':` to cleanly recover and display the next `ready> ` prompt.
+Trace how `main()` and `MainLoop()` cooperate:
+* `main()` prints `ready> ` first and primes `CurTok` with `getNextToken()`, blocking until you type your first line.
+* `ParseNumberExpr()` consumes `42` and advances `CurTok` onto `';'`.
+* `MainLoop()` prints `Parsed AST: (Number 42)`, loops around, hits `case ';':`, prints the next `ready> ` prompt, and calls `getNextToken()` to wait for your next expression.
+* If `ParseExpression()` fails (returning `nullptr`), the `else` recovery loop skips ahead to `';'` so `case ';':` can cleanly print a fresh `ready> ` prompt!
 
 ---
 
 ## Verifying Your Code
 
-Before compiling, check that your `kaleidoscope.cpp` has all additions in place.
+Compare your `kaleidoscope.cpp` against the complete reference file:
 
 <details>
 <summary>Click here to compare against the reference kaleidoscope.cpp</summary>
@@ -202,8 +201,8 @@ enum Token {
   tok_number = -201,
 };
 
-static std::string IdentifierStr;
-static double NumVal;
+static std::string IdentifierStr; // Filled in if tok_identifier
+static double NumVal;             // Filled in if tok_number
 
 static int gettok() {
   static int LastChar = ' ';
@@ -211,6 +210,7 @@ static int gettok() {
   while (isspace(LastChar))
     LastChar = getchar();
 
+  // Recognise identifiers and keywords: [a-zA-Z_][a-zA-Z0-9_]*
   if (isalpha(LastChar) || LastChar == '_') {
     IdentifierStr = LastChar;
     while (isalnum((LastChar = getchar())) || LastChar == '_')
@@ -223,6 +223,7 @@ static int gettok() {
     return tok_identifier;
   }
 
+  // Recognise numeric literals: [0-9.]+
   if (isdigit(LastChar) || LastChar == '.') {
     std::string NumStr;
     do {
@@ -234,6 +235,7 @@ static int gettok() {
     return tok_number;
   }
 
+  // Recognise comments: '#' through end of line.
   if (LastChar == '#') {
     do
       LastChar = getchar();
@@ -255,14 +257,12 @@ static int gettok() {
 // Abstract Syntax Tree (AST)
 //===----------------------------------------------------------------------===//
 
-/// ExprAST - Base class for all expression nodes.
 class ExprAST {
 public:
   virtual ~ExprAST() = default;
   virtual void print(std::ostream &OS) const = 0;
 };
 
-/// NumberExprAST - Expression class for numeric literals like "1.0".
 class NumberExprAST : public ExprAST {
   double Val;
 
@@ -286,19 +286,22 @@ static std::unique_ptr<ExprAST> LogError(const char *Str) {
   return nullptr;
 }
 
-/// numberexpr ::= number
 static std::unique_ptr<ExprAST> ParseNumberExpr() {
   auto Result = std::make_unique<NumberExprAST>(NumVal);
-  getNextToken();
+  getNextToken(); // consume the number
   return Result;
 }
 
-/// expression ::= numberexpr
-static std::unique_ptr<ExprAST> ParseExpression() {
-  if (CurTok == tok_number)
+static std::unique_ptr<ExprAST> ParsePrimary() {
+  switch (CurTok) {
+  case tok_number:
     return ParseNumberExpr();
-  return LogError("expected a number");
+  default:
+    return LogError("unknown token when expecting an expression");
+  }
 }
+
+static std::unique_ptr<ExprAST> ParseExpression() { return ParsePrimary(); }
 
 //===----------------------------------------------------------------------===//
 // Interactive Driver Loop
@@ -334,11 +337,9 @@ int main() {
   printf("Kaleidoscope AST Inspector (Step 2.1: Numbers)\n");
   printf("Type a number followed by ';' and press Enter (Ctrl+D to exit):\n\n");
 
-  // Prime the first token.
   Prompt();
   getNextToken();
   MainLoop();
-
   return 0;
 }
 ```
@@ -348,19 +349,17 @@ int main() {
 
 ## Compiling and Running
 
-Compile your code:
+Compile your parser:
 
 ```bash
-clang++ -Wall -Wextra kaleidoscope.cpp -o kaleidoscope
+clang++ -std=c++17 -fno-rtti -Wall -Wextra kaleidoscope.cpp -o kaleidoscope
 ```
 
-Run the binary:
+Run the binary and test valid numbers alongside an unknown identifier:
 
 ```bash
 ./kaleidoscope
 ```
-
-Type a few numbers followed by semicolons:
 
 ```text
 Kaleidoscope AST Inspector (Step 2.1: Numbers)
@@ -371,16 +370,21 @@ Parsed AST: (Number 42)
 ready> 3.14159;
 Parsed AST: (Number 3.14159)
 ready> foo;
-Error: expected a number
+Error: unknown token when expecting an expression
 ready>
 ```
 
-> [!NOTE]
-> **Comments and Blank Lines in the REPL**:
-> In Step 1.5, we designed `gettok()` to discard comments and newlines as transparent whitespace.  Because whitespace produces no tokens, pressing Enter on a blank line or typing a standalone comment (`# comment`) does not trigger a new `ready> ` prompt.  The lexer silently waits on the following line for your actual expression (e.g. `42;`).
-> 
-> Comments can also be placed at the end of an expression line (for example, `42; # note`), where the semicolon terminates the statement before the comment is discarded.
+:::{note}
+**Why Comments and Error Recovery Feel Slightly Quirky Right Now**:
+If you experiment with `#` comments from [Step 1.5](../01-lexer/05-skipping-comments.md) inside this starter REPL, you will notice two small quirks:
+1.  Because `gettok()` discards `# ...` and newlines without returning a token, typing a standalone `# comment` line (or pressing Enter on a blank line) will not print a new `ready> ` prompt; the lexer simply keeps waiting for your next token.
+2.  If you type a syntax error *without* a semicolon (say `foo # oops` + Enter), `ParsePrimary()` prints `Error: unknown token...` and the `while (CurTok != ';' && CurTok != tok_eof)` recovery loop keeps calling `gettok()` until you eventually type a `;` (skipping any `#` comments along the way).
 
-You now have a running recursive-descent parser and an AST tree printer in your terminal.
+Once we introduce dedicated top-level handlers (`HandleDefinition`, `HandleExtern`, and `HandleTopLevelExpression`) in Section 4, single-token recovery will advance smoothly without needing to hunt for `;`.
+:::
 
-In [Step 2.2](02-parentheses.md), we will add support for parenthesised expressions like `(42)`.
+In [Step 2.2](02-parentheses.md), we will teach our recursive-descent parser to unwrap parenthesised expressions like `(42)` and `(((123.45)))`.
+
+---
+
+[Previous: Step 1.5 - Skipping Comments](../01-lexer/05-skipping-comments.md) | [Section 2 Overview](index.md) | [Next: Step 2.2 - Parentheses and Grouping](02-parentheses.md)

@@ -1,40 +1,52 @@
 # Step 6.1: Lexing and Parsing 'if / then / else'
 
-In many traditional languages like C and C++, `if` is a statement.  Statements perform side effects and produce no value.  In functional languages, and in Kaleidoscope, `if` is an **expression**.  It computes a condition, evaluates one of two branches, and returns the result of that branch:
+In C and C++, `if` is a statement: it directs control flow for side effects and produces no value on its own (unless you reach for the ternary `? :` operator).  In Kaleidoscope, everything is an **expression**, and `if / then / else` is no exception.  It evaluates a condition, picks one of two branches, and yields the value of whichever branch ran:
 
-```kaleidoscope
+```text
 if x < 3 then 1 else 2
 ```
 
-Because `if` is an expression, it can appear anywhere a number or function call can appear, such as inside another expression:
+Because `if` produces a `double` just like any number or function call, you can nest it anywhere an expression is expected:
 
-```kaleidoscope
+```text
 4 + (if x then 10 else 20) * 2
 ```
 
-```mermaid
-flowchart TD
-    IfNode["IfExprAST<br>(if / then / else)"]
-    IfNode --> Cond["Cond: ExprAST<br>(condition expression)"]
-    IfNode --> Then["Then: ExprAST<br>(then branch expression)"]
-    IfNode --> Else["Else: ExprAST<br>(else branch expression)"]
+In the AST, an `IfExprAST` node owns three child expressions:
+
+```text
+                  +---------------------+
+                  |      IfExprAST      |
+                  |  (if / then / else) |
+                  +----------+----------+
+                             |
+         +-------------------+-------------------+
+         |                   |                   |
+         v                   v                   v
++-----------------+ +-----------------+ +-----------------+
+|  Cond: ExprAST  | |  Then: ExprAST  | |  Else: ExprAST  |
++-----------------+ +-----------------+ +-----------------+
 ```
 
-> [!NOTE]
-> **Expression-Oriented Languages**:
-> In statement-based languages, an `if` statement without an `else` branch simply performs no action if the condition is false.  In an expression-oriented language, every expression must evaluate to a concrete value.  Requiring both `then` and `else` branches guarantees that the expression always produces a well-defined value regardless of which path executes.
+:::{note}
+**Why Both `then` and `else` Are Required**
 
-In this step, you will add `if`, `then`, and `else` to your lexer, create the AST node, and write the parser.
+In a statement-oriented language, an `if` without an `else` simply does nothing when the condition is false.  In an expression-oriented language, every expression must evaluate to a concrete value.  Requiring both `then` and `else` guarantees that `if` always produces a well-defined `double`, no matter which path executes at runtime.
+:::
+
+In this step, you will add the `if`, `then`, and `else` keywords to your lexer, define `IfExprAST`, parse conditional expressions, and add a temporary `codegen()` stub so your compiler builds and runs cleanly right away.
 
 ---
 
 ## Incremental Code Changes
 
-Open `kaleidoscope.cpp` to add support for conditional expressions.
+Open your `kaleidoscope.cpp` from [Step 5.4](../05-jit/04-functions-and-externs.md) and apply the updates below.
 
-### 1. Updating the Lexer
+### 1. Lexing the Conditional Keywords
 
-Add three new tokens to your `Token` enum:
+Way back in [Step 1.4](../01-lexer/04-identifiers-keywords.md) and the warm-up at the end of [Step 1.5](../01-lexer/05-skipping-comments.md), you saw how our lexer distinguishes reserved keywords from ordinary identifiers right after scanning an alphanumeric word.  Now it is time to make `if`, `then`, and `else` official!
+
+First, add three token constants to `enum Token`:
 
 ```cpp
 enum Token {
@@ -53,7 +65,7 @@ enum Token {
 };
 ```
 
-Teach `gettok()` to recognise these keyword strings when scanning identifiers:
+Next, inside `gettok()`, match `"if"` right after `"extern"`:
 
 ```cpp
     if (IdentifierStr == "def")
@@ -62,16 +74,13 @@ Teach `gettok()` to recognise these keyword strings when scanning identifiers:
       return tok_extern;
     if (IdentifierStr == "if")
       return tok_if;
-    if (IdentifierStr == "then")
-      return tok_then;
-    if (IdentifierStr == "else")
-      return tok_else;
-    return tok_identifier;
 ```
 
-### 2. Defining the AST Node
+**Stretch**: Add the matching checks for `"then"` (`tok_then`) and `"else"` (`tok_else`) right below `"if"` before `return tok_identifier;`.
 
-An `if` expression stores three subexpressions: the condition, the "then" branch, and the "else" branch.  Add `IfExprAST` right after `CallExprAST`:
+### 2. Defining `IfExprAST`
+
+An `if` expression owns three `std::unique_ptr<ExprAST>` children: `Cond`, `Then`, and `Else`.  Add `IfExprAST` right after `CallExprAST`:
 
 ```cpp
 class IfExprAST : public ExprAST {
@@ -81,58 +90,36 @@ public:
   IfExprAST(std::unique_ptr<ExprAST> Cond, std::unique_ptr<ExprAST> Then,
             std::unique_ptr<ExprAST> Else)
       : Cond(std::move(Cond)), Then(std::move(Then)), Else(std::move(Else)) {}
-
   llvm::Value *codegen() override;
 };
 ```
 
-For now, provide a stub for `codegen()` so your code compiles cleanly:
+### 3. Parsing `if / then / else`
 
-```cpp
-llvm::Value *IfExprAST::codegen() {
-  fprintf(stderr, "Parsed an if/then/else AST node!\n");
-  return llvm::ConstantFP::get(*TheContext, llvm::APFloat(1.0));
-}
-```
-
-### 3. Parsing the Expression
-
-Parsing `if / then / else` is straightforward because the syntax is strictly delimited by keywords:
+Because `if`, `then`, and `else` explicitly delimit all three subexpressions, recursive-descent parsing reads almost like the grammar itself.  Here is the start of `ParseIfExpr()`, placed right before `ParsePrimary()`:
 
 ```cpp
 static std::unique_ptr<ExprAST> ParseIfExpr() {
-  getNextToken(); // eat the 'if'
+  getNextToken(); // eat 'if'
 
   auto Cond = ParseExpression();
   if (!Cond)
     return nullptr;
 
-  if (CurTok != tok_then) {
-    fprintf(stderr, "Error: expected 'then'\n");
-    return nullptr;
-  }
-  getNextToken(); // eat the 'then'
+  if (CurTok != tok_then)
+    return LogError("expected 'then'");
+  getNextToken(); // eat 'then'
 
   auto Then = ParseExpression();
   if (!Then)
     return nullptr;
 
-  if (CurTok != tok_else) {
-    fprintf(stderr, "Error: expected 'else'\n");
-    return nullptr;
-  }
-  getNextToken(); // eat the 'else'
-
-  auto Else = ParseExpression();
-  if (!Else)
-    return nullptr;
-
-  return std::make_unique<IfExprAST>(std::move(Cond), std::move(Then),
-                                     std::move(Else));
-}
+  // Now check for tok_else, eat 'else', and parse Else...
 ```
 
-Hook `ParseIfExpr()` into `ParsePrimary()` so `if` expressions are recognised whenever a primary expression is expected:
+**Stretch**: Finish `ParseIfExpr()` by verifying `CurTok == tok_else` (returning `LogError("expected 'else'")` if missing), eating `'else'` with `getNextToken()`, parsing `auto Else = ParseExpression();`, checking `if (!Else) return nullptr;`, and returning `std::make_unique<IfExprAST>(std::move(Cond), std::move(Then), std::move(Else))`.
+
+Then hook `tok_if` into `ParsePrimary()` so conditional expressions can appear anywhere a primary expression is allowed:
 
 ```cpp
 static std::unique_ptr<ExprAST> ParsePrimary() {
@@ -146,17 +133,32 @@ static std::unique_ptr<ExprAST> ParsePrimary() {
   case tok_if:
     return ParseIfExpr();
   default:
-    fprintf(stderr, "Error: unknown token when expecting an expression\n");
-    return nullptr;
+    return LogError("unknown token when expecting an expression");
   }
 }
+```
+
+### 4. Adding a `codegen()` Stub and Updating the Banner
+
+Because `ExprAST::codegen()` is pure virtual, `IfExprAST::codegen()` needs a definition before the linker will let us build.  Add a clean diagnostic stub right after `CallExprAST::codegen()`:
+
+```cpp
+llvm::Value *IfExprAST::codegen() {
+  return LogErrorV("if/then/else codegen arrives in Steps 6.2 and 6.3");
+}
+```
+
+Finally, update the startup banner in `main()` so you can tell at a glance which version of the REPL is running:
+
+```cpp
+  printf("Kaleidoscope JIT REPL (Step 6.1: Conditional AST)\n");
 ```
 
 ---
 
 ## Verifying Your Code
 
-Before compiling, check your `kaleidoscope.cpp` against the reference file.
+Compare your `kaleidoscope.cpp` against the complete reference implementation below (especially your stretch additions in `gettok()` and `ParseIfExpr()`):
 
 <details>
 <summary>Click here to compare against the reference kaleidoscope.cpp</summary>
@@ -164,6 +166,7 @@ Before compiling, check your `kaleidoscope.cpp` against the reference file.
 ```cpp
 #include "KaleidoscopeJIT.h"
 #include "llvm/ADT/APFloat.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DerivedTypes.h"
@@ -174,10 +177,11 @@ Before compiling, check your `kaleidoscope.cpp` against the reference file.
 #include "llvm/IR/Type.h"
 #include "llvm/IR/Verifier.h"
 #include "llvm/Support/TargetSelect.h"
+#include "llvm/Support/raw_ostream.h"
+
 #include <cctype>
 #include <cstdio>
 #include <cstdlib>
-#include <iostream>
 #include <map>
 #include <memory>
 #include <string>
@@ -203,8 +207,8 @@ enum Token {
   tok_number = -201,
 };
 
-static std::string IdentifierStr;
-static double NumVal;
+static std::string IdentifierStr; // Filled in if tok_identifier
+static double NumVal;             // Filled in if tok_number
 
 static int gettok() {
   static int LastChar = ' ';
@@ -212,6 +216,7 @@ static int gettok() {
   while (isspace(LastChar))
     LastChar = getchar();
 
+  // Recognise identifiers and keywords: [a-zA-Z_][a-zA-Z0-9_]*
   if (isalpha(LastChar) || LastChar == '_') {
     IdentifierStr = LastChar;
     while (isalnum((LastChar = getchar())) || LastChar == '_')
@@ -230,6 +235,7 @@ static int gettok() {
     return tok_identifier;
   }
 
+  // Recognise numeric literals: [0-9.]+
   if (isdigit(LastChar) || LastChar == '.') {
     std::string NumStr;
     do {
@@ -241,6 +247,7 @@ static int gettok() {
     return tok_number;
   }
 
+  // Recognise comments: '#' through end of line.
   if (LastChar == '#') {
     do
       LastChar = getchar();
@@ -259,36 +266,7 @@ static int gettok() {
 }
 
 //===----------------------------------------------------------------------===//
-// AST Forward Declarations
-//===----------------------------------------------------------------------===//
-
-class ExprAST;
-class PrototypeAST;
-class FunctionAST;
-
-//===----------------------------------------------------------------------===//
-// LLVM and JIT State
-//===----------------------------------------------------------------------===//
-
-static std::unique_ptr<llvm::LLVMContext> TheContext;
-static std::unique_ptr<llvm::Module> TheModule;
-static std::unique_ptr<llvm::IRBuilder<>> Builder;
-static std::map<std::string, llvm::Value *> NamedValues;
-static std::map<std::string, std::unique_ptr<PrototypeAST>> FunctionProtos;
-static std::unique_ptr<llvm::orc::KaleidoscopeJIT> TheJIT;
-static llvm::ExitOnError ExitOnErr;
-
-static void InitializeModuleAndManagers() {
-  TheContext = std::make_unique<llvm::LLVMContext>();
-  TheModule = std::make_unique<llvm::Module>("KaleidoscopeJIT", *TheContext);
-  TheModule->setDataLayout(TheJIT->getDataLayout());
-  Builder = std::make_unique<llvm::IRBuilder<>>(*TheContext);
-}
-
-llvm::Function *getFunction(std::string Name);
-
-//===----------------------------------------------------------------------===//
-// AST
+// Abstract Syntax Tree (AST)
 //===----------------------------------------------------------------------===//
 
 class ExprAST {
@@ -302,10 +280,7 @@ class NumberExprAST : public ExprAST {
 
 public:
   explicit NumberExprAST(double Val) : Val(Val) {}
-
-  llvm::Value *codegen() override {
-    return llvm::ConstantFP::get(*TheContext, llvm::APFloat(Val));
-  }
+  llvm::Value *codegen() override;
 };
 
 class VariableExprAST : public ExprAST {
@@ -313,15 +288,8 @@ class VariableExprAST : public ExprAST {
 
 public:
   explicit VariableExprAST(std::string Name) : Name(std::move(Name)) {}
-
-  llvm::Value *codegen() override {
-    llvm::Value *V = NamedValues[Name];
-    if (!V) {
-      fprintf(stderr, "Error: unknown variable name: %s\n", Name.c_str());
-      return nullptr;
-    }
-    return V;
-  }
+  const std::string &getName() const { return Name; }
+  llvm::Value *codegen() override;
 };
 
 class BinaryExprAST : public ExprAST {
@@ -332,31 +300,7 @@ public:
   BinaryExprAST(char Op, std::unique_ptr<ExprAST> LHS,
                 std::unique_ptr<ExprAST> RHS)
       : Op(Op), LHS(std::move(LHS)), RHS(std::move(RHS)) {}
-
-  llvm::Value *codegen() override {
-    llvm::Value *L = LHS->codegen();
-    llvm::Value *R = RHS->codegen();
-    if (!L || !R)
-      return nullptr;
-
-    switch (Op) {
-    case '+':
-      return Builder->CreateFAdd(L, R, "addtmp");
-    case '-':
-      return Builder->CreateFSub(L, R, "subtmp");
-    case '*':
-      return Builder->CreateFMul(L, R, "multmp");
-    case '/':
-      return Builder->CreateFDiv(L, R, "divtmp");
-    case '<':
-      L = Builder->CreateFCmpULT(L, R, "cmptmp");
-      return Builder->CreateUIToFP(L, llvm::Type::getDoubleTy(*TheContext),
-                                   "booltmp");
-    default:
-      fprintf(stderr, "invalid binary operator: %c\n", Op);
-      return nullptr;
-    }
-  }
+  llvm::Value *codegen() override;
 };
 
 class CallExprAST : public ExprAST {
@@ -366,29 +310,7 @@ class CallExprAST : public ExprAST {
 public:
   CallExprAST(std::string Callee, std::vector<std::unique_ptr<ExprAST>> Args)
       : Callee(std::move(Callee)), Args(std::move(Args)) {}
-
-  llvm::Value *codegen() override {
-    llvm::Function *CalleeF = getFunction(Callee);
-    if (!CalleeF) {
-      fprintf(stderr, "Error: unknown function referenced: %s\n",
-              Callee.c_str());
-      return nullptr;
-    }
-
-    if (CalleeF->arg_size() != Args.size()) {
-      fprintf(stderr, "Error: incorrect # arguments passed\n");
-      return nullptr;
-    }
-
-    std::vector<llvm::Value *> ArgsV;
-    for (unsigned i = 0, e = Args.size(); i != e; ++i) {
-      ArgsV.push_back(Args[i]->codegen());
-      if (!ArgsV.back())
-        return nullptr;
-    }
-
-    return Builder->CreateCall(CalleeF, ArgsV, "calltmp");
-  }
+  llvm::Value *codegen() override;
 };
 
 class IfExprAST : public ExprAST {
@@ -398,11 +320,7 @@ public:
   IfExprAST(std::unique_ptr<ExprAST> Cond, std::unique_ptr<ExprAST> Then,
             std::unique_ptr<ExprAST> Else)
       : Cond(std::move(Cond)), Then(std::move(Then)), Else(std::move(Else)) {}
-
-  llvm::Value *codegen() override {
-    fprintf(stderr, "Parsed an if/then/else AST node!\n");
-    return llvm::ConstantFP::get(*TheContext, llvm::APFloat(1.0));
-  }
+  llvm::Value *codegen() override;
 };
 
 class PrototypeAST {
@@ -429,56 +347,6 @@ public:
   llvm::Function *codegen();
 };
 
-llvm::Function *PrototypeAST::codegen() {
-  std::vector<llvm::Type *> Doubles(Args.size(),
-                                    llvm::Type::getDoubleTy(*TheContext));
-  auto *FT = llvm::FunctionType::get(llvm::Type::getDoubleTy(*TheContext),
-                                     Doubles, false);
-  auto *F = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, Name,
-                                   TheModule.get());
-
-  unsigned Idx = 0;
-  for (auto &Arg : F->args())
-    Arg.setName(Args[Idx++]);
-
-  return F;
-}
-
-llvm::Function *getFunction(std::string Name) {
-  if (auto *F = TheModule->getFunction(Name))
-    return F;
-
-  auto FI = FunctionProtos.find(Name);
-  if (FI != FunctionProtos.end())
-    return FI->second->codegen();
-
-  return nullptr;
-}
-
-llvm::Function *FunctionAST::codegen() {
-  auto &P = *Proto;
-  FunctionProtos[Proto->getName()] = std::move(Proto);
-  auto *TheFunction = getFunction(P.getName());
-  if (!TheFunction)
-    return nullptr;
-
-  auto *BB = llvm::BasicBlock::Create(*TheContext, "entry", TheFunction);
-  Builder->SetInsertPoint(BB);
-
-  NamedValues.clear();
-  for (auto &Arg : TheFunction->args())
-    NamedValues[std::string(Arg.getName())] = &Arg;
-
-  if (auto *RetVal = Body->codegen()) {
-    Builder->CreateRet(RetVal);
-    llvm::verifyFunction(*TheFunction);
-    return TheFunction;
-  }
-
-  TheFunction->eraseFromParent();
-  return nullptr;
-}
-
 //===----------------------------------------------------------------------===//
 // Parser
 //===----------------------------------------------------------------------===//
@@ -498,11 +366,21 @@ static int GetTokPrecedence() {
   return TokPrec;
 }
 
+static std::unique_ptr<ExprAST> LogError(const char *Str) {
+  fprintf(stderr, "Error: %s\n", Str);
+  return nullptr;
+}
+
+static llvm::Value *LogErrorV(const char *Str) {
+  LogError(Str);
+  return nullptr;
+}
+
 static std::unique_ptr<ExprAST> ParseExpression();
 
 static std::unique_ptr<ExprAST> ParseNumberExpr() {
   auto Result = std::make_unique<NumberExprAST>(NumVal);
-  getNextToken();
+  getNextToken(); // consume the number
   return Result;
 }
 
@@ -512,10 +390,8 @@ static std::unique_ptr<ExprAST> ParseParenExpr() {
   if (!V)
     return nullptr;
 
-  if (CurTok != ')') {
-    fprintf(stderr, "Error: expected ')'\n");
-    return nullptr;
-  }
+  if (CurTok != ')')
+    return LogError("expected ')'");
   getNextToken(); // eat ')'
   return V;
 }
@@ -524,9 +400,11 @@ static std::unique_ptr<ExprAST> ParseIdentifierExpr() {
   std::string IdName = IdentifierStr;
   getNextToken(); // eat identifier
 
+  // Simple variable reference.
   if (CurTok != '(')
-    return std::make_unique<VariableExprAST>(IdName);
+    return std::make_unique<VariableExprAST>(std::move(IdName));
 
+  // Function call.
   getNextToken(); // eat '('
   std::vector<std::unique_ptr<ExprAST>> Args;
   if (CurTok != ')') {
@@ -539,40 +417,34 @@ static std::unique_ptr<ExprAST> ParseIdentifierExpr() {
       if (CurTok == ')')
         break;
 
-      if (CurTok != ',') {
-        fprintf(stderr, "Error: expected ')' or ',' in argument list\n");
-        return nullptr;
-      }
-      getNextToken();
+      if (CurTok != ',')
+        return LogError("expected ')' or ',' in argument list");
+      getNextToken(); // eat ','
     }
   }
 
   getNextToken(); // eat ')'
-  return std::make_unique<CallExprAST>(IdName, std::move(Args));
+  return std::make_unique<CallExprAST>(std::move(IdName), std::move(Args));
 }
 
 static std::unique_ptr<ExprAST> ParseIfExpr() {
-  getNextToken(); // eat the 'if'
+  getNextToken(); // eat 'if'
 
   auto Cond = ParseExpression();
   if (!Cond)
     return nullptr;
 
-  if (CurTok != tok_then) {
-    fprintf(stderr, "Error: expected 'then'\n");
-    return nullptr;
-  }
-  getNextToken(); // eat the 'then'
+  if (CurTok != tok_then)
+    return LogError("expected 'then'");
+  getNextToken(); // eat 'then'
 
   auto Then = ParseExpression();
   if (!Then)
     return nullptr;
 
-  if (CurTok != tok_else) {
-    fprintf(stderr, "Error: expected 'else'\n");
-    return nullptr;
-  }
-  getNextToken(); // eat the 'else'
+  if (CurTok != tok_else)
+    return LogError("expected 'else'");
+  getNextToken(); // eat 'else'
 
   auto Else = ParseExpression();
   if (!Else)
@@ -593,11 +465,11 @@ static std::unique_ptr<ExprAST> ParsePrimary() {
   case tok_if:
     return ParseIfExpr();
   default:
-    fprintf(stderr, "Error: unknown token when expecting an expression\n");
-    return nullptr;
+    return LogError("unknown token when expecting an expression");
   }
 }
 
+/// binoprhs ::= (binop primary)*
 static std::unique_ptr<ExprAST> ParseBinOpRHS(int ExprPrec,
                                               std::unique_ptr<ExprAST> LHS) {
   while (true) {
@@ -607,7 +479,7 @@ static std::unique_ptr<ExprAST> ParseBinOpRHS(int ExprPrec,
       return LHS;
 
     int BinOp = CurTok;
-    getNextToken();
+    getNextToken(); // eat binary operator
 
     auto RHS = ParsePrimary();
     if (!RHS)
@@ -633,31 +505,30 @@ static std::unique_ptr<ExprAST> ParseExpression() {
   return ParseBinOpRHS(0, std::move(LHS));
 }
 
+static std::unique_ptr<PrototypeAST> LogErrorP(const char *Str) {
+  LogError(Str);
+  return nullptr;
+}
+
 static std::unique_ptr<PrototypeAST> ParsePrototype() {
-  if (CurTok != tok_identifier) {
-    fprintf(stderr, "Error: expected function name in prototype\n");
-    return nullptr;
-  }
+  if (CurTok != tok_identifier)
+    return LogErrorP("expected function name in prototype");
 
   std::string FnName = IdentifierStr;
   getNextToken();
 
-  if (CurTok != '(') {
-    fprintf(stderr, "Error: expected '(' in prototype\n");
-    return nullptr;
-  }
+  if (CurTok != '(')
+    return LogErrorP("expected '(' in prototype");
 
   std::vector<std::string> ArgNames;
   while (getNextToken() == tok_identifier)
     ArgNames.push_back(IdentifierStr);
 
-  if (CurTok != ')') {
-    fprintf(stderr, "Error: expected ')' in prototype\n");
-    return nullptr;
-  }
+  if (CurTok != ')')
+    return LogErrorP("expected ')' in prototype");
 
   getNextToken(); // eat ')'
-  return std::make_unique<PrototypeAST>(FnName, std::move(ArgNames));
+  return std::make_unique<PrototypeAST>(std::move(FnName), std::move(ArgNames));
 }
 
 static std::unique_ptr<FunctionAST> ParseDefinition() {
@@ -671,11 +542,6 @@ static std::unique_ptr<FunctionAST> ParseDefinition() {
   return nullptr;
 }
 
-static std::unique_ptr<PrototypeAST> ParseExtern() {
-  getNextToken(); // eat 'extern'
-  return ParsePrototype();
-}
-
 static std::unique_ptr<FunctionAST> ParseTopLevelExpr() {
   if (auto E = ParseExpression()) {
     auto Proto = std::make_unique<PrototypeAST>("__anon_expr",
@@ -685,22 +551,168 @@ static std::unique_ptr<FunctionAST> ParseTopLevelExpr() {
   return nullptr;
 }
 
+static std::unique_ptr<PrototypeAST> ParseExtern() {
+  getNextToken(); // eat 'extern'
+  return ParsePrototype();
+}
+
 //===----------------------------------------------------------------------===//
-// Driver Loop
+// Code Generation
+//===----------------------------------------------------------------------===//
+
+static std::unique_ptr<llvm::LLVMContext> TheContext;
+static std::unique_ptr<llvm::Module> TheModule;
+static std::unique_ptr<llvm::IRBuilder<>> Builder;
+static std::map<std::string, llvm::Value *> NamedValues;
+static std::unique_ptr<llvm::orc::KaleidoscopeJIT> TheJIT;
+static std::map<std::string, std::unique_ptr<PrototypeAST>> FunctionProtos;
+static std::map<std::string, llvm::orc::ResourceTrackerSP> FunctionRTs;
+static llvm::ExitOnError ExitOnErr;
+
+static llvm::Function *getFunction(std::string Name) {
+  if (auto *F = TheModule->getFunction(Name))
+    return F;
+
+  auto FI = FunctionProtos.find(Name);
+  if (FI != FunctionProtos.end())
+    return FI->second->codegen();
+
+  return nullptr;
+}
+
+static void InitializeModuleAndManagers() {
+  TheContext = std::make_unique<llvm::LLVMContext>();
+  TheModule = std::make_unique<llvm::Module>("KaleidoscopeJIT", *TheContext);
+  TheModule->setDataLayout(TheJIT->getDataLayout());
+  Builder = std::make_unique<llvm::IRBuilder<>>(*TheContext);
+}
+
+llvm::Value *NumberExprAST::codegen() {
+  return llvm::ConstantFP::get(*TheContext, llvm::APFloat(Val));
+}
+
+llvm::Value *VariableExprAST::codegen() {
+  llvm::Value *V = NamedValues[Name];
+  if (!V)
+    return LogErrorV("unknown variable name");
+  return V;
+}
+
+llvm::Value *BinaryExprAST::codegen() {
+  llvm::Value *L = LHS->codegen();
+  llvm::Value *R = RHS->codegen();
+  if (!L || !R)
+    return nullptr;
+
+  switch (Op) {
+  case '+':
+    return Builder->CreateFAdd(L, R, "addtmp");
+  case '-':
+    return Builder->CreateFSub(L, R, "subtmp");
+  case '*':
+    return Builder->CreateFMul(L, R, "multmp");
+  case '/':
+    return Builder->CreateFDiv(L, R, "divtmp");
+  case '<':
+    L = Builder->CreateFCmpULT(L, R, "cmptmp");
+    return Builder->CreateUIToFP(L, llvm::Type::getDoubleTy(*TheContext),
+                                 "booltmp");
+  default:
+    return LogErrorV("invalid binary operator");
+  }
+}
+
+llvm::Value *CallExprAST::codegen() {
+  llvm::Function *CalleeF = getFunction(Callee);
+  if (!CalleeF)
+    return LogErrorV("unknown function referenced");
+
+  if (CalleeF->arg_size() != Args.size())
+    return LogErrorV("incorrect # arguments passed");
+
+  std::vector<llvm::Value *> ArgsV;
+  for (unsigned i = 0, e = Args.size(); i != e; ++i) {
+    ArgsV.push_back(Args[i]->codegen());
+    if (!ArgsV.back())
+      return nullptr;
+  }
+
+  return Builder->CreateCall(CalleeF, ArgsV, "calltmp");
+}
+
+llvm::Value *IfExprAST::codegen() {
+  return LogErrorV("if/then/else codegen arrives in Steps 6.2 and 6.3");
+}
+
+llvm::Function *PrototypeAST::codegen() {
+  std::vector<llvm::Type *> Doubles(Args.size(),
+                                    llvm::Type::getDoubleTy(*TheContext));
+  auto *FT = llvm::FunctionType::get(llvm::Type::getDoubleTy(*TheContext),
+                                     Doubles, false);
+  auto *F = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, Name,
+                                   TheModule.get());
+
+  unsigned Idx = 0;
+  for (auto &Arg : F->args())
+    Arg.setName(Args[Idx++]);
+
+  return F;
+}
+
+llvm::Function *FunctionAST::codegen() {
+  auto &P = *Proto;
+  FunctionProtos[Proto->getName()] = std::move(Proto);
+  llvm::Function *TheFunction = getFunction(P.getName());
+  if (!TheFunction)
+    return nullptr;
+
+  auto *BB = llvm::BasicBlock::Create(*TheContext, "entry", TheFunction);
+  Builder->SetInsertPoint(BB);
+
+  NamedValues.clear();
+  for (auto &Arg : TheFunction->args())
+    NamedValues[std::string(Arg.getName())] = &Arg;
+
+  if (llvm::Value *RetVal = Body->codegen()) {
+    Builder->CreateRet(RetVal);
+    if (llvm::verifyFunction(*TheFunction, &llvm::errs())) {
+      TheFunction->eraseFromParent();
+      return nullptr;
+    }
+    return TheFunction;
+  }
+
+  TheFunction->eraseFromParent();
+  return nullptr;
+}
+
+//===----------------------------------------------------------------------===//
+// Interactive Driver Loop
 //===----------------------------------------------------------------------===//
 
 static void HandleDefinition() {
   if (auto FnAST = ParseDefinition()) {
     if (auto *FnIR = FnAST->codegen()) {
-      fprintf(stderr, "Compiled function definition:\n");
+      std::string FnName = std::string(FnIR->getName());
+      fprintf(stderr, "Read function definition:\n");
       FnIR->print(llvm::errs());
       fprintf(stderr, "\n");
-      ExitOnErr(TheJIT->addModule(llvm::orc::ThreadSafeModule(
-          std::move(TheModule), std::move(TheContext))));
+
+      // If redefining an existing JIT function, remove its previous code first.
+      if (auto It = FunctionRTs.find(FnName); It != FunctionRTs.end()) {
+        ExitOnErr(It->second->remove());
+        FunctionRTs.erase(It);
+      }
+
+      auto RT = TheJIT->getMainJITDylib().createResourceTracker();
+      ExitOnErr(
+          TheJIT->addModule(llvm::orc::ThreadSafeModule(std::move(TheModule),
+                                                        std::move(TheContext)),
+                            RT));
+      FunctionRTs[FnName] = std::move(RT);
       InitializeModuleAndManagers();
     }
   } else {
-    // Skip token for error recovery.
     while (CurTok != ';' && CurTok != tok_eof)
       getNextToken();
   }
@@ -709,13 +721,12 @@ static void HandleDefinition() {
 static void HandleExtern() {
   if (auto ProtoAST = ParseExtern()) {
     if (auto *FnIR = ProtoAST->codegen()) {
-      fprintf(stderr, "Registered extern:\n");
+      fprintf(stderr, "Read extern:\n");
       FnIR->print(llvm::errs());
       fprintf(stderr, "\n");
       FunctionProtos[ProtoAST->getName()] = std::move(ProtoAST);
     }
   } else {
-    // Skip token for error recovery.
     while (CurTok != ';' && CurTok != tok_eof)
       getNextToken();
   }
@@ -731,15 +742,17 @@ static void HandleTopLevelExpression() {
       ExitOnErr(TheJIT->addModule(std::move(TSM), RT));
       InitializeModuleAndManagers();
 
-      auto ExprSymbol = ExitOnErr(TheJIT->lookup("__anon_expr"));
-
-      double (*FP)() = ExprSymbol.toPtr<double (*)()>();
-      fprintf(stderr, "Evaluated to %f\n", FP());
+      if (auto ExprSymbol = TheJIT->lookup("__anon_expr")) {
+        double (*FP)() = ExprSymbol->getAddress().toPtr<double (*)()>();
+        fprintf(stderr, "Evaluated to %f\n", FP());
+      } else {
+        llvm::logAllUnhandledErrors(ExprSymbol.takeError(), llvm::errs(),
+                                    "JIT Error: ");
+      }
 
       ExitOnErr(RT->remove());
     }
   } else {
-    // Skip token for error recovery.
     while (CurTok != ';' && CurTok != tok_eof)
       getNextToken();
   }
@@ -783,15 +796,13 @@ int main() {
   TheJIT = ExitOnErr(llvm::orc::KaleidoscopeJIT::Create());
   InitializeModuleAndManagers();
 
-  printf("Kaleidoscope JIT REPL (Step 6.1: If AST)\n");
-  printf("Type math, definitions, or conditionals followed by ';' and press Enter "
-         "(Ctrl+D to exit):\n\n");
+  printf("Kaleidoscope JIT REPL (Step 6.1: Conditional AST)\n");
+  printf("Type definitions, externs, or expressions followed by ';' (Ctrl+D to "
+         "exit):\n\n");
 
-  // Prime the first token.
   Prompt();
   getNextToken();
   MainLoop();
-
   return 0;
 }
 ```
@@ -801,20 +812,26 @@ int main() {
 
 ## Compiling and Running
 
-Compile your compiler:
+Compile `kaleidoscope.cpp`:
 
 ```bash
-clang++ -rdynamic -Iinclude -Wall -Wextra kaleidoscope.cpp $(llvm-config --cxxflags --ldflags --system-libs --libs core orcjit native) -o kaleidoscope
+clang++ -std=c++17 -fno-rtti -Wall -Wextra -Iinclude kaleidoscope.cpp $(llvm-config --cxxflags --ldflags --system-libs --libs core orcjit native) -isystem $(llvm-config --includedir) -o kaleidoscope
 ```
 
-Launch `./kaleidoscope` and enter a conditional expression:
+Run `./kaleidoscope` and verify both valid conditional syntax and error reporting when a keyword is omitted:
 
 ```text
+Kaleidoscope JIT REPL (Step 6.1: Conditional AST)
+Type definitions, externs, or expressions followed by ';' (Ctrl+D to exit):
+
 ready> if 1 then 2 else 3;
-Parsed an if/then/else AST node!
-Evaluated to 1.000000
+Error: if/then/else codegen arrives in Steps 6.2 and 6.3
+ready> if 1 2 else 3;
+Error: expected 'then'
 ```
 
-Your parser cleanly captures the conditional AST structure.
+Your lexer and parser now build well-formed `IfExprAST` trees!  In [Step 6.2](02-basic-blocks-branching.md), you will translate those trees into LLVM basic blocks and conditional branches.
 
-In [Step 6.2](02-basic-blocks-branching.md), we will explore how LLVM represents control flow using basic blocks and conditional branches.
+---
+
+[Previous: Functions and Externs in the JIT](../05-jit/04-functions-and-externs.md) | [Section Overview](index.md) | [Next: Basic Blocks and Branching](02-basic-blocks-branching.md)

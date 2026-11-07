@@ -2,7 +2,6 @@
 orphan: true
 ---
 
-# Kaleidoscope Tutorial
+# Kaleidoscope Tutorial (Section 15: Source-Level Debug Information (DWARF))
 
-The Kaleidoscope Tutorial has moved to {doc}`MyFirstLanguageFrontend/index`.
-
+This chapter has moved to {doc}`kaleidoscope/15-debug-info/index` in the updated {doc}`kaleidoscope/index` tutorial.

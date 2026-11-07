@@ -1,169 +1,191 @@
-# Step 11.4: Type Conversions and Casts
+# Step 11.4: Explicit Type Conversions (`as`)
 
-In a multi-type language, programs frequently convert values between types: widening an 8-bit character to a 32-bit integer, converting an integer to a floating-point number, or casting between signed and unsigned interpretations.
+Because LLVM IR performs zero implicit conversions and our binary operators require matching operand types, we now need a clean, explicit cast syntax so Kaleidoscope programs can widen a `byte` to `int`, truncate an `int` to `byte`, bridge `int` and `double`, or reinterpret `int` as `uint`.
 
-LLVM enforces strict type safety in its Intermediate Representation: **implicit conversions do not exist in LLVM IR**.  Every type change must be represented by an explicit conversion instruction.
-
----
-
-## Type Conversion Pathways
-
-```mermaid
-flowchart TD
-    subgraph Integer Domain
-        Narrow["Narrow Integer (i8)"]
-        Wide["Wide Integer (i32 / i64)"]
-    end
-
-    subgraph Floating-Point Domain
-        FP["Floating-Point (float / double)"]
-    end
-
-    Narrow -- "zext (zeroes) / sext (sign bit)" --> Wide
-    Wide -- "trunc (drop upper bits)" --> Narrow
-
-    Wide -- "sitofp (signed) / uitofp (unsigned)" --> FP
-    FP -- "fptosi (signed) / fptoui (unsigned)" --> Wide
-    Wide -. "bitcast (raw bits, identical size)" .- FP
-```
-
-> [!NOTE]
-> **Branchless Selection with `CreateSelect`**:
-> In LLVM IR, the `select` instruction implements the ternary conditional operator (`cond ? trueval : falseval`).  Unlike conditional branches which require basic blocks, PHI nodes, and branch instructions, `select` lowers directly to hardware conditional move instructions (`cmov` on x86, `csel` on ARM64), avoiding branch misprediction penalties.
+In this step, we add postfix `expr as <type>` casts (inspired by Rust) that bind tighter than binary operators, so expressions like `((a + b) as double) / 2.0` and `(-8 as uint) >> (1 as uint)` read naturally without C-style parenthesis ambiguity.
 
 ---
 
-## Incremental Code Changes
+## All Eight LLVM Conversion Families
 
-Open `kaleidoscope.cpp` to implement type conversion expressions.
+Every primitive cast in `CastExprAST::codegen()` maps to one of eight well-defined conversion paths:
 
-### 1. Integer Width Conversions
-
-When converting between integer types of different bit-widths:
-
-#### Narrowing: Truncation (`trunc`)
-To convert a wider integer to a narrower integer (e.g. `i32` to `i8`), LLVM simply discards the leading bits:
-
-```cpp
-llvm::Value *ByteVal = Builder->CreateTrunc(Int32Val, Builder->getInt8Ty(), "trunc8");
+```text
+  Source KType        Target KType        LLVM IR Emitted
+  ----------------    ----------------    ---------------------------------------
+  any T               bool                toBoolCond (icmp ne 0 / fcmp one 0.0)
+  int <--> uint       uint <--> int       (ZERO instructions! Both are i32!)
+  wider int (i32/i64) narrower (i8/i32)   trunc i32 %v to i8   (discards MSBs)
+  signed int (i32)    wider int (i64)     sext i32 %v to i64   (copies sign bit)
+  unsigned (i8/uint)  wider (i32/i64)     zext i8 %v to i32    (pads with 0s)
+  signed (int/i64)    double              sitofp i32 %v to double
+  unsigned (byte/uint) double             uitofp i32 %v to double
+  double              signed (int/i64)    fptosi double %v to i32
+  double              unsigned (byte/uint) fptoui double %v to i32
 ```
 
-#### Widening: Sign-Extension (`sext`) vs. Zero-Extension (`zext`)
-When expanding a narrower integer to a wider integer (e.g. `i8` to `i32`), the missing bits must be filled:
+:::{tip}
+**Zero-Instruction Signedness Casts (`int` <-> `uint`)**:
+Look at the second row of the table above.  Because `int` and `uint` both lower to LLVM's signless `i32` register, casting `-8 as uint` emits **zero** LLVM IR instructions!  `CastExprAST::codegen()` simply returns the existing `llvm::Value *` unchanged while flipping `ExprType` from `TypeKind::Int` to `TypeKind::UInt`, causing downstream `/` or `>>` or `<` operations to select unsigned opcodes (`udiv`, `lshr`, `icmp ult`).
+:::
 
-* **`zext` (Zero Extension)**: Fills the upper bits with zeroes.  Used for unsigned numbers.
-* **`sext` (Sign Extension)**: Copies the most significant bit (sign bit) across all upper bits.  Used for signed two's-complement numbers.
+---
 
-```cpp
-// If ByteVal is 0xFF (-1 signed, 255 unsigned):
-// zext produces 0x000000FF (255)
-llvm::Value *UnsignedWide = Builder->CreateZExt(ByteVal, Builder->getInt32Ty(), "zext32");
+## Step-by-Step Changes to `kaleidoscope.cpp`
 
-// sext produces 0xFFFFFFFF (-1)
-llvm::Value *SignedWide   = Builder->CreateSExt(ByteVal, Builder->getInt32Ty(), "sext32");
-```
+### 1. Lexing the `as` Keyword
 
-### 2. Integer and Floating-Point Conversions
-
-Converting between the general-purpose integer domain and the floating-point domain requires hardware conversion instructions:
+Add `tok_as = -119` to `enum Token` right after `tok_false`, and recognise `"as"` in `gettok()`:
 
 ```cpp
-// Signed integer to double:
-llvm::Value *AsDouble = Builder->CreateSIToFP(IntVal, Builder->getDoubleTy(), "todbl");
-
-// Unsigned integer to double:
-llvm::Value *AsDoubleU = Builder->CreateUIToFP(IntVal, Builder->getDoubleTy(), "todbl_u");
-
-// Double to signed integer (truncates towards zero):
-llvm::Value *AsInt = Builder->CreateFPToSI(DblVal, Builder->getInt32Ty(), "toint");
-
-// Double to unsigned integer:
-llvm::Value *AsIntU = Builder->CreateFPToUI(DblVal, Builder->getInt32Ty(), "toint_u");
+  tok_void = -116,
+  tok_true = -117,
+  tok_false = -118,
+  tok_as = -119,
 ```
-
-### 3. Bitcasting
-
-When two types have identical bit sizes and you wish to reinterpret the underlying bits without altering them (for example, reinterpreting the raw 64-bit IEEE pattern of a `double` as an `i64`), use `CreateBitCast`:
 
 ```cpp
-llvm::Value *RawBits = Builder->CreateBitCast(DblVal, Builder->getInt64Ty(), "rawbits");
+    if (IdentifierStr == "false")
+      return tok_false;
+    if (IdentifierStr == "as")
+      return tok_as;
+    return tok_identifier;
 ```
 
-### 4. Creating `CastExprAST`
+### 2. Adding `CastExprAST` and `ParseCast()`
 
-#### Your Task
-Define `CastExprAST` deriving from `ExprAST`:
-* Store `std::string TargetType` and `std::unique_ptr<ExprAST> Operand`.
-* In `codegen()`, evaluate `Operand->codegen()`.  If `TargetType == "double"`, emit `CreateSIToFP`.  If `TargetType == "int"`, emit `CreateFPToSI`.  If `TargetType == "bool"`, emit `CreateICmpNE` comparing against zero.
-
-Check your implementation against the reference solution below:
-
-<details>
-<summary><b>Reference Solution: CastExprAST</b></summary>
+Define `CastExprAST` right after `UnaryExprAST`:
 
 ```cpp
 class CastExprAST : public ExprAST {
-  std::string TargetType;
   std::unique_ptr<ExprAST> Operand;
+  KType TargetType;
 
 public:
-  CastExprAST(std::string TargetType, std::unique_ptr<ExprAST> Operand)
-      : TargetType(std::move(TargetType)), Operand(std::move(Operand)) {}
-
-  llvm::Value *codegen() override {
-    llvm::Value *V = Operand->codegen();
-    if (!V)
-      return nullptr;
-
-    if (TargetType == "double")
-      return Builder->CreateSIToFP(V, Builder->getDoubleTy(), "todouble");
-    if (TargetType == "int")
-      return Builder->CreateFPToSI(V, Builder->getInt32Ty(), "toint");
-    if (TargetType == "bool")
-      return Builder->CreateICmpNE(V, Builder->getInt32(0), "tobool");
-
-    fprintf(stderr, "Error: Unknown cast target type %s\n", TargetType.c_str());
-    return nullptr;
-  }
-
-  llvm::Type *getType() override {
-    if (TargetType == "double")
-      return Builder->getDoubleTy();
-    if (TargetType == "int")
-      return Builder->getInt32Ty();
-    return Builder->getInt1Ty();
-  }
+  CastExprAST(std::unique_ptr<ExprAST> Operand, KType TargetType)
+      : Operand(std::move(Operand)), TargetType(std::move(TargetType)) {}
+  llvm::Value *codegen() override;
 };
 ```
-</details>
 
----
-
-## Conversion Cheat Sheet
-
-| Source | Destination | Signedness | LLVM Instruction | IRBuilder Method |
-| :--- | :--- | :--- | :--- | :--- |
-| `i32` | `i8` | Either | `trunc` | `CreateTrunc` |
-| `i8` | `i32` | Unsigned | `zext` | `CreateZExt` |
-| `i8` | `i32` | Signed | `sext` | `CreateSExt` |
-| `i32` | `double` | Signed | `sitofp` | `CreateSIToFP` |
-| `i32` | `double` | Unsigned | `uitofp` | `CreateUIToFP` |
-| `double` | `i32` | Signed | `fptosi` | `CreateFPToSI` |
-| `double` | `i32` | Unsigned | `fptoui` | `CreateFPToUI` |
-| `i64` | `double` | Bit-level | `bitcast` | `CreateBitCast` |
-
----
-
-## Full Working Example
-
-The complete reference implementation for this section is available in [code/step35-integer-types.cpp](../code/step35-integer-types.cpp).
-
-<details>
-<summary><b>Expand to view complete code (step35-integer-types.cpp)</b></summary>
+Where does `as` sit in the grammar?  Right between `ParseUnary()` and `ParseBinOpRHS()`!  Using a `while (CurTok == tok_as)` loop lets users chain casts (`x as byte as int`) without extra parentheses.  Add `ParseCast()` right after `ParseUnary()`, and update both `ParseBinOpRHS()` and `ParseExpression()` to call `ParseCast()` instead of `ParseUnary()`:
 
 ```cpp
+/// castexpr ::= unary ('as' type)*
+static std::unique_ptr<ExprAST> ParseCast() {
+  auto Expr = ParseUnary();
+  if (!Expr)
+    return nullptr;
+
+  while (CurTok == tok_as) {
+    getNextToken(); // eat 'as'
+    KType TargetTy;
+    if (!ParseType(TargetTy))
+      return nullptr;
+    if (TargetTy.isVoid())
+      return LogError("cannot cast expression to 'void'");
+    Expr = std::make_unique<CastExprAST>(std::move(Expr), std::move(TargetTy));
+  }
+  return Expr;
+}
+```
+
+In `ParseBinOpRHS()` and `ParseExpression()`, replace the two `ParseUnary()` calls with `ParseCast()`:
+
+```cpp
+    int BinOp = CurTok;
+    getNextToken(); // eat binary operator
+
+    auto RHS = ParseCast();
+    if (!RHS)
+      return nullptr;
+```
+
+```cpp
+static std::unique_ptr<ExprAST> ParseExpression() {
+  auto LHS = ParseCast();
+  if (!LHS)
+    return nullptr;
+
+  return ParseBinOpRHS(0, std::move(LHS));
+}
+```
+
+### 3. Implementing `CastExprAST::codegen()`
+
+Now implement `CastExprAST::codegen()` right below `UnaryExprAST::codegen()`.
+
+**Idea + Stretch**: Pay careful attention to **which** type's signedness controls each instruction:
+* When widening an integer (`i32` -> `i64`) or converting an integer to `double`, the **source** type's signedness (`SrcTy.isSigned()`) decides between `CreateSExt` versus `CreateZExt`, and `CreateSIToFP` versus `CreateUIToFP`.
+* When converting `double` to an integer, the **destination** type's signedness (`TargetType.isSigned()`) decides between `CreateFPToSI` and `CreateFPToUI`!
+
+Try writing the unsigned (`CreateZExt`, `CreateUIToFP`, `CreateFPToUI`) and narrowing (`CreateTrunc`) cases yourself before comparing against the complete method below:
+
+```cpp
+llvm::Value *CastExprAST::codegen() {
+  llvm::Value *V = Operand->codegen();
+  if (!V)
+    return nullptr;
+
+  const KType &SrcTy = Operand->getExprType();
+  ExprType = TargetType;
+
+  if (SrcTy == TargetType)
+    return V;
+
+  if (TargetType.Kind == TypeKind::Bool)
+    return toBoolCond(V, SrcTy, "tobool");
+
+  llvm::Type *DstLLVMTy = toLLVMType(TargetType);
+
+  // Integer -> Integer (width change or zero-cost signedness reinterpretation)
+  if (SrcTy.isInteger() && TargetType.isInteger()) {
+    unsigned SrcBits = SrcTy.getBitWidth();
+    unsigned DstBits = TargetType.getBitWidth();
+    if (SrcBits == DstBits)
+      return V; // e.g. int <-> uint share signless i32!
+    if (SrcBits > DstBits)
+      return Builder->CreateTrunc(V, DstLLVMTy, "trunctmp");
+    return SrcTy.isSigned() ? Builder->CreateSExt(V, DstLLVMTy, "sexttmp")
+                            : Builder->CreateZExt(V, DstLLVMTy, "zexttmp");
+  }
+
+  // Integer -> Floating-Point
+  if (SrcTy.isInteger() && TargetType.isFloatingPoint()) {
+    return SrcTy.isSigned() ? Builder->CreateSIToFP(V, DstLLVMTy, "sitofptmp")
+                            : Builder->CreateUIToFP(V, DstLLVMTy, "uitofptmp");
+  }
+
+  // Floating-Point -> Integer
+  if (SrcTy.isFloatingPoint() && TargetType.isInteger()) {
+    return TargetType.isSigned()
+               ? Builder->CreateFPToSI(V, DstLLVMTy, "fptositmp")
+               : Builder->CreateFPToUI(V, DstLLVMTy, "fptouitmp");
+  }
+
+  return LogErrorV("unsupported type conversion");
+}
+```
+
+Finally, update the REPL banner in `main()`:
+
+```cpp
+    printf("Kaleidoscope Compiler (Step 11.4: Explicit Type Conversions)\n");
+```
+
+---
+
+## Full Reference Implementation
+
+Compare your updated `kaleidoscope.cpp` against [code/s11-04-type-conversions.cpp](../code/s11-04-type-conversions.cpp):
+
+<details>
+<summary>Click here to compare against the reference kaleidoscope.cpp</summary>
+
+```cpp
+#include "KaleidoscopeJIT.h"
 #include "llvm/ADT/APFloat.h"
-#include "llvm/ADT/APInt.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DerivedTypes.h"
@@ -171,13 +193,29 @@ The complete reference implementation for this section is available in [code/ste
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/LLVMContext.h"
+#include "llvm/IR/LegacyPassManager.h"
 #include "llvm/IR/Module.h"
+#include "llvm/IR/PassManager.h"
 #include "llvm/IR/Type.h"
 #include "llvm/IR/Verifier.h"
+#include "llvm/MC/TargetRegistry.h"
+#include "llvm/Passes/PassBuilder.h"
+#include "llvm/Support/FileSystem.h"
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/Target/TargetMachine.h"
+#include "llvm/Target/TargetOptions.h"
+#include "llvm/TargetParser/Host.h"
+#include "llvm/TargetParser/Triple.h"
+#include "llvm/Transforms/InstCombine/InstCombine.h"
+#include "llvm/Transforms/Scalar/GVN.h"
+#include "llvm/Transforms/Scalar/Reassociate.h"
+#include "llvm/Transforms/Scalar/SimplifyCFG.h"
+#include "llvm/Transforms/Utils/Mem2Reg.h"
+#include <cstring>
 
 #include <cctype>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <map>
@@ -186,31 +224,61 @@ The complete reference implementation for this section is available in [code/ste
 #include <utility>
 #include <vector>
 
+//===----------------------------------------------------------------------===//
+// Lexer
+//===----------------------------------------------------------------------===//
+
 enum Token {
   tok_eof = -1,
 
   // Commands / Keywords
   tok_def = -100,
   tok_extern = -101,
-  tok_type_int = -102,
-  tok_type_double = -103,
-  tok_type_bool = -104,
+  tok_if = -102,
+  tok_then = -103,
+  tok_else = -104,
+  tok_for = -105,
+  tok_in = -106,
+  tok_binary = -107,
+  tok_unary = -108,
+  tok_var = -109,
+  tok_double = -110,
+  tok_int = -111,
+  tok_uint = -112,
+  tok_i64 = -113,
+  tok_byte = -114,
+  tok_bool = -115,
+  tok_void = -116,
+  tok_true = -117,
+  tok_false = -118,
+  tok_as = -119,
 
   // Primary
   tok_identifier = -200,
   tok_number = -201,
-  tok_int_literal = -202,
+  tok_int_lit = -202,
+
+  // Multi-character punctuation
+  tok_arrow = -300,
+  tok_shl = -301,
+  tok_shr = -302,
+  tok_eq = -303,
+  tok_ne = -304,
+  tok_le = -305,
+  tok_ge = -306,
 };
 
-static std::string IdentifierStr;
-static double NumVal;
-static int64_t IntVal;
+static std::string IdentifierStr; // Filled in if tok_identifier
+static double NumVal;             // Filled in if tok_number
+static int64_t IntVal;            // Filled in if tok_int_lit
 
 static int gettok() {
   static int LastChar = ' ';
+
   while (isspace(LastChar))
     LastChar = getchar();
 
+  // Recognise identifiers and keywords: [a-zA-Z_][a-zA-Z0-9_]*
   if (isalpha(LastChar) || LastChar == '_') {
     IdentifierStr = LastChar;
     while (isalnum((LastChar = getchar())) || LastChar == '_')
@@ -220,33 +288,87 @@ static int gettok() {
       return tok_def;
     if (IdentifierStr == "extern")
       return tok_extern;
-    if (IdentifierStr == "int")
-      return tok_type_int;
+    if (IdentifierStr == "if")
+      return tok_if;
+    if (IdentifierStr == "then")
+      return tok_then;
+    if (IdentifierStr == "else")
+      return tok_else;
+    if (IdentifierStr == "for")
+      return tok_for;
+    if (IdentifierStr == "in")
+      return tok_in;
+    if (IdentifierStr == "binary")
+      return tok_binary;
+    if (IdentifierStr == "unary")
+      return tok_unary;
+    if (IdentifierStr == "var")
+      return tok_var;
     if (IdentifierStr == "double")
-      return tok_type_double;
+      return tok_double;
+    if (IdentifierStr == "int")
+      return tok_int;
+    if (IdentifierStr == "uint")
+      return tok_uint;
+    if (IdentifierStr == "i64")
+      return tok_i64;
+    if (IdentifierStr == "byte")
+      return tok_byte;
     if (IdentifierStr == "bool")
-      return tok_type_bool;
+      return tok_bool;
+    if (IdentifierStr == "void")
+      return tok_void;
+    if (IdentifierStr == "true")
+      return tok_true;
+    if (IdentifierStr == "false")
+      return tok_false;
+    if (IdentifierStr == "as")
+      return tok_as;
     return tok_identifier;
   }
 
+  // Recognise integer and floating-point literals.
   if (isdigit(LastChar) || LastChar == '.') {
-    std::string NumStr;
-    bool HasDot = false;
-    do {
-      if (LastChar == '.')
-        HasDot = true;
-      NumStr += LastChar;
-      LastChar = getchar();
-    } while (isdigit(LastChar) || LastChar == '.');
+    if (LastChar == '.') {
+      int NextChar = getchar();
+      if (!isdigit(NextChar)) {
+        LastChar = NextChar;
+        return '.';
+      }
+      std::string NumStr = ".";
+      LastChar = NextChar;
+      while (isdigit(LastChar)) {
+        NumStr += static_cast<char>(LastChar);
+        LastChar = getchar();
+      }
+      NumVal = strtod(NumStr.c_str(), nullptr);
+      return tok_number;
+    }
 
-    if (HasDot) {
+    std::string NumStr;
+    bool IsFloat = false;
+    while (isdigit(LastChar)) {
+      NumStr += static_cast<char>(LastChar);
+      LastChar = getchar();
+    }
+    if (LastChar == '.') {
+      IsFloat = true;
+      NumStr += '.';
+      LastChar = getchar();
+      while (isdigit(LastChar)) {
+        NumStr += static_cast<char>(LastChar);
+        LastChar = getchar();
+      }
+    }
+    if (IsFloat) {
       NumVal = strtod(NumStr.c_str(), nullptr);
       return tok_number;
     }
     IntVal = strtoll(NumStr.c_str(), nullptr, 10);
-    return tok_int_literal;
+    return tok_int_lit;
   }
 
+  // Recognise comments: '#' through end of line.
   if (LastChar == '#') {
     do
       LastChar = getchar();
@@ -261,203 +383,1668 @@ static int gettok() {
 
   int ThisChar = LastChar;
   LastChar = getchar();
+  if (ThisChar == '-' && LastChar == '>') {
+    LastChar = getchar();
+    return tok_arrow;
+  }
+  if (ThisChar == '<' && LastChar == '<') {
+    LastChar = getchar();
+    return tok_shl;
+  }
+  if (ThisChar == '>' && LastChar == '>') {
+    LastChar = getchar();
+    return tok_shr;
+  }
+  if (ThisChar == '=' && LastChar == '=') {
+    LastChar = getchar();
+    return tok_eq;
+  }
+  if (ThisChar == '!' && LastChar == '=') {
+    LastChar = getchar();
+    return tok_ne;
+  }
+  if (ThisChar == '<' && LastChar == '=') {
+    LastChar = getchar();
+    return tok_le;
+  }
+  if (ThisChar == '>' && LastChar == '=') {
+    LastChar = getchar();
+    return tok_ge;
+  }
   return ThisChar;
 }
 
-class ExprAST {
-public:
-  virtual ~ExprAST() = default;
-  virtual llvm::Value *codegen() = 0;
-  virtual llvm::Type *getType() = 0;
+//===----------------------------------------------------------------------===//
+// Frontend Type System
+//===----------------------------------------------------------------------===//
+
+enum class TypeKind {
+  Double,
+  Int,
+  UInt,
+  I64,
+  Byte,
+  Bool,
+  Void,
 };
 
-static std::unique_ptr<llvm::LLVMContext> TheContext;
-static std::unique_ptr<llvm::Module> TheModule;
-static std::unique_ptr<llvm::IRBuilder<>> Builder;
-static std::map<std::string, llvm::Value *> NamedValues;
+struct KType {
+  TypeKind Kind = TypeKind::Double;
+
+  static KType getDouble() { return {TypeKind::Double}; }
+  static KType getInt() { return {TypeKind::Int}; }
+  static KType getUInt() { return {TypeKind::UInt}; }
+  static KType getI64() { return {TypeKind::I64}; }
+  static KType getByte() { return {TypeKind::Byte}; }
+  static KType getBool() { return {TypeKind::Bool}; }
+  static KType getVoid() { return {TypeKind::Void}; }
+
+  bool isFloatingPoint() const { return Kind == TypeKind::Double; }
+  bool isInteger() const {
+    return Kind == TypeKind::Int || Kind == TypeKind::UInt ||
+           Kind == TypeKind::I64 || Kind == TypeKind::Byte ||
+           Kind == TypeKind::Bool;
+  }
+  bool isSigned() const {
+    return Kind == TypeKind::Int || Kind == TypeKind::I64;
+  }
+  bool isVoid() const { return Kind == TypeKind::Void; }
+
+  unsigned getBitWidth() const {
+    switch (Kind) {
+    case TypeKind::Bool:
+      return 1;
+    case TypeKind::Byte:
+      return 8;
+    case TypeKind::Int:
+    case TypeKind::UInt:
+      return 32;
+    case TypeKind::I64:
+    case TypeKind::Double:
+      return 64;
+    case TypeKind::Void:
+      return 0;
+    }
+    return 0;
+  }
+
+  std::string toString() const {
+    switch (Kind) {
+    case TypeKind::Double:
+      return "double";
+    case TypeKind::Int:
+      return "int";
+    case TypeKind::UInt:
+      return "uint";
+    case TypeKind::I64:
+      return "i64";
+    case TypeKind::Byte:
+      return "byte";
+    case TypeKind::Bool:
+      return "bool";
+    case TypeKind::Void:
+      return "void";
+    }
+    return "unknown";
+  }
+
+  bool operator==(const KType &O) const { return Kind == O.Kind; }
+  bool operator!=(const KType &O) const { return !(*this == O); }
+};
+
+//===----------------------------------------------------------------------===//
+// Abstract Syntax Tree (AST)
+//===----------------------------------------------------------------------===//
+
+class ExprAST {
+protected:
+  KType ExprType = KType::getDouble();
+
+public:
+  virtual ~ExprAST() = default;
+  const KType &getExprType() const { return ExprType; }
+  virtual llvm::Value *codegen() = 0;
+  virtual llvm::Value *codegenAddress();
+};
+
+class NumberExprAST : public ExprAST {
+  double Val;
+
+public:
+  explicit NumberExprAST(double Val) : Val(Val) {}
+  llvm::Value *codegen() override;
+};
 
 class IntExprAST : public ExprAST {
   int64_t Val;
 
 public:
-  IntExprAST(int64_t Val) : Val(Val) {}
-  llvm::Value *codegen() override {
-    return Builder->getInt32(static_cast<int32_t>(Val));
-  }
-  llvm::Type *getType() override { return Builder->getInt32Ty(); }
+  explicit IntExprAST(int64_t Val) : Val(Val) {}
+  llvm::Value *codegen() override;
 };
 
-class DoubleExprAST : public ExprAST {
-  double Val;
+class BoolExprAST : public ExprAST {
+  bool Val;
 
 public:
-  DoubleExprAST(double Val) : Val(Val) {}
-  llvm::Value *codegen() override {
-    return llvm::ConstantFP::get(*TheContext, llvm::APFloat(Val));
-  }
-  llvm::Type *getType() override { return Builder->getDoubleTy(); }
+  explicit BoolExprAST(bool Val) : Val(Val) {}
+  llvm::Value *codegen() override;
 };
 
 class VariableExprAST : public ExprAST {
   std::string Name;
 
 public:
-  VariableExprAST(const std::string &Name) : Name(Name) {}
-  llvm::Value *codegen() override {
-    llvm::Value *V = NamedValues[Name];
-    if (!V) {
-      fprintf(stderr, "Error: Unknown variable name %s\n", Name.c_str());
-      return nullptr;
-    }
-    return V;
-  }
-  llvm::Type *getType() override {
-    llvm::Value *V = NamedValues[Name];
-    return V ? V->getType() : nullptr;
-  }
+  explicit VariableExprAST(std::string Name) : Name(std::move(Name)) {}
+  const std::string &getName() const { return Name; }
+  llvm::Value *codegen() override;
+  llvm::Value *codegenAddress() override;
 };
 
-class BinaryExprAST : public ExprAST {
-  std::string Op;
-  std::unique_ptr<ExprAST> LHS, RHS;
-
-public:
-  BinaryExprAST(std::string Op, std::unique_ptr<ExprAST> LHS,
-                std::unique_ptr<ExprAST> RHS)
-      : Op(std::move(Op)), LHS(std::move(LHS)), RHS(std::move(RHS)) {}
-
-  llvm::Value *codegen() override {
-    llvm::Value *L = LHS->codegen();
-    llvm::Value *R = RHS->codegen();
-    if (!L || !R)
-      return nullptr;
-
-    bool IsInt = L->getType()->isIntegerTy();
-
-    if (Op == "+")
-      return IsInt ? Builder->CreateAdd(L, R, "addtmp")
-                   : Builder->CreateFAdd(L, R, "faddtmp");
-    if (Op == "-")
-      return IsInt ? Builder->CreateSub(L, R, "subtmp")
-                   : Builder->CreateFSub(L, R, "fsubtmp");
-    if (Op == "*")
-      return IsInt ? Builder->CreateMul(L, R, "multmp")
-                   : Builder->CreateFMul(L, R, "fmultmp");
-    if (Op == "/s")
-      return Builder->CreateSDiv(L, R, "sdivtmp");
-    if (Op == "/u")
-      return Builder->CreateUDiv(L, R, "udivtmp");
-    if (Op == "/")
-      return IsInt ? Builder->CreateSDiv(L, R, "sdivtmp")
-                   : Builder->CreateFDiv(L, R, "fdivtmp");
-    if (Op == "%s")
-      return Builder->CreateSRem(L, R, "sremtmp");
-    if (Op == "%u")
-      return Builder->CreateURem(L, R, "uremtmp");
-    if (Op == "&")
-      return Builder->CreateAnd(L, R, "andtmp");
-    if (Op == "|")
-      return Builder->CreateOr(L, R, "ortmp");
-    if (Op == "^")
-      return Builder->CreateXor(L, R, "xortmp");
-    if (Op == "<<")
-      return Builder->CreateShl(L, R, "shltmp");
-    if (Op == ">>s")
-      return Builder->CreateAShr(L, R, "ashrtmp");
-    if (Op == ">>u")
-      return Builder->CreateLShr(L, R, "lshrtmp");
-
-    // Comparisons
-    if (Op == "<s")
-      return Builder->CreateICmpSLT(L, R, "cmpslt");
-    if (Op == "<u")
-      return Builder->CreateICmpULT(L, R, "cmpult");
-    if (Op == "==")
-      return IsInt ? Builder->CreateICmpEQ(L, R, "icmpeq")
-                   : Builder->CreateFCmpOEQ(L, R, "fcmpeq");
-
-    fprintf(stderr, "Error: Unknown binary operator %s\n", Op.c_str());
-    return nullptr;
-  }
-
-  llvm::Type *getType() override {
-    if (Op == "<s" || Op == "<u" || Op == "==")
-      return Builder->getInt1Ty();
-    return LHS->getType();
-  }
-};
-
-class CastExprAST : public ExprAST {
-  std::string TargetType;
+class UnaryExprAST : public ExprAST {
+  char Opcode;
   std::unique_ptr<ExprAST> Operand;
 
 public:
-  CastExprAST(std::string TargetType, std::unique_ptr<ExprAST> Operand)
-      : TargetType(std::move(TargetType)), Operand(std::move(Operand)) {}
+  UnaryExprAST(char Opcode, std::unique_ptr<ExprAST> Operand)
+      : Opcode(Opcode), Operand(std::move(Operand)) {}
+  llvm::Value *codegen() override;
+};
 
-  llvm::Value *codegen() override {
-    llvm::Value *V = Operand->codegen();
-    if (!V)
+class CastExprAST : public ExprAST {
+  std::unique_ptr<ExprAST> Operand;
+  KType TargetType;
+
+public:
+  CastExprAST(std::unique_ptr<ExprAST> Operand, KType TargetType)
+      : Operand(std::move(Operand)), TargetType(std::move(TargetType)) {}
+  llvm::Value *codegen() override;
+};
+
+class BinaryExprAST : public ExprAST {
+  int Op;
+  std::unique_ptr<ExprAST> LHS, RHS;
+
+public:
+  BinaryExprAST(int Op, std::unique_ptr<ExprAST> LHS,
+                std::unique_ptr<ExprAST> RHS)
+      : Op(Op), LHS(std::move(LHS)), RHS(std::move(RHS)) {}
+  llvm::Value *codegen() override;
+};
+
+class CallExprAST : public ExprAST {
+  std::string Callee;
+  std::vector<std::unique_ptr<ExprAST>> Args;
+
+public:
+  CallExprAST(std::string Callee, std::vector<std::unique_ptr<ExprAST>> Args)
+      : Callee(std::move(Callee)), Args(std::move(Args)) {}
+  llvm::Value *codegen() override;
+};
+
+class IfExprAST : public ExprAST {
+  std::unique_ptr<ExprAST> Cond, Then, Else;
+
+public:
+  IfExprAST(std::unique_ptr<ExprAST> Cond, std::unique_ptr<ExprAST> Then,
+            std::unique_ptr<ExprAST> Else)
+      : Cond(std::move(Cond)), Then(std::move(Then)), Else(std::move(Else)) {}
+  llvm::Value *codegen() override;
+};
+
+struct VarDeclItem {
+  std::string Name;
+  bool HasExplicitType = false;
+  KType ExplicitType = KType::getDouble();
+  std::unique_ptr<ExprAST> Init;
+};
+
+class ForExprAST : public ExprAST {
+  std::string VarName;
+  bool HasExplicitType;
+  KType ExplicitType;
+  std::unique_ptr<ExprAST> Start, End, Step, Body;
+
+public:
+  ForExprAST(std::string VarName, bool HasExplicitType, KType ExplicitType,
+             std::unique_ptr<ExprAST> Start, std::unique_ptr<ExprAST> End,
+             std::unique_ptr<ExprAST> Step, std::unique_ptr<ExprAST> Body)
+      : VarName(std::move(VarName)), HasExplicitType(HasExplicitType),
+        ExplicitType(std::move(ExplicitType)), Start(std::move(Start)),
+        End(std::move(End)), Step(std::move(Step)), Body(std::move(Body)) {}
+  llvm::Value *codegen() override;
+};
+
+class VarExprAST : public ExprAST {
+  std::vector<VarDeclItem> VarNames;
+  std::unique_ptr<ExprAST> Body;
+
+public:
+  VarExprAST(std::vector<VarDeclItem> VarNames, std::unique_ptr<ExprAST> Body)
+      : VarNames(std::move(VarNames)), Body(std::move(Body)) {}
+
+  llvm::Value *codegen() override;
+};
+
+class PrototypeAST {
+  std::string Name;
+  std::vector<std::pair<std::string, KType>> Args;
+  KType RetType;
+  bool IsOperator;
+  unsigned Precedence;
+
+public:
+  PrototypeAST(std::string Name,
+               std::vector<std::pair<std::string, KType>> Args,
+               KType RetType = KType::getDouble(), bool IsOperator = false,
+               unsigned Prec = 0)
+      : Name(std::move(Name)), Args(std::move(Args)),
+        RetType(std::move(RetType)), IsOperator(IsOperator), Precedence(Prec) {}
+
+  const std::string &getName() const { return Name; }
+  const std::vector<std::pair<std::string, KType>> &getArgs() const {
+    return Args;
+  }
+  const KType &getReturnType() const { return RetType; }
+  bool isUnaryOp() const { return IsOperator && Args.size() == 1; }
+  bool isBinaryOp() const { return IsOperator && Args.size() == 2; }
+  char getOperatorName() const { return Name[Name.size() - 1]; }
+  unsigned getBinaryPrecedence() const { return Precedence; }
+  llvm::Function *codegen();
+};
+
+class FunctionAST {
+  std::unique_ptr<PrototypeAST> Proto;
+  std::unique_ptr<ExprAST> Body;
+
+public:
+  FunctionAST(std::unique_ptr<PrototypeAST> Proto,
+              std::unique_ptr<ExprAST> Body)
+      : Proto(std::move(Proto)), Body(std::move(Body)) {}
+
+  llvm::Function *codegen();
+};
+
+//===----------------------------------------------------------------------===//
+// Parser
+//===----------------------------------------------------------------------===//
+
+static int CurTok;
+static int getNextToken() { return CurTok = gettok(); }
+
+static std::map<int, int> BinopPrecedence;
+
+static int GetTokPrecedence() {
+  auto It = BinopPrecedence.find(CurTok);
+  if (It == BinopPrecedence.end() || It->second <= 0)
+    return -1;
+  return It->second;
+}
+
+static std::unique_ptr<ExprAST> LogError(const char *Str) {
+  fprintf(stderr, "Error: %s\n", Str);
+  return nullptr;
+}
+
+static llvm::Value *LogErrorV(const char *Str) {
+  LogError(Str);
+  return nullptr;
+}
+
+static std::unique_ptr<ExprAST> ParseExpression();
+
+static bool ParseType(KType &Out) {
+  switch (CurTok) {
+  case tok_double:
+    Out = KType::getDouble();
+    getNextToken();
+    return true;
+  case tok_int:
+    Out = KType::getInt();
+    getNextToken();
+    return true;
+  case tok_uint:
+    Out = KType::getUInt();
+    getNextToken();
+    return true;
+  case tok_i64:
+    Out = KType::getI64();
+    getNextToken();
+    return true;
+  case tok_byte:
+    Out = KType::getByte();
+    getNextToken();
+    return true;
+  case tok_bool:
+    Out = KType::getBool();
+    getNextToken();
+    return true;
+  case tok_void:
+    Out = KType::getVoid();
+    getNextToken();
+    return true;
+  default:
+    LogError("expected type name (double, int, uint, i64, byte, bool, void)");
+    return false;
+  }
+}
+
+static std::unique_ptr<ExprAST> ParseNumberExpr() {
+  auto Result = std::make_unique<NumberExprAST>(NumVal);
+  getNextToken(); // consume the floating-point number
+  return Result;
+}
+
+static std::unique_ptr<ExprAST> ParseIntExpr() {
+  auto Result = std::make_unique<IntExprAST>(IntVal);
+  getNextToken(); // consume the integer literal
+  return Result;
+}
+
+static std::unique_ptr<ExprAST> ParseBoolExpr() {
+  bool Val = (CurTok == tok_true);
+  getNextToken(); // consume 'true' or 'false'
+  return std::make_unique<BoolExprAST>(Val);
+}
+
+static std::unique_ptr<ExprAST> ParseParenExpr() {
+  getNextToken(); // eat '('
+  auto V = ParseExpression();
+  if (!V)
+    return nullptr;
+
+  if (CurTok != ')')
+    return LogError("expected ')'");
+  getNextToken(); // eat ')'
+  return V;
+}
+
+static std::unique_ptr<ExprAST> ParseIdentifierExpr() {
+  std::string IdName = IdentifierStr;
+  getNextToken(); // eat identifier
+
+  // Simple variable reference.
+  if (CurTok != '(')
+    return std::make_unique<VariableExprAST>(std::move(IdName));
+
+  // Function call.
+  getNextToken(); // eat '('
+  std::vector<std::unique_ptr<ExprAST>> Args;
+  if (CurTok != ')') {
+    while (true) {
+      if (auto Arg = ParseExpression())
+        Args.push_back(std::move(Arg));
+      else
+        return nullptr;
+
+      if (CurTok == ')')
+        break;
+
+      if (CurTok != ',')
+        return LogError("expected ')' or ',' in argument list");
+      getNextToken(); // eat ','
+    }
+  }
+
+  getNextToken(); // eat ')'
+  return std::make_unique<CallExprAST>(std::move(IdName), std::move(Args));
+}
+
+static std::unique_ptr<ExprAST> ParseIfExpr() {
+  getNextToken(); // eat 'if'
+
+  auto Cond = ParseExpression();
+  if (!Cond)
+    return nullptr;
+
+  if (CurTok != tok_then)
+    return LogError("expected 'then'");
+  getNextToken(); // eat 'then'
+
+  auto Then = ParseExpression();
+  if (!Then)
+    return nullptr;
+
+  if (CurTok != tok_else)
+    return LogError("expected 'else'");
+  getNextToken(); // eat 'else'
+
+  auto Else = ParseExpression();
+  if (!Else)
+    return nullptr;
+
+  return std::make_unique<IfExprAST>(std::move(Cond), std::move(Then),
+                                     std::move(Else));
+}
+
+static std::unique_ptr<ExprAST> ParseForExpr() {
+  getNextToken(); // eat 'for'
+
+  if (CurTok != tok_identifier)
+    return LogError("expected identifier after 'for'");
+
+  std::string IdName = IdentifierStr;
+  getNextToken(); // eat identifier
+
+  bool HasExplicitType = false;
+  KType ExplicitType = KType::getDouble();
+  if (CurTok == ':') {
+    getNextToken(); // eat ':'
+    if (!ParseType(ExplicitType))
+      return nullptr;
+    HasExplicitType = true;
+  }
+
+  if (CurTok != '=')
+    return LogError("expected '=' after 'for'");
+  getNextToken(); // eat '='
+
+  auto Start = ParseExpression();
+  if (!Start)
+    return nullptr;
+  if (CurTok != ',')
+    return LogError("expected ',' after for start value");
+  getNextToken(); // eat ','
+
+  auto End = ParseExpression();
+  if (!End)
+    return nullptr;
+
+  // The step value is optional.
+  std::unique_ptr<ExprAST> Step;
+  if (CurTok == ',') {
+    getNextToken(); // eat ','
+    Step = ParseExpression();
+    if (!Step)
+      return nullptr;
+  }
+
+  if (CurTok != tok_in)
+    return LogError("expected 'in' after 'for'");
+  getNextToken(); // eat 'in'
+
+  auto Body = ParseExpression();
+  if (!Body)
+    return nullptr;
+
+  return std::make_unique<ForExprAST>(
+      std::move(IdName), HasExplicitType, std::move(ExplicitType),
+      std::move(Start), std::move(End), std::move(Step), std::move(Body));
+}
+
+static std::unique_ptr<ExprAST> ParseVarExpr() {
+  getNextToken(); // eat 'var'
+
+  std::vector<VarDeclItem> VarNames;
+
+  if (CurTok != tok_identifier)
+    return LogError("expected identifier after 'var'");
+
+  while (true) {
+    VarDeclItem Item;
+    Item.Name = IdentifierStr;
+    getNextToken(); // eat identifier
+
+    if (CurTok == ':') {
+      getNextToken(); // eat ':'
+      if (!ParseType(Item.ExplicitType))
+        return nullptr;
+      if (Item.ExplicitType.isVoid())
+        return LogError("variable cannot have type 'void'");
+      Item.HasExplicitType = true;
+    }
+
+    if (CurTok == '=') {
+      getNextToken(); // eat '='
+      Item.Init = ParseExpression();
+      if (!Item.Init)
+        return nullptr;
+    }
+
+    VarNames.push_back(std::move(Item));
+
+    if (CurTok != ',')
+      break;
+    getNextToken(); // eat ','
+
+    if (CurTok != tok_identifier)
+      return LogError("expected identifier list after 'var'");
+  }
+
+  if (CurTok != tok_in)
+    return LogError("expected 'in' keyword after 'var'");
+  getNextToken(); // eat 'in'
+
+  auto Body = ParseExpression();
+  if (!Body)
+    return nullptr;
+
+  return std::make_unique<VarExprAST>(std::move(VarNames), std::move(Body));
+}
+
+static std::unique_ptr<ExprAST> ParsePrimary() {
+  switch (CurTok) {
+  case tok_identifier:
+    return ParseIdentifierExpr();
+  case tok_number:
+    return ParseNumberExpr();
+  case tok_int_lit:
+    return ParseIntExpr();
+  case tok_true:
+  case tok_false:
+    return ParseBoolExpr();
+  case '(':
+    return ParseParenExpr();
+  case tok_if:
+    return ParseIfExpr();
+  case tok_for:
+    return ParseForExpr();
+  case tok_var:
+    return ParseVarExpr();
+  default:
+    return LogError("unknown token when expecting an expression");
+  }
+}
+
+static std::unique_ptr<ExprAST> ParseUnary() {
+  if (!isascii(CurTok) || CurTok == '(' || CurTok == ',' || CurTok == ';' ||
+      CurTok == ')' || CurTok == ']' || CurTok == '}' || CurTok == ':')
+    return ParsePrimary();
+
+  int Opc = CurTok;
+  getNextToken();
+  if (auto Operand = ParseUnary())
+    return std::make_unique<UnaryExprAST>(static_cast<char>(Opc),
+                                          std::move(Operand));
+  return nullptr;
+}
+
+/// castexpr ::= unary ('as' type)*
+static std::unique_ptr<ExprAST> ParseCast() {
+  auto Expr = ParseUnary();
+  if (!Expr)
+    return nullptr;
+
+  while (CurTok == tok_as) {
+    getNextToken(); // eat 'as'
+    KType TargetTy;
+    if (!ParseType(TargetTy))
+      return nullptr;
+    if (TargetTy.isVoid())
+      return LogError("cannot cast expression to 'void'");
+    Expr = std::make_unique<CastExprAST>(std::move(Expr), std::move(TargetTy));
+  }
+  return Expr;
+}
+
+/// binoprhs ::= (binop castexpr)*
+static std::unique_ptr<ExprAST> ParseBinOpRHS(int ExprPrec,
+                                              std::unique_ptr<ExprAST> LHS) {
+  while (true) {
+    int TokPrec = GetTokPrecedence();
+
+    if (TokPrec < ExprPrec)
+      return LHS;
+
+    int BinOp = CurTok;
+    getNextToken(); // eat binary operator
+
+    auto RHS = ParseCast();
+    if (!RHS)
       return nullptr;
 
-    if (TargetType == "double")
-      return Builder->CreateSIToFP(V, Builder->getDoubleTy(), "todouble");
-    if (TargetType == "int")
-      return Builder->CreateFPToSI(V, Builder->getInt32Ty(), "toint");
-    if (TargetType == "bool")
-      return Builder->CreateICmpNE(V, Builder->getInt32(0), "tobool");
+    int NextPrec = GetTokPrecedence();
+    if (TokPrec < NextPrec) {
+      RHS = ParseBinOpRHS(TokPrec + 1, std::move(RHS));
+      if (!RHS)
+        return nullptr;
+    }
 
-    fprintf(stderr, "Error: Unknown cast target type %s\n", TargetType.c_str());
+    LHS =
+        std::make_unique<BinaryExprAST>(BinOp, std::move(LHS), std::move(RHS));
+  }
+}
+
+static std::unique_ptr<ExprAST> ParseExpression() {
+  auto LHS = ParseCast();
+  if (!LHS)
+    return nullptr;
+
+  return ParseBinOpRHS(0, std::move(LHS));
+}
+
+static std::unique_ptr<PrototypeAST> LogErrorP(const char *Str) {
+  LogError(Str);
+  return nullptr;
+}
+
+static std::unique_ptr<PrototypeAST> ParsePrototype() {
+  std::string FnName;
+  unsigned Kind = 0; // 0 = identifier, 1 = unary, 2 = binary
+  unsigned BinaryPrecedence = 30;
+
+  switch (CurTok) {
+  case tok_identifier:
+    FnName = IdentifierStr;
+    Kind = 0;
+    getNextToken();
+    break;
+  case tok_unary:
+    getNextToken();
+    if (!isascii(CurTok))
+      return LogErrorP("expected unary operator");
+    FnName = "unary";
+    FnName += static_cast<char>(CurTok);
+    Kind = 1;
+    getNextToken();
+    break;
+  case tok_binary:
+    getNextToken();
+    if (!isascii(CurTok))
+      return LogErrorP("expected binary operator");
+    FnName = "binary";
+    FnName += static_cast<char>(CurTok);
+    Kind = 2;
+    getNextToken();
+
+    if (CurTok == tok_int_lit || CurTok == tok_number) {
+      double PrecVal =
+          (CurTok == tok_int_lit) ? static_cast<double>(IntVal) : NumVal;
+      if (PrecVal < 1 || PrecVal > 100)
+        return LogErrorP("invalid precedence: must be 1..100");
+      BinaryPrecedence = static_cast<unsigned>(PrecVal);
+      getNextToken();
+    }
+    break;
+  default:
+    return LogErrorP("expected function name in prototype");
+  }
+
+  if (CurTok != '(')
+    return LogErrorP("expected '(' in prototype");
+  getNextToken(); // eat '('
+
+  std::vector<std::pair<std::string, KType>> ArgNames;
+  while (CurTok == tok_identifier) {
+    std::string ArgName = IdentifierStr;
+    getNextToken(); // eat parameter name
+
+    KType ArgTy = KType::getDouble();
+    if (CurTok == ':') {
+      getNextToken(); // eat ':'
+      if (!ParseType(ArgTy))
+        return nullptr;
+      if (ArgTy.isVoid())
+        return LogErrorP("parameter cannot have type 'void'");
+    }
+    ArgNames.emplace_back(std::move(ArgName), std::move(ArgTy));
+
+    if (CurTok == ',')
+      getNextToken(); // optional ',' between parameters
+  }
+
+  if (CurTok != ')')
+    return LogErrorP("expected ')' in prototype");
+  getNextToken(); // eat ')'
+
+  KType RetType = KType::getDouble();
+  if (CurTok == tok_arrow) {
+    getNextToken(); // eat '->'
+    if (!ParseType(RetType))
+      return nullptr;
+  }
+
+  if (Kind && ArgNames.size() != Kind)
+    return LogErrorP("invalid number of operands for operator");
+
+  return std::make_unique<PrototypeAST>(std::move(FnName), std::move(ArgNames),
+                                        std::move(RetType), Kind != 0,
+                                        BinaryPrecedence);
+}
+
+static std::unique_ptr<FunctionAST> ParseDefinition() {
+  getNextToken(); // eat 'def'
+  auto Proto = ParsePrototype();
+  if (!Proto)
+    return nullptr;
+
+  if (auto E = ParseExpression())
+    return std::make_unique<FunctionAST>(std::move(Proto), std::move(E));
+  return nullptr;
+}
+
+static std::unique_ptr<ExprAST> ParseTopLevelExpr() {
+  return ParseExpression();
+}
+
+static std::unique_ptr<PrototypeAST> ParseExtern() {
+  getNextToken(); // eat 'extern'
+  return ParsePrototype();
+}
+
+//===----------------------------------------------------------------------===//
+// Code Generation
+//===----------------------------------------------------------------------===//
+
+static std::unique_ptr<llvm::LLVMContext> TheContext;
+static std::unique_ptr<llvm::Module> TheModule;
+static std::unique_ptr<llvm::IRBuilder<>> Builder;
+struct VarBinding {
+  llvm::AllocaInst *Alloca = nullptr;
+  KType Ty = KType::getDouble();
+};
+
+static std::map<std::string, VarBinding> NamedValues;
+
+static llvm::Type *toLLVMType(const KType &Ty) {
+  switch (Ty.Kind) {
+  case TypeKind::Double:
+    return llvm::Type::getDoubleTy(*TheContext);
+  case TypeKind::Int:
+  case TypeKind::UInt:
+    return llvm::Type::getInt32Ty(*TheContext);
+  case TypeKind::I64:
+    return llvm::Type::getInt64Ty(*TheContext);
+  case TypeKind::Byte:
+    return llvm::Type::getInt8Ty(*TheContext);
+  case TypeKind::Bool:
+    return llvm::Type::getInt1Ty(*TheContext);
+  case TypeKind::Void:
+    return llvm::Type::getVoidTy(*TheContext);
+  }
+  return llvm::Type::getDoubleTy(*TheContext);
+}
+
+static llvm::AllocaInst *CreateEntryBlockAlloca(llvm::Function *TheFunction,
+                                                llvm::Type *VarLLVMTy,
+                                                llvm::StringRef VarName) {
+  llvm::IRBuilder<> TmpB(&TheFunction->getEntryBlock(),
+                         TheFunction->getEntryBlock().begin());
+  return TmpB.CreateAlloca(VarLLVMTy, nullptr, VarName);
+}
+static std::unique_ptr<llvm::orc::KaleidoscopeJIT> TheJIT;
+static std::map<std::string, std::unique_ptr<PrototypeAST>> FunctionProtos;
+static std::map<std::string, llvm::orc::ResourceTrackerSP> FunctionRTs;
+static llvm::ExitOnError ExitOnErr;
+static std::unique_ptr<llvm::TargetMachine> TheTargetMachine;
+static std::string ObjectOutputPath;
+static bool EmitObjectMode = false;
+static std::unique_ptr<llvm::FunctionPassManager> TheFPM;
+static std::unique_ptr<llvm::LoopAnalysisManager> TheLAM;
+static std::unique_ptr<llvm::FunctionAnalysisManager> TheFAM;
+static std::unique_ptr<llvm::CGSCCAnalysisManager> TheCGAM;
+static std::unique_ptr<llvm::ModuleAnalysisManager> TheMAM;
+
+static llvm::Function *getFunction(std::string Name) {
+  if (auto *F = TheModule->getFunction(Name))
+    return F;
+
+  auto FI = FunctionProtos.find(Name);
+  if (FI != FunctionProtos.end())
+    return FI->second->codegen();
+
+  return nullptr;
+}
+
+static void InitializeModuleAndManagers() {
+  TheContext = std::make_unique<llvm::LLVMContext>();
+  TheModule = std::make_unique<llvm::Module>("Kaleidoscope", *TheContext);
+  if (EmitObjectMode) {
+    TheModule->setTargetTriple(TheTargetMachine->getTargetTriple());
+    TheModule->setDataLayout(TheTargetMachine->createDataLayout());
+  } else {
+    TheModule->setDataLayout(TheJIT->getDataLayout());
+  }
+  Builder = std::make_unique<llvm::IRBuilder<>>(*TheContext);
+
+  TheFPM = std::make_unique<llvm::FunctionPassManager>();
+  TheLAM = std::make_unique<llvm::LoopAnalysisManager>();
+  TheFAM = std::make_unique<llvm::FunctionAnalysisManager>();
+  TheCGAM = std::make_unique<llvm::CGSCCAnalysisManager>();
+  TheMAM = std::make_unique<llvm::ModuleAnalysisManager>();
+
+  // Promote allocas to SSA registers (mem2reg) and simplify expressions.
+  TheFPM->addPass(llvm::PromotePass());
+  TheFPM->addPass(llvm::InstCombinePass());
+  TheFPM->addPass(llvm::ReassociatePass());
+  TheFPM->addPass(llvm::GVNPass());
+  TheFPM->addPass(llvm::SimplifyCFGPass());
+
+  llvm::PassBuilder PB;
+  PB.registerModuleAnalyses(*TheMAM);
+  PB.registerCGSCCAnalyses(*TheCGAM);
+  PB.registerFunctionAnalyses(*TheFAM);
+  PB.registerLoopAnalyses(*TheLAM);
+  PB.crossRegisterProxies(*TheLAM, *TheFAM, *TheCGAM, *TheMAM);
+}
+
+llvm::Value *ExprAST::codegenAddress() {
+  return LogErrorV("destination of '=' must be a variable");
+}
+
+static llvm::Value *toBoolCond(llvm::Value *V, const KType &Ty,
+                               const char *Name) {
+  if (Ty.Kind == TypeKind::Bool)
+    return V;
+  if (Ty.isInteger())
+    return Builder->CreateICmpNE(V, llvm::ConstantInt::get(V->getType(), 0),
+                                 Name);
+  if (Ty.isFloatingPoint())
+    return Builder->CreateFCmpONE(
+        V, llvm::ConstantFP::get(*TheContext, llvm::APFloat(0.0)), Name);
+  return LogErrorV("condition expression must be bool, integer, or double");
+}
+
+llvm::Value *NumberExprAST::codegen() {
+  ExprType = KType::getDouble();
+  return llvm::ConstantFP::get(*TheContext, llvm::APFloat(Val));
+}
+
+llvm::Value *IntExprAST::codegen() {
+  if (Val >= INT32_MIN && Val <= INT32_MAX) {
+    ExprType = KType::getInt();
+    return llvm::ConstantInt::get(llvm::Type::getInt32Ty(*TheContext),
+                                  static_cast<uint64_t>(Val),
+                                  /*isSigned=*/true);
+  }
+  ExprType = KType::getI64();
+  return llvm::ConstantInt::get(llvm::Type::getInt64Ty(*TheContext),
+                                static_cast<uint64_t>(Val), /*isSigned=*/true);
+}
+
+llvm::Value *BoolExprAST::codegen() {
+  ExprType = KType::getBool();
+  return llvm::ConstantInt::get(llvm::Type::getInt1Ty(*TheContext),
+                                Val ? 1 : 0);
+}
+
+llvm::Value *VariableExprAST::codegenAddress() {
+  auto It = NamedValues.find(Name);
+  if (It == NamedValues.end() || !It->second.Alloca)
+    return LogErrorV("unknown variable name");
+  ExprType = It->second.Ty;
+  return It->second.Alloca;
+}
+
+llvm::Value *VariableExprAST::codegen() {
+  llvm::Value *Addr = codegenAddress();
+  if (!Addr)
+    return nullptr;
+  return Builder->CreateLoad(toLLVMType(ExprType), Addr, Name.c_str());
+}
+
+llvm::Value *UnaryExprAST::codegen() {
+  llvm::Value *OperandV = Operand->codegen();
+  if (!OperandV)
+    return nullptr;
+
+  std::string FnName = std::string("unary") + Opcode;
+  auto PIt = FunctionProtos.find(FnName);
+  if (PIt != FunctionProtos.end() &&
+      PIt->second->getArgs()[0].second == Operand->getExprType()) {
+    llvm::Function *F = getFunction(FnName);
+    if (!F)
+      return LogErrorV("unknown unary operator");
+    ExprType = PIt->second->getReturnType();
+    return Builder->CreateCall(F, OperandV, "unop");
+  }
+
+  const KType &OpTy = Operand->getExprType();
+  if (Opcode == '-') {
+    ExprType = OpTy;
+    if (OpTy.isInteger())
+      return Builder->CreateNeg(OperandV, "negtmp");
+    if (OpTy.isFloatingPoint())
+      return Builder->CreateFNeg(OperandV, "fnegtmp");
+  }
+  if (Opcode == '!') {
+    ExprType = KType::getBool();
+    llvm::Value *Cond = toBoolCond(OperandV, OpTy, "tobool");
+    if (!Cond)
+      return nullptr;
+    return Builder->CreateNot(Cond, "nottmp");
+  }
+  return LogErrorV("unknown unary operator");
+}
+
+llvm::Value *CastExprAST::codegen() {
+  llvm::Value *V = Operand->codegen();
+  if (!V)
+    return nullptr;
+
+  const KType &SrcTy = Operand->getExprType();
+  ExprType = TargetType;
+
+  if (SrcTy == TargetType)
+    return V;
+
+  if (TargetType.Kind == TypeKind::Bool)
+    return toBoolCond(V, SrcTy, "tobool");
+
+  llvm::Type *DstLLVMTy = toLLVMType(TargetType);
+
+  // Integer -> Integer (width change or zero-cost signedness reinterpretation)
+  if (SrcTy.isInteger() && TargetType.isInteger()) {
+    unsigned SrcBits = SrcTy.getBitWidth();
+    unsigned DstBits = TargetType.getBitWidth();
+    if (SrcBits == DstBits)
+      return V; // e.g. int <-> uint share signless i32!
+    if (SrcBits > DstBits)
+      return Builder->CreateTrunc(V, DstLLVMTy, "trunctmp");
+    return SrcTy.isSigned() ? Builder->CreateSExt(V, DstLLVMTy, "sexttmp")
+                            : Builder->CreateZExt(V, DstLLVMTy, "zexttmp");
+  }
+
+  // Integer -> Floating-Point
+  if (SrcTy.isInteger() && TargetType.isFloatingPoint()) {
+    return SrcTy.isSigned() ? Builder->CreateSIToFP(V, DstLLVMTy, "sitofptmp")
+                            : Builder->CreateUIToFP(V, DstLLVMTy, "uitofptmp");
+  }
+
+  // Floating-Point -> Integer
+  if (SrcTy.isFloatingPoint() && TargetType.isInteger()) {
+    return TargetType.isSigned()
+               ? Builder->CreateFPToSI(V, DstLLVMTy, "fptositmp")
+               : Builder->CreateFPToUI(V, DstLLVMTy, "fptouitmp");
+  }
+
+  return LogErrorV("unsupported type conversion");
+}
+
+llvm::Value *BinaryExprAST::codegen() {
+  if (Op == '=') {
+    llvm::Value *Variable = LHS->codegenAddress();
+    if (!Variable)
+      return nullptr;
+    KType DstTy = LHS->getExprType();
+    llvm::Value *Val = RHS->codegen();
+    if (!Val)
+      return nullptr;
+    if (DstTy != RHS->getExprType())
+      return LogErrorV("type mismatch in '=' assignment");
+    Builder->CreateStore(Val, Variable);
+    ExprType = DstTy;
+    return Val;
+  }
+
+  llvm::Value *L = LHS->codegen();
+  llvm::Value *R = RHS->codegen();
+  if (!L || !R)
+    return nullptr;
+
+  if (Op == ':') {
+    auto PIt = FunctionProtos.find("binary:");
+    if (PIt != FunctionProtos.end() &&
+        PIt->second->getArgs()[0].second == LHS->getExprType() &&
+        PIt->second->getArgs()[1].second == RHS->getExprType()) {
+      llvm::Function *F = getFunction("binary:");
+      ExprType = PIt->second->getReturnType();
+      llvm::Value *Ops[2] = {L, R};
+      return Builder->CreateCall(F, Ops, "binop");
+    }
+    ExprType = RHS->getExprType();
+    return R;
+  }
+
+  if (LHS->getExprType().isInteger() && RHS->getExprType().isInteger()) {
+    if (LHS->getExprType() != RHS->getExprType())
+      return LogErrorV("integer binary operands must have identical types");
+    const KType &IntTy = LHS->getExprType();
+    ExprType = IntTy;
+    switch (Op) {
+    case '+':
+      return Builder->CreateAdd(L, R, "addtmp");
+    case '-':
+      return Builder->CreateSub(L, R, "subtmp");
+    case '*':
+      return Builder->CreateMul(L, R, "multmp");
+    case '/':
+      return IntTy.isSigned() ? Builder->CreateSDiv(L, R, "sdivtmp")
+                              : Builder->CreateUDiv(L, R, "udivtmp");
+    case '%':
+      return IntTy.isSigned() ? Builder->CreateSRem(L, R, "sremtmp")
+                              : Builder->CreateURem(L, R, "uremtmp");
+    case '&':
+      return Builder->CreateAnd(L, R, "andtmp");
+    case '|':
+      return Builder->CreateOr(L, R, "ortmp");
+    case '^':
+      return Builder->CreateXor(L, R, "xortmp");
+    case tok_shl:
+      return Builder->CreateShl(L, R, "shltmp");
+    case tok_shr:
+      return IntTy.isSigned() ? Builder->CreateAShr(L, R, "ashrtmp")
+                              : Builder->CreateLShr(L, R, "lshrtmp");
+    case tok_eq:
+      ExprType = KType::getBool();
+      return Builder->CreateICmpEQ(L, R, "icmptmp");
+    case tok_ne:
+      ExprType = KType::getBool();
+      return Builder->CreateICmpNE(L, R, "icmptmp");
+    case '<':
+      ExprType = KType::getBool();
+      return IntTy.isSigned() ? Builder->CreateICmpSLT(L, R, "icmptmp")
+                              : Builder->CreateICmpULT(L, R, "icmptmp");
+    case tok_le:
+      ExprType = KType::getBool();
+      return IntTy.isSigned() ? Builder->CreateICmpSLE(L, R, "icmptmp")
+                              : Builder->CreateICmpULE(L, R, "icmptmp");
+    case '>':
+      ExprType = KType::getBool();
+      return IntTy.isSigned() ? Builder->CreateICmpSGT(L, R, "icmptmp")
+                              : Builder->CreateICmpUGT(L, R, "icmptmp");
+    case tok_ge:
+      ExprType = KType::getBool();
+      return IntTy.isSigned() ? Builder->CreateICmpSGE(L, R, "icmptmp")
+                              : Builder->CreateICmpUGE(L, R, "icmptmp");
+    default:
+      break;
+    }
+  }
+
+  if (LHS->getExprType().isFloatingPoint() &&
+      RHS->getExprType().isFloatingPoint()) {
+    ExprType = KType::getDouble();
+    switch (Op) {
+    case '+':
+      return Builder->CreateFAdd(L, R, "addtmp");
+    case '-':
+      return Builder->CreateFSub(L, R, "subtmp");
+    case '*':
+      return Builder->CreateFMul(L, R, "multmp");
+    case '/':
+      return Builder->CreateFDiv(L, R, "divtmp");
+    case tok_eq:
+      ExprType = KType::getBool();
+      return Builder->CreateFCmpOEQ(L, R, "fcmptmp");
+    case tok_ne:
+      ExprType = KType::getBool();
+      return Builder->CreateFCmpUNE(L, R, "fcmptmp");
+    case '<':
+      ExprType = KType::getBool();
+      return Builder->CreateFCmpOLT(L, R, "fcmptmp");
+    case tok_le:
+      ExprType = KType::getBool();
+      return Builder->CreateFCmpOLE(L, R, "fcmptmp");
+    case '>':
+      ExprType = KType::getBool();
+      return Builder->CreateFCmpOGT(L, R, "fcmptmp");
+    case tok_ge:
+      ExprType = KType::getBool();
+      return Builder->CreateFCmpOGE(L, R, "fcmptmp");
+    default:
+      break;
+    }
+  }
+
+  if (Op > 0 && isascii(Op)) {
+    std::string FnName = std::string("binary") + static_cast<char>(Op);
+    auto PIt = FunctionProtos.find(FnName);
+    if (PIt != FunctionProtos.end()) {
+      if (PIt->second->getArgs()[0].second != LHS->getExprType() ||
+          PIt->second->getArgs()[1].second != RHS->getExprType())
+        return LogErrorV("operand type mismatch for user binary operator");
+      llvm::Function *F = getFunction(FnName);
+      ExprType = PIt->second->getReturnType();
+      llvm::Value *Ops[2] = {L, R};
+      return Builder->CreateCall(F, Ops, "binop");
+    }
+  }
+
+  return LogErrorV("type mismatch or unsupported binary operator");
+}
+
+llvm::Value *CallExprAST::codegen() {
+  llvm::Function *CalleeF = getFunction(Callee);
+  if (!CalleeF)
+    return LogErrorV("unknown function referenced");
+
+  auto PIt = FunctionProtos.find(Callee);
+  if (PIt == FunctionProtos.end())
+    return LogErrorV("unknown function prototype");
+  const PrototypeAST &Proto = *PIt->second;
+
+  if (Proto.getArgs().size() != Args.size())
+    return LogErrorV("incorrect # arguments passed");
+
+  std::vector<llvm::Value *> ArgsV;
+  for (unsigned i = 0, e = Args.size(); i != e; ++i) {
+    llvm::Value *ArgV = Args[i]->codegen();
+    if (!ArgV)
+      return nullptr;
+    if (Args[i]->getExprType() != Proto.getArgs()[i].second)
+      return LogErrorV("argument type mismatch in function call");
+    ArgsV.push_back(ArgV);
+  }
+
+  ExprType = Proto.getReturnType();
+  if (ExprType.isVoid())
+    return Builder->CreateCall(CalleeF, ArgsV);
+  return Builder->CreateCall(CalleeF, ArgsV, "calltmp");
+}
+
+llvm::Value *IfExprAST::codegen() {
+  llvm::Value *CondV = Cond->codegen();
+  if (!CondV)
+    return nullptr;
+
+  CondV = toBoolCond(CondV, Cond->getExprType(), "ifcond");
+  if (!CondV)
+    return nullptr;
+
+  llvm::Function *TheFunction = Builder->GetInsertBlock()->getParent();
+
+  llvm::BasicBlock *ThenBB =
+      llvm::BasicBlock::Create(*TheContext, "then", TheFunction);
+  llvm::BasicBlock *ElseBB = llvm::BasicBlock::Create(*TheContext, "else");
+  llvm::BasicBlock *MergeBB = llvm::BasicBlock::Create(*TheContext, "ifcont");
+
+  Builder->CreateCondBr(CondV, ThenBB, ElseBB);
+
+  Builder->SetInsertPoint(ThenBB);
+  llvm::Value *ThenV = Then->codegen();
+  if (!ThenV)
+    return nullptr;
+  KType ThenTy = Then->getExprType();
+  Builder->CreateBr(MergeBB);
+  ThenBB = Builder->GetInsertBlock();
+
+  TheFunction->insert(TheFunction->end(), ElseBB);
+  Builder->SetInsertPoint(ElseBB);
+  llvm::Value *ElseV = Else->codegen();
+  if (!ElseV)
+    return nullptr;
+  if (ThenTy != Else->getExprType())
+    return LogErrorV("'then' and 'else' branches must have the same type");
+  Builder->CreateBr(MergeBB);
+  ElseBB = Builder->GetInsertBlock();
+
+  TheFunction->insert(TheFunction->end(), MergeBB);
+  Builder->SetInsertPoint(MergeBB);
+  ExprType = ThenTy;
+  if (ThenTy.isVoid())
+    return llvm::UndefValue::get(llvm::Type::getVoidTy(*TheContext));
+
+  llvm::PHINode *PN = Builder->CreatePHI(toLLVMType(ThenTy), 2, "iftmp");
+  PN->addIncoming(ThenV, ThenBB);
+  PN->addIncoming(ElseV, ElseBB);
+  return PN;
+}
+
+llvm::Value *ForExprAST::codegen() {
+  llvm::Function *TheFunction = Builder->GetInsertBlock()->getParent();
+
+  llvm::Value *StartVal = Start->codegen();
+  if (!StartVal)
+    return nullptr;
+
+  KType LoopTy = HasExplicitType ? ExplicitType : Start->getExprType();
+  if (LoopTy != Start->getExprType())
+    return LogErrorV("for-loop start value type does not match loop variable");
+
+  llvm::AllocaInst *Alloca =
+      CreateEntryBlockAlloca(TheFunction, toLLVMType(LoopTy), VarName);
+  Builder->CreateStore(StartVal, Alloca);
+
+  llvm::BasicBlock *LoopBB =
+      llvm::BasicBlock::Create(*TheContext, "loop", TheFunction);
+
+  Builder->CreateBr(LoopBB);
+  Builder->SetInsertPoint(LoopBB);
+
+  bool HadOld = NamedValues.count(VarName) > 0;
+  VarBinding OldVal = HadOld ? NamedValues[VarName] : VarBinding{};
+  NamedValues[VarName] = {Alloca, LoopTy};
+
+  if (!Body->codegen())
+    return nullptr;
+
+  llvm::Value *StepVal = nullptr;
+  if (Step) {
+    StepVal = Step->codegen();
+    if (!StepVal)
+      return nullptr;
+    if (Step->getExprType() != LoopTy)
+      return LogErrorV("for-loop step value type does not match loop variable");
+  } else if (LoopTy.isInteger()) {
+    StepVal = llvm::ConstantInt::get(toLLVMType(LoopTy), 1);
+  } else {
+    StepVal = llvm::ConstantFP::get(*TheContext, llvm::APFloat(1.0));
+  }
+
+  llvm::Value *EndCond = End->codegen();
+  if (!EndCond)
+    return nullptr;
+  EndCond = toBoolCond(EndCond, End->getExprType(), "loopcond");
+  if (!EndCond)
+    return nullptr;
+
+  llvm::Value *CurVar =
+      Builder->CreateLoad(Alloca->getAllocatedType(), Alloca, VarName.c_str());
+  llvm::Value *NextVar = LoopTy.isInteger()
+                             ? Builder->CreateAdd(CurVar, StepVal, "nextvar")
+                             : Builder->CreateFAdd(CurVar, StepVal, "nextvar");
+  Builder->CreateStore(NextVar, Alloca);
+
+  llvm::BasicBlock *AfterBB =
+      llvm::BasicBlock::Create(*TheContext, "afterloop", TheFunction);
+
+  Builder->CreateCondBr(EndCond, LoopBB, AfterBB);
+  Builder->SetInsertPoint(AfterBB);
+
+  if (HadOld)
+    NamedValues[VarName] = OldVal;
+  else
+    NamedValues.erase(VarName);
+
+  ExprType = LoopTy;
+  return llvm::Constant::getNullValue(toLLVMType(LoopTy));
+}
+
+llvm::Value *VarExprAST::codegen() {
+  std::vector<std::pair<bool, VarBinding>> OldBindings;
+  llvm::Function *TheFunction = Builder->GetInsertBlock()->getParent();
+
+  for (const auto &Item : VarNames) {
+    llvm::Value *InitVal = nullptr;
+    KType VarTy = Item.ExplicitType;
+
+    if (Item.Init) {
+      InitVal = Item.Init->codegen();
+      if (!InitVal)
+        return nullptr;
+      if (!Item.HasExplicitType)
+        VarTy = Item.Init->getExprType();
+      else if (VarTy != Item.Init->getExprType())
+        return LogErrorV("initialiser type does not match variable type");
+    } else {
+      InitVal = llvm::Constant::getNullValue(toLLVMType(VarTy));
+    }
+
+    llvm::AllocaInst *Alloca =
+        CreateEntryBlockAlloca(TheFunction, toLLVMType(VarTy), Item.Name);
+    Builder->CreateStore(InitVal, Alloca);
+
+    bool HadOld = NamedValues.count(Item.Name) > 0;
+    OldBindings.emplace_back(HadOld,
+                             HadOld ? NamedValues[Item.Name] : VarBinding{});
+    NamedValues[Item.Name] = {Alloca, VarTy};
+  }
+
+  llvm::Value *BodyVal = Body->codegen();
+  if (!BodyVal)
+    return nullptr;
+
+  for (size_t i = 0; i < VarNames.size(); ++i) {
+    if (OldBindings[i].first)
+      NamedValues[VarNames[i].Name] = OldBindings[i].second;
+    else
+      NamedValues.erase(VarNames[i].Name);
+  }
+
+  ExprType = Body->getExprType();
+  return BodyVal;
+}
+
+llvm::Function *PrototypeAST::codegen() {
+  std::vector<llvm::Type *> ParamTys;
+  ParamTys.reserve(Args.size());
+  for (const auto &Arg : Args)
+    ParamTys.push_back(toLLVMType(Arg.second));
+
+  auto *FT = llvm::FunctionType::get(toLLVMType(RetType), ParamTys, false);
+  auto *F = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, Name,
+                                   TheModule.get());
+
+  unsigned Idx = 0;
+  for (auto &Arg : F->args())
+    Arg.setName(Args[Idx++].first);
+
+  return F;
+}
+
+llvm::Function *FunctionAST::codegen() {
+  auto &P = *Proto;
+  FunctionProtos[Proto->getName()] = std::move(Proto);
+  llvm::Function *TheFunction = getFunction(P.getName());
+  if (!TheFunction)
+    return nullptr;
+
+  if (P.isBinaryOp())
+    BinopPrecedence[P.getOperatorName()] = P.getBinaryPrecedence();
+
+  auto *BB = llvm::BasicBlock::Create(*TheContext, "entry", TheFunction);
+  Builder->SetInsertPoint(BB);
+
+  NamedValues.clear();
+  unsigned Idx = 0;
+  for (auto &Arg : TheFunction->args()) {
+    const KType &ArgTy = P.getArgs()[Idx++].second;
+    llvm::AllocaInst *Alloca =
+        CreateEntryBlockAlloca(TheFunction, toLLVMType(ArgTy), Arg.getName());
+    Builder->CreateStore(&Arg, Alloca);
+    NamedValues[std::string(Arg.getName())] = {Alloca, ArgTy};
+  }
+
+  if (llvm::Value *RetVal = Body->codegen()) {
+    if (P.getReturnType().isVoid()) {
+      Builder->CreateRetVoid();
+    } else {
+      if (Body->getExprType() != P.getReturnType()) {
+        LogErrorV("function body type does not match return type");
+        TheFunction->eraseFromParent();
+        return nullptr;
+      }
+      Builder->CreateRet(RetVal);
+    }
+
+    if (llvm::verifyFunction(*TheFunction, &llvm::errs())) {
+      TheFunction->eraseFromParent();
+      return nullptr;
+    }
+
+    TheFPM->run(*TheFunction, *TheFAM);
+    return TheFunction;
+  }
+
+  TheFunction->eraseFromParent();
+  if (P.isBinaryOp())
+    BinopPrecedence.erase(P.getOperatorName());
+  return nullptr;
+}
+
+//===----------------------------------------------------------------------===//
+// Host Library Helpers
+//===----------------------------------------------------------------------===//
+
+#ifdef _WIN32
+#define DLLEXPORT __declspec(dllexport)
+#else
+#define DLLEXPORT
+#endif
+
+/// putchard - putchar that takes a double and returns 0.
+extern "C" DLLEXPORT double putchard(double X) {
+  fputc(static_cast<char>(X), stderr);
+  return 0;
+}
+
+/// printd - printf that takes a double prints it as "%f\n", returning 0.
+extern "C" DLLEXPORT double printd(double X) {
+  fprintf(stderr, "%f\n", X);
+  return 0;
+}
+
+//===----------------------------------------------------------------------===//
+// Interactive Driver Loop
+//===----------------------------------------------------------------------===//
+
+static void HandleDefinition() {
+  if (auto FnAST = ParseDefinition()) {
+    if (auto *FnIR = FnAST->codegen()) {
+      std::string FnName = std::string(FnIR->getName());
+      fprintf(stderr, "Read function definition:\n");
+      FnIR->print(llvm::errs());
+      fprintf(stderr, "\n");
+
+      if (!EmitObjectMode) {
+        if (auto It = FunctionRTs.find(FnName); It != FunctionRTs.end()) {
+          ExitOnErr(It->second->remove());
+          FunctionRTs.erase(It);
+        }
+
+        auto RT = TheJIT->getMainJITDylib().createResourceTracker();
+        ExitOnErr(
+            TheJIT->addModule(llvm::orc::ThreadSafeModule(
+                                  std::move(TheModule), std::move(TheContext)),
+                              RT));
+        FunctionRTs[FnName] = std::move(RT);
+        InitializeModuleAndManagers();
+      }
+    }
+  } else {
+    while (CurTok != ';' && CurTok != tok_eof)
+      getNextToken();
+  }
+}
+
+static void HandleExtern() {
+  if (auto ProtoAST = ParseExtern()) {
+    if (auto *FnIR = ProtoAST->codegen()) {
+      fprintf(stderr, "Read extern:\n");
+      FnIR->print(llvm::errs());
+      fprintf(stderr, "\n");
+      FunctionProtos[ProtoAST->getName()] = std::move(ProtoAST);
+    }
+  } else {
+    while (CurTok != ';' && CurTok != tok_eof)
+      getNextToken();
+  }
+}
+
+static llvm::Function *CompileAnonExpr(ExprAST &Expr, KType &OutType) {
+  auto *VoidFT =
+      llvm::FunctionType::get(llvm::Type::getVoidTy(*TheContext), false);
+  auto *TmpFn = llvm::Function::Create(VoidFT, llvm::Function::PrivateLinkage,
+                                       "__anon_tmp", TheModule.get());
+  auto *EntryBB = llvm::BasicBlock::Create(*TheContext, "entry", TmpFn);
+  Builder->SetInsertPoint(EntryBB);
+  NamedValues.clear();
+
+  llvm::Value *RetVal = Expr.codegen();
+  if (!RetVal) {
+    TmpFn->eraseFromParent();
     return nullptr;
   }
 
-  llvm::Type *getType() override {
-    if (TargetType == "double")
-      return Builder->getDoubleTy();
-    if (TargetType == "int")
-      return Builder->getInt32Ty();
-    return Builder->getInt1Ty();
+  OutType = Expr.getExprType();
+  llvm::Type *RetLLVMTy = OutType.isVoid() ? llvm::Type::getVoidTy(*TheContext)
+                                           : toLLVMType(OutType);
+  auto *RealFT = llvm::FunctionType::get(RetLLVMTy, false);
+  auto *Fn = llvm::Function::Create(RealFT, llvm::Function::ExternalLinkage,
+                                    "__anon_expr", TheModule.get());
+  Fn->splice(Fn->begin(), TmpFn);
+  TmpFn->eraseFromParent();
+
+  if (OutType.isVoid())
+    Builder->CreateRetVoid();
+  else
+    Builder->CreateRet(RetVal);
+
+  if (llvm::verifyFunction(*Fn, &llvm::errs())) {
+    Fn->eraseFromParent();
+    return nullptr;
   }
-};
 
-int main() {
-  TheContext = std::make_unique<llvm::LLVMContext>();
-  TheModule = std::make_unique<llvm::Module>("kaleidoscope_types", *TheContext);
-  Builder = std::make_unique<llvm::IRBuilder<>>(*TheContext);
+  TheFPM->run(*Fn, *TheFAM);
+  return Fn;
+}
 
-  // Define: int compute(int a, int b)
-  llvm::Type *I32 = Builder->getInt32Ty();
-  llvm::FunctionType *FT = llvm::FunctionType::get(I32, {I32, I32}, false);
-  llvm::Function *F = llvm::Function::Create(
-      FT, llvm::Function::ExternalLinkage, "compute", TheModule.get());
+static void HandleTopLevelExpression() {
+  auto Expr = ParseTopLevelExpr();
+  if (!Expr) {
+    while (CurTok != ';' && CurTok != tok_eof)
+      getNextToken();
+    return;
+  }
 
-  auto Args = F->arg_begin();
-  llvm::Value *ArgA = Args++;
-  ArgA->setName("a");
-  llvm::Value *ArgB = Args++;
-  ArgB->setName("b");
+  KType RetTy;
+  llvm::Function *FnIR = CompileAnonExpr(*Expr, RetTy);
+  if (!FnIR)
+    return;
 
-  NamedValues["a"] = ArgA;
-  NamedValues["b"] = ArgB;
+  if (EmitObjectMode) {
+    FnIR->eraseFromParent();
+    return;
+  }
 
-  llvm::BasicBlock *BB = llvm::BasicBlock::Create(*TheContext, "entry", F);
-  Builder->SetInsertPoint(BB);
+  auto RT = TheJIT->getMainJITDylib().createResourceTracker();
+  auto TSM =
+      llvm::orc::ThreadSafeModule(std::move(TheModule), std::move(TheContext));
+  ExitOnErr(TheJIT->addModule(std::move(TSM), RT));
+  InitializeModuleAndManagers();
 
-  // AST: (a + b) * (a /s b)
-  auto LHS = std::make_unique<BinaryExprAST>(
-      "+", std::make_unique<VariableExprAST>("a"),
-      std::make_unique<VariableExprAST>("b"));
-  auto RHS = std::make_unique<BinaryExprAST>(
-      "/s", std::make_unique<VariableExprAST>("a"),
-      std::make_unique<VariableExprAST>("b"));
-  auto Expr =
-      std::make_unique<BinaryExprAST>("*", std::move(LHS), std::move(RHS));
+  if (auto ExprSymbol = TheJIT->lookup("__anon_expr")) {
+    auto Addr = ExprSymbol->getAddress();
+    switch (RetTy.Kind) {
+    case TypeKind::Double:
+      fprintf(stderr, "Evaluated to %f\n", Addr.toPtr<double (*)()>()());
+      break;
+    case TypeKind::Int:
+      fprintf(stderr, "Evaluated to %d\n", Addr.toPtr<int32_t (*)()>()());
+      break;
+    case TypeKind::UInt:
+      fprintf(stderr, "Evaluated to %u\n", Addr.toPtr<uint32_t (*)()>()());
+      break;
+    case TypeKind::I64:
+      fprintf(stderr, "Evaluated to %lld\n",
+              static_cast<long long>(Addr.toPtr<int64_t (*)()>()()));
+      break;
+    case TypeKind::Byte:
+      fprintf(stderr, "Evaluated to %u\n",
+              static_cast<unsigned>(Addr.toPtr<uint8_t (*)()>()()));
+      break;
+    case TypeKind::Bool:
+      fprintf(stderr, "Evaluated to %s\n",
+              Addr.toPtr<bool (*)()>()() ? "true" : "false");
+      break;
+    case TypeKind::Void:
+      Addr.toPtr<void (*)()>()();
+      break;
+    }
+  } else {
+    llvm::logAllUnhandledErrors(ExprSymbol.takeError(), llvm::errs(),
+                                "JIT Error: ");
+  }
 
-  llvm::Value *RetVal = Expr->codegen();
-  Builder->CreateRet(RetVal);
+  ExitOnErr(RT->remove());
+}
 
-  llvm::verifyFunction(*F);
-  TheModule->print(llvm::errs(), nullptr);
+static void Prompt() {
+  if (!EmitObjectMode)
+    fprintf(stderr, "ready> ");
+}
+
+static void MainLoop() {
+  while (true) {
+    switch (CurTok) {
+    case tok_eof:
+      return;
+    case ';':
+      Prompt();
+      getNextToken();
+      break;
+    case tok_def:
+      HandleDefinition();
+      break;
+    case tok_extern:
+      HandleExtern();
+      break;
+    default:
+      HandleTopLevelExpression();
+      break;
+    }
+  }
+}
+
+static bool ConfigureTargetMachine() {
+  llvm::InitializeAllTargetInfos();
+  llvm::InitializeAllTargets();
+  llvm::InitializeAllTargetMCs();
+  llvm::InitializeAllAsmParsers();
+  llvm::InitializeAllAsmPrinters();
+
+  std::string TargetTripleStr = llvm::sys::getDefaultTargetTriple();
+  llvm::Triple TargetTriple(TargetTripleStr);
+
+  std::string Error;
+  const llvm::Target *Target =
+      llvm::TargetRegistry::lookupTarget(TargetTriple, Error);
+  if (!Target) {
+    llvm::errs() << "Target lookup error: " << Error << "\n";
+    return false;
+  }
+
+  llvm::TargetOptions Opt;
+  TheTargetMachine.reset(Target->createTargetMachine(
+      TargetTriple, "generic", "", Opt, llvm::Reloc::PIC_));
+  fprintf(stderr, "Configured TargetMachine for %s\n", TargetTripleStr.c_str());
+  return true;
+}
+
+static int EmitObjectFile(const std::string &Filename) {
+  std::error_code EC;
+  llvm::raw_fd_ostream Dest(Filename, EC, llvm::sys::fs::OF_None);
+  if (EC) {
+    llvm::errs() << "Could not open file: " << EC.message() << "\n";
+    return 1;
+  }
+
+  llvm::legacy::PassManager CodeGenPasses;
+  if (TheTargetMachine->addPassesToEmitFile(
+          CodeGenPasses, Dest, nullptr, llvm::CodeGenFileType::ObjectFile)) {
+    llvm::errs() << "TargetMachine cannot emit an object file\n";
+    return 1;
+  }
+
+  CodeGenPasses.run(*TheModule);
+  Dest.flush();
+  fprintf(stderr, "Wrote %s\n", Filename.c_str());
+  return 0;
+}
+
+int main(int argc, char **argv) {
+  for (int i = 1; i < argc; ++i) {
+    if (std::strcmp(argv[i], "--emit-obj") == 0 && i + 1 < argc) {
+      EmitObjectMode = true;
+      ObjectOutputPath = argv[++i];
+    } else {
+      fprintf(stderr, "Usage: %s [--emit-obj <output.o>]\n", argv[0]);
+      return 1;
+    }
+  }
+
+  BinopPrecedence[':'] = 1;
+  BinopPrecedence['='] = 2;
+  BinopPrecedence['|'] = 5;
+  BinopPrecedence['^'] = 6;
+  BinopPrecedence['&'] = 7;
+  BinopPrecedence[tok_eq] = 8;
+  BinopPrecedence[tok_ne] = 8;
+  BinopPrecedence['<'] = 10;
+  BinopPrecedence[tok_le] = 10;
+  BinopPrecedence['>'] = 10;
+  BinopPrecedence[tok_ge] = 10;
+  BinopPrecedence[tok_shl] = 15;
+  BinopPrecedence[tok_shr] = 15;
+  BinopPrecedence['+'] = 20;
+  BinopPrecedence['-'] = 20;
+  BinopPrecedence['*'] = 40;
+  BinopPrecedence['/'] = 40;
+  BinopPrecedence['%'] = 40;
+
+  if (EmitObjectMode) {
+    if (!ConfigureTargetMachine())
+      return 1;
+  } else {
+    llvm::InitializeNativeTarget();
+    llvm::InitializeNativeTargetAsmPrinter();
+    llvm::InitializeNativeTargetAsmParser();
+    TheJIT = ExitOnErr(llvm::orc::KaleidoscopeJIT::Create());
+    printf("Kaleidoscope Compiler (Step 11.4: Explicit Type Conversions)\n");
+    printf("Type definitions, externs, or expressions followed by ';' (Ctrl+D "
+           "to exit):\n\n");
+  }
+
+  InitializeModuleAndManagers();
+
+  Prompt();
+  getNextToken();
+  MainLoop();
+
+  if (EmitObjectMode)
+    return EmitObjectFile(ObjectOutputPath);
+
   return 0;
 }
 ```
@@ -465,61 +2052,76 @@ int main() {
 
 ---
 
-## Compiling and Running
+## Compiling and Testing in the REPL
 
-Compile the integer type demonstration:
-
-```bash
-clang++ -Wall -Wextra kaleidoscope.cpp $(llvm-config --cxxflags --ldflags --system-libs --libs core) -o kaleidoscope
-```
-
-Run the binary:
+Recompile and launch `./kaleidoscope`:
 
 ```bash
+clang++ -std=c++17 -fno-rtti -Wall -Wextra -rdynamic -Iinclude kaleidoscope.cpp $(llvm-config --cxxflags --ldflags --system-libs --libs core orcjit native passes all-targets) -isystem $(llvm-config --includedir) -o kaleidoscope
 ./kaleidoscope
 ```
 
-The program builds the `@compute` function with mixed integer and division operations, verifies the module, and prints the generated LLVM IR:
+Put all of Section 11's integer types, shifts, comparisons, and casts through their paces:
 
 ```text
-; ModuleID = 'kaleidoscope_types'
-source_filename = "kaleidoscope_types"
+Kaleidoscope Compiler (Step 11.4: Explicit Type Conversions)
+Type definitions, externs, or expressions followed by ';' (Ctrl+D to exit):
 
-define i32 @compute(i32 %a, i32 %b) {
+ready> (-8 as uint) >> (1 as uint);
+Evaluated to 2147483644
+ready> (-1 as uint) > (1 as uint);
+Evaluated to true
+ready> def widen_signed(x: int) -> i64 x as i64;
+Read function definition:
+define i64 @widen_signed(i32 %x) {
 entry:
-  %addtmp = add i32 %a, %b
-  %sdivtmp = sdiv i32 %a, %b
-  %multmp = mul i32 %addtmp, %sdivtmp
-  ret i32 %multmp
+  %sexttmp = sext i32 %x to i64
+  ret i64 %sexttmp
 }
+
+ready> def widen_unsigned(x: uint) -> i64 x as i64;
+Read function definition:
+define i64 @widen_unsigned(i32 %x) {
+entry:
+  %zexttmp = zext i32 %x to i64
+  ret i64 %zexttmp
+}
+
+ready> widen_signed(-1);
+Evaluated to -1
+ready> widen_unsigned(-1 as uint);
+Evaluated to 4294967295
+ready> def low_byte(x: int) -> byte x as byte;
+Read function definition:
+define i8 @low_byte(i32 %x) {
+entry:
+  %trunctmp = trunc i32 %x to i8
+  ret i8 %trunctmp
+}
+
+ready> low_byte(258);
+Evaluated to 2
+ready> def avg(a: int, b: int) -> double ((a + b) as double) / 2.0;
+Read function definition:
+define double @avg(i32 %a, i32 %b) {
+entry:
+  %addtmp = add i32 %b, %a
+  %sitofptmp = sitofp i32 %addtmp to double
+  %divtmp = fmul double %sitofptmp, 5.000000e-01
+  ret double %divtmp
+}
+
+ready> avg(3, 4);
+Evaluated to 3.500000
+ready> 3.9 as int;
+Evaluated to 3
 ```
+
+Look at those contrasts in live execution:
+* `(-8 as uint) >> (1 as uint)` shifted `0` into bit 31 via `lshr`, turning `0xFFFFFFF8` into `0x7FFFFFFC` (`2147483644`).
+* `widen_signed(-1)` sign-extended `0xFFFFFFFF` (`sext`) to 64-bit `-1`, whereas `widen_unsigned(-1 as uint)` zero-extended the exact same 32 bits (`zext`) to `4294967295`!
+* In `@avg`, LLVM's `InstCombine` pass even rewrote `/ 2.0` (`fdiv`) into `* 0.5` (`fmul double %sitofptmp, 5.000000e-01`), avoiding a costly hardware floating-point division!
 
 ---
 
-## Active Learning Challenge
-
-<details>
-<summary><b>Challenge: Implementing an Absolute Value Function</b></summary>
-
-Write a C++ function using `IRBuilder` that generates an integer absolute value function `abs(i32 %x)`.
-
-Hint: Check if `x < 0` using `CreateICmpSLT`.  If true, subtract `x` from `0` with `CreateSub`, and use `CreateSelect` to choose between the original value and the negated value!
-
-<br>
-
-**Solution**:
-```cpp
-llvm::Value *EmitAbs(llvm::IRBuilder<> &Builder, llvm::Value *X) {
-  llvm::Value *IsNeg = Builder.CreateICmpSLT(X, Builder.getInt32(0), "isneg");
-  llvm::Value *NegX  = Builder.CreateSub(Builder.getInt32(0), X, "negx");
-  return Builder.CreateSelect(IsNeg, NegX, X, "abstmp");
-}
-```
-
-Notice `CreateSelect`: in LLVM, `select` is the ternary operator `cond ? trueval : falseval`.  It generates conditional moves (`cmov`) without needing basic blocks or branches!
-
-</details>
-
----
-
-In [Section 12](../12-globals-and-strings/README.md), we will explore how LLVM represents global variables and constant strings.
+[Previous: Step 11.3](03-integer-comparisons.md) | [Section Overview](index.md) | [Next: Section 12](../12-globals-and-strings/index.md)

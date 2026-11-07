@@ -204,11 +204,20 @@ endif ()
 
 if(LLVM_INCLUDE_EXAMPLES)
   list(APPEND LLVM_TEST_DEPENDS
-    Kaleidoscope-Ch3
-    Kaleidoscope-Ch4
-    Kaleidoscope-Ch5
-    Kaleidoscope-Ch6
-    Kaleidoscope-Ch7
+    Kaleidoscope-Sec03
+    Kaleidoscope-Sec04
+    Kaleidoscope-Sec05
+    Kaleidoscope-Sec06
+    Kaleidoscope-Sec07
+    Kaleidoscope-Sec08
+    Kaleidoscope-Sec09
+    Kaleidoscope-Sec10
+    Kaleidoscope-Sec11
+    Kaleidoscope-Sec12
+    Kaleidoscope-Sec13
+    Kaleidoscope-Sec14
+    Kaleidoscope-Sec15
+    Kaleidoscope-Sec16
     LLJITWithThinLTOSummaries
     OrcV2CBindingsBasicUsage
     OrcV2CBindingsAddObjectFile

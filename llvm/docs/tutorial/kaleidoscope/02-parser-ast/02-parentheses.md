@@ -1,42 +1,45 @@
 # Step 2.2: Parentheses and Grouping
 
-In this step, we add support for parenthesised expressions, such as `(42)` or `(((3.14)))`.
+In [Step 2.1](01-first-ast-node.md), our parser learned to build `NumberExprAST` nodes.  In this step, we add support for parenthesised expressions such as `(42)` and `(((123.45)))`.
 
 ---
 
-## Why Parentheses Do Not Need an AST Node
+## Why Parentheses Do Not Need Their Own AST Node
 
-Consider the expression `(42)`.  Why do we not create a `ParenExprAST` node?
+Consider the expression `(42)`.  Should we define a `ParenExprAST` class to represent the parentheses?
 
-```mermaid
-flowchart TD
-    Src["Source Text: '( 42 )'"] -->|Parser consumes parentheses| Ast["AST Node: NumberExprAST(42.0)"]
+```text
++-----------------------+   ParseParenExpr()    +----------------------------+
+| Source Text: "( 42 )" | --------------------> | AST Node: NumberExprAST(42)|
+|  eat '(' -> parse 42  |    discards '(' ')'   |  (no ParenExprAST needed!) |
+|         -> eat ')'    |                       +----------------------------+
++-----------------------+
 ```
 
-Parentheses exist in source text to alter grouping and operator precedence.  However, once the parser constructs an in-memory tree, the tree structure itself explicitly captures that grouping.  The parentheses carry no runtime meaning and can be discarded.
-
-The parser simply consumes the opening `'('`, recursively parses the subexpression inside, and verifies that a matching closing `')'` is present.
+No!  Parentheses exist in source text purely to guide *how the parser groups subexpressions* (for example, forcing `(1 + 2) * 3` to build a `*` node whose left child is `(+ 1 2)`).  Once the parser has constructed the tree in memory, the parent-child pointers *already* encode that grouping unambiguously.  Discarding `'('` and `')'` during parsing keeps our AST lean so downstream evaluators and IR generators never have to unwrap redundant wrapper nodes.
 
 ---
 
 ## Incremental Code Changes
 
-Open `kaleidoscope.cpp`.  In your parser section, you will introduce a forward declaration, a parenthesis parser, and a primary expression router.
+Open `kaleidoscope.cpp` and apply three small edits on top of [Step 2.1](01-first-ast-node.md).
 
-### 1. Forward Declaration and ParseParenExpr()
+### 1. Forward-Declare `ParseExpression()` and Add `ParseParenExpr()`
 
-Because `ParseParenExpr()` will recursively call `ParseExpression()`, which in turn calls `ParsePrimary()`, we need a forward declaration.
+Notice the mutual recursion we are creating:
+* `ParseExpression()` calls `ParsePrimary()`.
+* `ParsePrimary()` calls `ParseParenExpr()` when it sees `'('`.
+* `ParseParenExpr()` calls `ParseExpression()` to parse whatever expression sits inside the parentheses!
 
-Directly above `ParseNumberExpr()`, declare `ParseExpression()`:
+To satisfy C++'s single-pass name lookup, add a forward declaration for `ParseExpression()` right above `ParseNumberExpr()`:
 
 ```cpp
 static std::unique_ptr<ExprAST> ParseExpression();
 ```
 
-Directly below `ParseNumberExpr()`, add `ParseParenExpr()`:
+Then, directly below `ParseNumberExpr()`, add `ParseParenExpr()`:
 
 ```cpp
-/// parenexpr ::= '(' expression ')'
 static std::unique_ptr<ExprAST> ParseParenExpr() {
   getNextToken(); // eat '('
   auto V = ParseExpression();
@@ -50,11 +53,15 @@ static std::unique_ptr<ExprAST> ParseParenExpr() {
 }
 ```
 
-Notice the error checking: if the token following the subexpression is not `')'`, we call `LogError()` and return `nullptr`.
+Trace every line:
+1.  `getNextToken()` consumes the opening `'('`.
+2.  `ParseExpression()` recursively parses the inner expression (even if that inner expression starts with *another* `'('`!).  If the inner parse fails (`!V`), we propagate `nullptr` immediately.
+3.  After the inner expression finishes, `CurTok` *must* be the matching `')'`.  If it is anything else (like `';'` in `(42;`), we report `"expected ')'"` via `LogError`.
+4.  Otherwise, we consume `')'` and return `V` directly.
 
-### 2. Primary Expressions and ParsePrimary()
+### 2. Route `'('` Through `ParsePrimary()` (Quick Stretch!)
 
-In compiler terminology, a **primary expression** is an indivisible leaf unit of an expression: a literal value, a variable, or a parenthesised subexpression:
+In compiler grammar notation, a **primary expression** is an atomic expression unit:
 
 ```text
 primary
@@ -62,34 +69,37 @@ primary
   ::= parenexpr
 ```
 
-Directly below `ParseParenExpr()`, add `ParsePrimary()` and update `ParseExpression()`:
+Look at `ParsePrimary()` from [Step 2.1](01-first-ast-node.md):
 
 ```cpp
-/// primary
-///   ::= numberexpr
-///   ::= parenexpr
 static std::unique_ptr<ExprAST> ParsePrimary() {
   switch (CurTok) {
   case tok_number:
     return ParseNumberExpr();
-  case '(':
-    return ParseParenExpr();
+  // Your stretch: add case '(' here so it calls ParseParenExpr()!
   default:
     return LogError("unknown token when expecting an expression");
   }
 }
+```
 
-/// expression ::= primary
-static std::unique_ptr<ExprAST> ParseExpression() {
-  return ParsePrimary();
-}
+**Your Stretch**: Add the two-line `case '(': return ParseParenExpr();` arm right below `case tok_number:`!
+
+### 3. Update the `main()` Banner
+
+Update the two `printf` lines in `main()` so the REPL reflects Step 2.2:
+
+```cpp
+  printf("Kaleidoscope AST Inspector (Step 2.2: Parentheses)\n");
+  printf(
+      "Type expressions followed by ';' and press Enter (Ctrl+D to exit):\n\n");
 ```
 
 ---
 
 ## Verifying Your Code
 
-Before compiling, check that your `kaleidoscope.cpp` has all additions in place.
+Check your `kaleidoscope.cpp` against the complete reference file:
 
 <details>
 <summary>Click here to compare against the reference kaleidoscope.cpp</summary>
@@ -118,8 +128,8 @@ enum Token {
   tok_number = -201,
 };
 
-static std::string IdentifierStr;
-static double NumVal;
+static std::string IdentifierStr; // Filled in if tok_identifier
+static double NumVal;             // Filled in if tok_number
 
 static int gettok() {
   static int LastChar = ' ';
@@ -127,6 +137,7 @@ static int gettok() {
   while (isspace(LastChar))
     LastChar = getchar();
 
+  // Recognise identifiers and keywords: [a-zA-Z_][a-zA-Z0-9_]*
   if (isalpha(LastChar) || LastChar == '_') {
     IdentifierStr = LastChar;
     while (isalnum((LastChar = getchar())) || LastChar == '_')
@@ -139,6 +150,7 @@ static int gettok() {
     return tok_identifier;
   }
 
+  // Recognise numeric literals: [0-9.]+
   if (isdigit(LastChar) || LastChar == '.') {
     std::string NumStr;
     do {
@@ -150,6 +162,7 @@ static int gettok() {
     return tok_number;
   }
 
+  // Recognise comments: '#' through end of line.
   if (LastChar == '#') {
     do
       LastChar = getchar();
@@ -204,11 +217,10 @@ static std::unique_ptr<ExprAST> ParseExpression();
 
 static std::unique_ptr<ExprAST> ParseNumberExpr() {
   auto Result = std::make_unique<NumberExprAST>(NumVal);
-  getNextToken();
+  getNextToken(); // consume the number
   return Result;
 }
 
-/// parenexpr ::= '(' expression ')'
 static std::unique_ptr<ExprAST> ParseParenExpr() {
   getNextToken(); // eat '('
   auto V = ParseExpression();
@@ -221,9 +233,6 @@ static std::unique_ptr<ExprAST> ParseParenExpr() {
   return V;
 }
 
-/// primary
-///   ::= numberexpr
-///   ::= parenexpr
 static std::unique_ptr<ExprAST> ParsePrimary() {
   switch (CurTok) {
   case tok_number:
@@ -235,10 +244,7 @@ static std::unique_ptr<ExprAST> ParsePrimary() {
   }
 }
 
-/// expression ::= primary
-static std::unique_ptr<ExprAST> ParseExpression() {
-  return ParsePrimary();
-}
+static std::unique_ptr<ExprAST> ParseExpression() { return ParsePrimary(); }
 
 //===----------------------------------------------------------------------===//
 // Interactive Driver Loop
@@ -275,11 +281,9 @@ int main() {
   printf(
       "Type expressions followed by ';' and press Enter (Ctrl+D to exit):\n\n");
 
-  // Prime the first token.
   Prompt();
   getNextToken();
   MainLoop();
-
   return 0;
 }
 ```
@@ -292,20 +296,18 @@ int main() {
 Recompile:
 
 ```bash
-clang++ -Wall -Wextra kaleidoscope.cpp -o kaleidoscope
+clang++ -std=c++17 -fno-rtti -Wall -Wextra kaleidoscope.cpp -o kaleidoscope
 ```
 
-Run the binary:
+Run `./kaleidoscope` and test single parentheses, deeply nested parentheses, and an unclosed `'('`:
 
 ```bash
 ./kaleidoscope
 ```
 
-Type nested parentheses or test missing closing brackets:
-
 ```text
 Kaleidoscope AST Inspector (Step 2.2: Parentheses)
-Type expressions and press Enter (Ctrl+D to exit):
+Type expressions followed by ';' and press Enter (Ctrl+D to exit):
 
 ready> (42);
 Parsed AST: (Number 42)
@@ -316,6 +318,10 @@ Error: expected ')'
 ready>
 ```
 
-The recursive-descent parser correctly unwinds nested grouping and catches missing parentheses.
+Notice how `(((123.45)))` recursively invokes `ParseParenExpr()` three times, unwraps all three pairs of parentheses, and returns `(Number 123.45)`, while `(42;` catches the missing `')'` and recovers right back to `ready> `!
 
-In [Step 2.3](03-variables.md), we will add support for named variable references like `x` and `foo`.
+In [Step 2.3](03-variables.md), you will design `VariableExprAST` yourself and teach the parser to recognise variable names like `x` and `my_variable`.
+
+---
+
+[Previous: Step 2.1 - The Base AST and Numbers](01-first-ast-node.md) | [Section 2 Overview](index.md) | [Next: Step 2.3 - Variables](03-variables.md)

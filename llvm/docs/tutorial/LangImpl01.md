@@ -2,7 +2,6 @@
 orphan: true
 ---
 
-# Kaleidoscope Tutorial
+# Kaleidoscope Tutorial (Section 1: The Lexer)
 
-The Kaleidoscope Tutorial has moved to {doc}`MyFirstLanguageFrontend/index`.
-
+This chapter has moved to {doc}`kaleidoscope/01-lexer/index` in the updated {doc}`kaleidoscope/index` tutorial.

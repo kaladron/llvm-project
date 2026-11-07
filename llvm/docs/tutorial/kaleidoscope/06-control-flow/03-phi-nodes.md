@@ -1,9 +1,8 @@
 # Step 6.3: SSA PHI Nodes
 
-In traditional imperative languages, when two branches compute a result, programmers often write to a mutable variable:
+In C, if two branches compute a result and you want to use it afterwards, you usually mutate a variable declared before the `if`:
 
 ```c
-// C style:
 double result;
 if (cond)
   result = 10.0;
@@ -12,104 +11,88 @@ else
 // use result
 ```
 
-In LLVM Intermediate Representation, values are in **Static Single Assignment (SSA)** form.  In pure SSA form, there are no mutable variables.  Every register is assigned exactly once.  Once `%val1` is produced, its value can never be modified.
+In LLVM IR, however, virtual registers obey **Static Single Assignment (SSA)** form: every `%register` is assigned **exactly once** when it is defined, and can never be overwritten later.  (We will explore mutable stack memory with `alloca` in [Section 9](../09-local-variables/index.md), and you will discover a neat surprise there too!)
 
-How, then, can code in the merge block know whether to use the result from the `then` branch or the `else` branch?
+If registers cannot be reassigned, how can `ifcont:` produce a single register whose value is `%then_val` when execution arrived from `%then`, and `%else_val` when execution arrived from `%else`?
 
 ---
 
-## The PHI Node
+## Enter the PHI Node
 
-LLVM solves this with a special instruction called a **PHI node** (`llvm::PHINode`):
+SSA solves this with a special instruction placed at the very top of a merge block: the **PHI node** (`llvm::PHINode`), named after the Greek letter phi used in compiler literature (written simply as `phi` in LLVM IR):
 
-```mermaid
-flowchart TD
-    Then["Block: %then<br>produces %then_val"] -->|from %then| PHI["PHINode: %iftmp<br>phi double [%then_val, %then], [%else_val, %else]"]
-    Else["Block: %else<br>produces %else_val"] -->|from %else| PHI
-    PHI --> Output["Consumer in %ifcont (or subsequent blocks)"]
+```text
+     +------------------------+         +------------------------+
+     |     Block: %then       |         |     Block: %else       |
+     |  produces %then_val    |         |  produces %else_val    |
+     |  br label %ifcont      |         |  br label %ifcont      |
+     +-----------+------------+         +------------+-----------+
+                 |                                   |
+      came from  |                                   |  came from
+        %then    +-----------------+-----------------+    %else
+                                   |
+                                   v
+     +-----------------------------------------------------------+
+     |  ifcont:                                                  |
+     |    %iftmp = phi double [ %then_val, %then ],              |
+     |                        [ %else_val, %else ]               |
+     +-----------------------------------------------------------+
 ```
 
-> [!NOTE]
-> **Pure SSA Form and PHI Nodes**:
-> Why does LLVM use PHI nodes instead of mutable local variables?  In pure Static Single Assignment (SSA) form, each virtual register is defined exactly once.  This invariant simplifies compiler optimisations such as constant folding, common subexpression elimination, and dead code elimination.  A PHI node resolves value ambiguity at control flow merge points by dynamically selecting a value based on which predecessor block branched into the current block.
+At runtime, the CPU does not actually execute a "magic `phi` instruction".  During machine code generation, LLVM lowers PHI nodes into register moves or stack slots along the incoming edges.  At the IR level, `phi` gives optimisers an explicit, mathematical record of where each possible value comes from, without ever breaking the single-assignment rule.
 
-> [!TIP]
-> **Associating Values with Predecessor Blocks**:
-> Notice the arguments to `PN->addIncoming(Value, PredecessorBlock)`.  Every incoming pair links an evaluated SSA `llvm::Value *` with its corresponding predecessor `llvm::BasicBlock *`.  The basic block passed must be the actual block from which control branched directly into the merge block.
+:::{note}
+**Matching Incoming Blocks Exactly**
 
-In LLVM IR assembly, a PHI node looks like this:
-
-```llvm
-ifcont:
-  %iftmp = phi double [ %then_val, %then ], [ %else_val, %else ]
-```
-
-If the program branched from `%then`, `%iftmp` receives `%then_val`.  If the program branched from `%else`, `%iftmp` receives `%else_val`.
+Every `[ Value, BasicBlock ]` pair on a `phi` instruction must name an **immediate predecessor** block, meaning the exact block whose `br` jumped into `ifcont`.  Remember how in [Step 6.2](02-basic-blocks-branching.md) we wrote `ThenBB = Builder->GetInsertBlock();` and `ElseBB = Builder->GetInsertBlock();`?  Now that payoff arrives: even when `Then` or `Else` contains deeply nested conditionals that add extra basic blocks, `ThenBB` and `ElseBB` point to the exact final blocks that branched to `MergeBB`!
+:::
 
 ---
 
 ## Incremental Code Changes
 
-Open `kaleidoscope.cpp` and replace the stub `IfExprAST::codegen()` with the full implementation:
+Let us upgrade `kaleidoscope.cpp` from [Step 6.2](02-basic-blocks-branching.md).
+
+### 1. Including `llvm/IR/Instructions.h`
+
+`IRBuilder.h` forward-declares `llvm::PHINode`, so to call methods like `PN->addIncoming(...)` on the returned pointer we include `"llvm/IR/Instructions.h"` right after `"llvm/IR/IRBuilder.h"`:
 
 ```cpp
-llvm::Value *IfExprAST::codegen() {
-  llvm::Value *CondV = Cond->codegen();
-  if (!CondV)
-    return nullptr;
+#include "llvm/IR/Function.h"
+#include "llvm/IR/IRBuilder.h"
+#include "llvm/IR/Instructions.h"
+#include "llvm/IR/LLVMContext.h"
+```
 
-  // Convert condition to a boolean by comparing non-equal to 0.0.
-  CondV = Builder->CreateFCmpONE(
-      CondV, llvm::ConstantFP::get(*TheContext, llvm::APFloat(0.0)), "ifcond");
+### 2. Creating the PHI Node in `MergeBB`
 
-  llvm::Function *TheFunction = Builder->GetInsertBlock()->getParent();
+At the end of `IfExprAST::codegen()`, replace the `(void)ThenV; (void)ElseV;` lines and placeholder `0.0` return with `Builder->CreatePHI(...)`:
 
-  // Create blocks for the then and else cases.
-  llvm::BasicBlock *ThenBB =
-      llvm::BasicBlock::Create(*TheContext, "then", TheFunction);
-  llvm::BasicBlock *ElseBB = llvm::BasicBlock::Create(*TheContext, "else");
-  llvm::BasicBlock *MergeBB = llvm::BasicBlock::Create(*TheContext, "ifcont");
-
-  Builder->CreateCondBr(CondV, ThenBB, ElseBB);
-
-  // Emit 'then' block.
-  Builder->SetInsertPoint(ThenBB);
-  llvm::Value *ThenV = Then->codegen();
-  if (!ThenV)
-    return nullptr;
-
-  Builder->CreateBr(MergeBB);
-  ThenBB = Builder->GetInsertBlock();
-
-  // Emit 'else' block.
-  TheFunction->insert(TheFunction->end(), ElseBB);
-  Builder->SetInsertPoint(ElseBB);
-
-  llvm::Value *ElseV = Else->codegen();
-  if (!ElseV)
-    return nullptr;
-
-  Builder->CreateBr(MergeBB);
-  ElseBB = Builder->GetInsertBlock();
-
-  // Emit 'merge' block.
+```cpp
+  // Emit 'ifcont' merge block with SSA PHI node.
   TheFunction->insert(TheFunction->end(), MergeBB);
   Builder->SetInsertPoint(MergeBB);
-
   llvm::PHINode *PN =
       Builder->CreatePHI(llvm::Type::getDoubleTy(*TheContext), 2, "iftmp");
-
   PN->addIncoming(ThenV, ThenBB);
-  PN->addIncoming(ElseV, ElseBB);
-  return PN;
-}
+  // Add the incoming value/block pair for the 'else' branch, then return PN!
+```
+
+Here, `2` is a capacity hint telling LLVM we expect two incoming edges, and `"iftmp"` names the merged SSA register.
+
+**Stretch**: Add the second incoming edge on `PN` for the `'else'` path (`ElseV` arriving from `ElseBB`), and return `PN` from `IfExprAST::codegen()`!
+
+Finally, update the banner string in `main()`:
+
+```cpp
+  printf("Kaleidoscope JIT REPL (Step 6.3: SSA PHI Nodes)\n");
 ```
 
 ---
 
 ## Verifying Your Code
 
-Before compiling, verify your `kaleidoscope.cpp` against the reference file.
+Compare your `kaleidoscope.cpp` against the complete reference implementation:
 
 <details>
 <summary>Click here to compare against the reference kaleidoscope.cpp</summary>
@@ -126,18 +109,11 @@ Before compiling, verify your `kaleidoscope.cpp` against the reference file.
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
-#include "llvm/IR/PassManager.h"
 #include "llvm/IR/Type.h"
 #include "llvm/IR/Verifier.h"
-#include "llvm/Passes/PassBuilder.h"
-#include "llvm/Passes/StandardInstrumentations.h"
 #include "llvm/Support/TargetSelect.h"
-#include "llvm/Target/TargetMachine.h"
-#include "llvm/Transforms/InstCombine/InstCombine.h"
-#include "llvm/Transforms/Scalar.h"
-#include "llvm/Transforms/Scalar/GVN.h"
-#include "llvm/Transforms/Scalar/Reassociate.h"
-#include "llvm/Transforms/Scalar/SimplifyCFG.h"
+#include "llvm/Support/raw_ostream.h"
+
 #include <cctype>
 #include <cstdio>
 #include <cstdlib>
@@ -146,6 +122,10 @@ Before compiling, verify your `kaleidoscope.cpp` against the reference file.
 #include <string>
 #include <utility>
 #include <vector>
+
+//===----------------------------------------------------------------------===//
+// Lexer
+//===----------------------------------------------------------------------===//
 
 enum Token {
   tok_eof = -1,
@@ -162,8 +142,8 @@ enum Token {
   tok_number = -201,
 };
 
-static std::string IdentifierStr;
-static double NumVal;
+static std::string IdentifierStr; // Filled in if tok_identifier
+static double NumVal;             // Filled in if tok_number
 
 static int gettok() {
   static int LastChar = ' ';
@@ -171,6 +151,7 @@ static int gettok() {
   while (isspace(LastChar))
     LastChar = getchar();
 
+  // Recognise identifiers and keywords: [a-zA-Z_][a-zA-Z0-9_]*
   if (isalpha(LastChar) || LastChar == '_') {
     IdentifierStr = LastChar;
     while (isalnum((LastChar = getchar())) || LastChar == '_')
@@ -189,6 +170,7 @@ static int gettok() {
     return tok_identifier;
   }
 
+  // Recognise numeric literals: [0-9.]+
   if (isdigit(LastChar) || LastChar == '.') {
     std::string NumStr;
     do {
@@ -200,6 +182,7 @@ static int gettok() {
     return tok_number;
   }
 
+  // Recognise comments: '#' through end of line.
   if (LastChar == '#') {
     do
       LastChar = getchar();
@@ -216,6 +199,10 @@ static int gettok() {
   LastChar = getchar();
   return ThisChar;
 }
+
+//===----------------------------------------------------------------------===//
+// Abstract Syntax Tree (AST)
+//===----------------------------------------------------------------------===//
 
 class ExprAST {
 public:
@@ -236,6 +223,7 @@ class VariableExprAST : public ExprAST {
 
 public:
   explicit VariableExprAST(std::string Name) : Name(std::move(Name)) {}
+  const std::string &getName() const { return Name; }
   llvm::Value *codegen() override;
 };
 
@@ -267,7 +255,6 @@ public:
   IfExprAST(std::unique_ptr<ExprAST> Cond, std::unique_ptr<ExprAST> Then,
             std::unique_ptr<ExprAST> Else)
       : Cond(std::move(Cond)), Then(std::move(Then)), Else(std::move(Else)) {}
-
   llvm::Value *codegen() override;
 };
 
@@ -276,10 +263,11 @@ class PrototypeAST {
   std::vector<std::string> Args;
 
 public:
-  PrototypeAST(const std::string &Name, std::vector<std::string> Args)
-      : Name(Name), Args(std::move(Args)) {}
-  llvm::Function *codegen();
+  PrototypeAST(std::string Name, std::vector<std::string> Args)
+      : Name(std::move(Name)), Args(std::move(Args)) {}
+
   const std::string &getName() const { return Name; }
+  llvm::Function *codegen();
 };
 
 class FunctionAST {
@@ -290,8 +278,13 @@ public:
   FunctionAST(std::unique_ptr<PrototypeAST> Proto,
               std::unique_ptr<ExprAST> Body)
       : Proto(std::move(Proto)), Body(std::move(Body)) {}
+
   llvm::Function *codegen();
 };
+
+//===----------------------------------------------------------------------===//
+// Parser
+//===----------------------------------------------------------------------===//
 
 static int CurTok;
 static int getNextToken() { return CurTok = gettok(); }
@@ -302,7 +295,7 @@ static int GetTokPrecedence() {
   if (!isascii(CurTok))
     return -1;
 
-  int TokPrec = BinopPrecedence[CurTok];
+  int TokPrec = BinopPrecedence[static_cast<char>(CurTok)];
   if (TokPrec <= 0)
     return -1;
   return TokPrec;
@@ -318,39 +311,36 @@ static llvm::Value *LogErrorV(const char *Str) {
   return nullptr;
 }
 
-static std::unique_ptr<PrototypeAST> LogErrorP(const char *Str) {
-  LogError(Str);
-  return nullptr;
-}
-
 static std::unique_ptr<ExprAST> ParseExpression();
 
 static std::unique_ptr<ExprAST> ParseNumberExpr() {
   auto Result = std::make_unique<NumberExprAST>(NumVal);
-  getNextToken();
+  getNextToken(); // consume the number
   return Result;
 }
 
 static std::unique_ptr<ExprAST> ParseParenExpr() {
-  getNextToken();
+  getNextToken(); // eat '('
   auto V = ParseExpression();
   if (!V)
     return nullptr;
 
   if (CurTok != ')')
     return LogError("expected ')'");
-  getNextToken();
+  getNextToken(); // eat ')'
   return V;
 }
 
 static std::unique_ptr<ExprAST> ParseIdentifierExpr() {
   std::string IdName = IdentifierStr;
-  getNextToken();
+  getNextToken(); // eat identifier
 
+  // Simple variable reference.
   if (CurTok != '(')
-    return std::make_unique<VariableExprAST>(IdName);
+    return std::make_unique<VariableExprAST>(std::move(IdName));
 
-  getNextToken();
+  // Function call.
+  getNextToken(); // eat '('
   std::vector<std::unique_ptr<ExprAST>> Args;
   if (CurTok != ')') {
     while (true) {
@@ -364,16 +354,16 @@ static std::unique_ptr<ExprAST> ParseIdentifierExpr() {
 
       if (CurTok != ',')
         return LogError("expected ')' or ',' in argument list");
-      getNextToken();
+      getNextToken(); // eat ','
     }
   }
 
-  getNextToken();
-  return std::make_unique<CallExprAST>(IdName, std::move(Args));
+  getNextToken(); // eat ')'
+  return std::make_unique<CallExprAST>(std::move(IdName), std::move(Args));
 }
 
 static std::unique_ptr<ExprAST> ParseIfExpr() {
-  getNextToken();
+  getNextToken(); // eat 'if'
 
   auto Cond = ParseExpression();
   if (!Cond)
@@ -381,7 +371,7 @@ static std::unique_ptr<ExprAST> ParseIfExpr() {
 
   if (CurTok != tok_then)
     return LogError("expected 'then'");
-  getNextToken();
+  getNextToken(); // eat 'then'
 
   auto Then = ParseExpression();
   if (!Then)
@@ -389,7 +379,7 @@ static std::unique_ptr<ExprAST> ParseIfExpr() {
 
   if (CurTok != tok_else)
     return LogError("expected 'else'");
-  getNextToken();
+  getNextToken(); // eat 'else'
 
   auto Else = ParseExpression();
   if (!Else)
@@ -414,6 +404,7 @@ static std::unique_ptr<ExprAST> ParsePrimary() {
   }
 }
 
+/// binoprhs ::= (binop primary)*
 static std::unique_ptr<ExprAST> ParseBinOpRHS(int ExprPrec,
                                               std::unique_ptr<ExprAST> LHS) {
   while (true) {
@@ -423,7 +414,7 @@ static std::unique_ptr<ExprAST> ParseBinOpRHS(int ExprPrec,
       return LHS;
 
     int BinOp = CurTok;
-    getNextToken();
+    getNextToken(); // eat binary operator
 
     auto RHS = ParsePrimary();
     if (!RHS)
@@ -436,8 +427,8 @@ static std::unique_ptr<ExprAST> ParseBinOpRHS(int ExprPrec,
         return nullptr;
     }
 
-    LHS = std::make_unique<BinaryExprAST>(BinOp, std::move(LHS),
-                                          std::move(RHS));
+    LHS = std::make_unique<BinaryExprAST>(static_cast<char>(BinOp),
+                                          std::move(LHS), std::move(RHS));
   }
 }
 
@@ -447,6 +438,11 @@ static std::unique_ptr<ExprAST> ParseExpression() {
     return nullptr;
 
   return ParseBinOpRHS(0, std::move(LHS));
+}
+
+static std::unique_ptr<PrototypeAST> LogErrorP(const char *Str) {
+  LogError(Str);
+  return nullptr;
 }
 
 static std::unique_ptr<PrototypeAST> ParsePrototype() {
@@ -462,15 +458,16 @@ static std::unique_ptr<PrototypeAST> ParsePrototype() {
   std::vector<std::string> ArgNames;
   while (getNextToken() == tok_identifier)
     ArgNames.push_back(IdentifierStr);
+
   if (CurTok != ')')
     return LogErrorP("expected ')' in prototype");
 
-  getNextToken();
-  return std::make_unique<PrototypeAST>(FnName, std::move(ArgNames));
+  getNextToken(); // eat ')'
+  return std::make_unique<PrototypeAST>(std::move(FnName), std::move(ArgNames));
 }
 
 static std::unique_ptr<FunctionAST> ParseDefinition() {
-  getNextToken();
+  getNextToken(); // eat 'def'
   auto Proto = ParsePrototype();
   if (!Proto)
     return nullptr;
@@ -490,9 +487,13 @@ static std::unique_ptr<FunctionAST> ParseTopLevelExpr() {
 }
 
 static std::unique_ptr<PrototypeAST> ParseExtern() {
-  getNextToken();
+  getNextToken(); // eat 'extern'
   return ParsePrototype();
 }
+
+//===----------------------------------------------------------------------===//
+// Code Generation
+//===----------------------------------------------------------------------===//
 
 static std::unique_ptr<llvm::LLVMContext> TheContext;
 static std::unique_ptr<llvm::Module> TheModule;
@@ -500,14 +501,8 @@ static std::unique_ptr<llvm::IRBuilder<>> Builder;
 static std::map<std::string, llvm::Value *> NamedValues;
 static std::unique_ptr<llvm::orc::KaleidoscopeJIT> TheJIT;
 static std::map<std::string, std::unique_ptr<PrototypeAST>> FunctionProtos;
+static std::map<std::string, llvm::orc::ResourceTrackerSP> FunctionRTs;
 static llvm::ExitOnError ExitOnErr;
-
-static void InitializeModuleAndManagers() {
-  TheContext = std::make_unique<llvm::LLVMContext>();
-  TheModule = std::make_unique<llvm::Module>("KaleidoscopeJIT", *TheContext);
-  TheModule->setDataLayout(TheJIT->getDataLayout());
-  Builder = std::make_unique<llvm::IRBuilder<>>(*TheContext);
-}
 
 static llvm::Function *getFunction(std::string Name) {
   if (auto *F = TheModule->getFunction(Name))
@@ -518,6 +513,13 @@ static llvm::Function *getFunction(std::string Name) {
     return FI->second->codegen();
 
   return nullptr;
+}
+
+static void InitializeModuleAndManagers() {
+  TheContext = std::make_unique<llvm::LLVMContext>();
+  TheModule = std::make_unique<llvm::Module>("KaleidoscopeJIT", *TheContext);
+  TheModule->setDataLayout(TheJIT->getDataLayout());
+  Builder = std::make_unique<llvm::IRBuilder<>>(*TheContext);
 }
 
 llvm::Value *NumberExprAST::codegen() {
@@ -561,7 +563,7 @@ llvm::Value *CallExprAST::codegen() {
     return LogErrorV("unknown function referenced");
 
   if (CalleeF->arg_size() != Args.size())
-    return LogErrorV("incorrect number of arguments passed");
+    return LogErrorV("incorrect # arguments passed");
 
   std::vector<llvm::Value *> ArgsV;
   for (unsigned i = 0, e = Args.size(); i != e; ++i) {
@@ -590,30 +592,28 @@ llvm::Value *IfExprAST::codegen() {
 
   Builder->CreateCondBr(CondV, ThenBB, ElseBB);
 
+  // Emit 'then' block.
   Builder->SetInsertPoint(ThenBB);
   llvm::Value *ThenV = Then->codegen();
   if (!ThenV)
     return nullptr;
-
   Builder->CreateBr(MergeBB);
   ThenBB = Builder->GetInsertBlock();
 
+  // Emit 'else' block.
   TheFunction->insert(TheFunction->end(), ElseBB);
   Builder->SetInsertPoint(ElseBB);
-
   llvm::Value *ElseV = Else->codegen();
   if (!ElseV)
     return nullptr;
-
   Builder->CreateBr(MergeBB);
   ElseBB = Builder->GetInsertBlock();
 
+  // Emit 'ifcont' merge block with SSA PHI node.
   TheFunction->insert(TheFunction->end(), MergeBB);
   Builder->SetInsertPoint(MergeBB);
-
   llvm::PHINode *PN =
       Builder->CreatePHI(llvm::Type::getDoubleTy(*TheContext), 2, "iftmp");
-
   PN->addIncoming(ThenV, ThenBB);
   PN->addIncoming(ElseV, ElseBB);
   return PN;
@@ -622,11 +622,10 @@ llvm::Value *IfExprAST::codegen() {
 llvm::Function *PrototypeAST::codegen() {
   std::vector<llvm::Type *> Doubles(Args.size(),
                                     llvm::Type::getDoubleTy(*TheContext));
-  llvm::FunctionType *FT = llvm::FunctionType::get(
-      llvm::Type::getDoubleTy(*TheContext), Doubles, false);
-
-  llvm::Function *F = llvm::Function::Create(
-      FT, llvm::Function::ExternalLinkage, Name, TheModule.get());
+  auto *FT = llvm::FunctionType::get(llvm::Type::getDoubleTy(*TheContext),
+                                     Doubles, false);
+  auto *F = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, Name,
+                                   TheModule.get());
 
   unsigned Idx = 0;
   for (auto &Arg : F->args())
@@ -642,8 +641,7 @@ llvm::Function *FunctionAST::codegen() {
   if (!TheFunction)
     return nullptr;
 
-  llvm::BasicBlock *BB =
-      llvm::BasicBlock::Create(*TheContext, "entry", TheFunction);
+  auto *BB = llvm::BasicBlock::Create(*TheContext, "entry", TheFunction);
   Builder->SetInsertPoint(BB);
 
   NamedValues.clear();
@@ -652,7 +650,10 @@ llvm::Function *FunctionAST::codegen() {
 
   if (llvm::Value *RetVal = Body->codegen()) {
     Builder->CreateRet(RetVal);
-    llvm::verifyFunction(*TheFunction);
+    if (llvm::verifyFunction(*TheFunction, &llvm::errs())) {
+      TheFunction->eraseFromParent();
+      return nullptr;
+    }
     return TheFunction;
   }
 
@@ -660,18 +661,33 @@ llvm::Function *FunctionAST::codegen() {
   return nullptr;
 }
 
+//===----------------------------------------------------------------------===//
+// Interactive Driver Loop
+//===----------------------------------------------------------------------===//
+
 static void HandleDefinition() {
   if (auto FnAST = ParseDefinition()) {
     if (auto *FnIR = FnAST->codegen()) {
+      std::string FnName = std::string(FnIR->getName());
       fprintf(stderr, "Read function definition:\n");
       FnIR->print(llvm::errs());
       fprintf(stderr, "\n");
-      ExitOnErr(TheJIT->addModule(llvm::orc::ThreadSafeModule(
-          std::move(TheModule), std::move(TheContext))));
+
+      // If redefining an existing JIT function, remove its previous code first.
+      if (auto It = FunctionRTs.find(FnName); It != FunctionRTs.end()) {
+        ExitOnErr(It->second->remove());
+        FunctionRTs.erase(It);
+      }
+
+      auto RT = TheJIT->getMainJITDylib().createResourceTracker();
+      ExitOnErr(
+          TheJIT->addModule(llvm::orc::ThreadSafeModule(std::move(TheModule),
+                                                        std::move(TheContext)),
+                            RT));
+      FunctionRTs[FnName] = std::move(RT);
       InitializeModuleAndManagers();
     }
   } else {
-    // Skip token for error recovery.
     while (CurTok != ';' && CurTok != tok_eof)
       getNextToken();
   }
@@ -686,7 +702,6 @@ static void HandleExtern() {
       FunctionProtos[ProtoAST->getName()] = std::move(ProtoAST);
     }
   } else {
-    // Skip token for error recovery.
     while (CurTok != ';' && CurTok != tok_eof)
       getNextToken();
   }
@@ -702,15 +717,17 @@ static void HandleTopLevelExpression() {
       ExitOnErr(TheJIT->addModule(std::move(TSM), RT));
       InitializeModuleAndManagers();
 
-      auto ExprSymbol = ExitOnErr(TheJIT->lookup("__anon_expr"));
-
-      double (*FP)() = ExprSymbol.toPtr<double (*)()>();
-      fprintf(stderr, "Evaluated to %f\n", FP());
+      if (auto ExprSymbol = TheJIT->lookup("__anon_expr")) {
+        double (*FP)() = ExprSymbol->getAddress().toPtr<double (*)()>();
+        fprintf(stderr, "Evaluated to %f\n", FP());
+      } else {
+        llvm::logAllUnhandledErrors(ExprSymbol.takeError(), llvm::errs(),
+                                    "JIT Error: ");
+      }
 
       ExitOnErr(RT->remove());
     }
   } else {
-    // Skip token for error recovery.
     while (CurTok != ';' && CurTok != tok_eof)
       getNextToken();
   }
@@ -754,11 +771,13 @@ int main() {
   TheJIT = ExitOnErr(llvm::orc::KaleidoscopeJIT::Create());
   InitializeModuleAndManagers();
 
-  // Prime the first token.
+  printf("Kaleidoscope JIT REPL (Step 6.3: SSA PHI Nodes)\n");
+  printf("Type definitions, externs, or expressions followed by ';' (Ctrl+D to "
+         "exit):\n\n");
+
   Prompt();
   getNextToken();
   MainLoop();
-
   return 0;
 }
 ```
@@ -768,15 +787,18 @@ int main() {
 
 ## Compiling and Running
 
-Compile your compiler:
+Compile `kaleidoscope.cpp`:
 
 ```bash
-clang++ -rdynamic -Iinclude -Wall -Wextra kaleidoscope.cpp $(llvm-config --cxxflags --ldflags --system-libs --libs core orcjit native) -o kaleidoscope
+clang++ -std=c++17 -fno-rtti -Wall -Wextra -Iinclude kaleidoscope.cpp $(llvm-config --cxxflags --ldflags --system-libs --libs core orcjit native) -isystem $(llvm-config --includedir) -o kaleidoscope
 ```
 
-Launch `./kaleidoscope` and inspect the generated IR for a conditional function:
+Launch `./kaleidoscope`, define a `choose` function, inspect the emitted `phi` instruction, and test both branches in the JIT:
 
 ```text
+Kaleidoscope JIT REPL (Step 6.3: SSA PHI Nodes)
+Type definitions, externs, or expressions followed by ';' (Ctrl+D to exit):
+
 ready> def choose(c x y) if c then x else y;
 Read function definition:
 define double @choose(double %c, double %x, double %y) {
@@ -794,8 +816,17 @@ ifcont:                                           ; preds = %else, %then
   %iftmp = phi double [ %x, %then ], [ %y, %else ]
   ret double %iftmp
 }
+
+ready> choose(1, 10, 20);
+Evaluated to 10.000000
+ready> choose(0, 10, 20);
+Evaluated to 20.000000
 ```
 
-Notice how clean the emitted IR is.  The PHI node seamlessly merges the two paths into a single unified SSA value.
+Look at `%iftmp = phi double [ %x, %then ], [ %y, %else ]` inside `ifcont:`.  Both branches now merge cleanly into a single SSA register, and your ORCv2 JIT executes real conditional machine code!
 
-In [Step 6.4](04-fibonacci-jit.md), we will execute recursive control flow in your interactive JIT REPL.
+In [Step 6.4](04-fibonacci-jit.md), we will combine conditional control flow with recursion to run Fibonacci in the JIT.
+
+---
+
+[Previous: Basic Blocks and Branching](02-basic-blocks-branching.md) | [Section Overview](index.md) | [Next: Recursive Fibonacci in the JIT](04-fibonacci-jit.md)

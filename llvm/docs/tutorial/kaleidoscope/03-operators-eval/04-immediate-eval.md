@@ -1,35 +1,35 @@
 # Step 3.4: Immediate Evaluation and Milestone 1 Review
 
-In this step, we add direct mathematical evaluation to our AST, turning our parser into an interactive calculator in pure C++.
+In [Step 3.3](03-precedence-climbing.md), our parser assembled mathematically accurate syntax trees.  Now let us cash in that tree structure right away by adding a `double eval() const` method to `ExprAST`, turning Kaleidoscope into an interactive calculator in pure C++.
 
 ---
 
-## Evaluating the AST
+## Tree-Walking Evaluation
 
-An Abstract Syntax Tree is not just for printing; it can be evaluated directly.  In compiler engineering, executing code by traversing an AST is called a **tree-walking interpreter**.
+Executing a program by recursively calling a method on each AST node is called a **tree-walking interpreter**.  Values flow **bottom-up** from the leaves to the root:
 
-Evaluation happens bottom-up:
-
-```mermaid
-flowchart TD
-    Plus["(+) -> 7.0"]
-    Plus --> One["(1.0) -> 1.0"]
-    Plus --> Mult["(*) -> 6.0"]
-    Mult --> Two["(2.0) -> 2.0"]
-    Mult --> Three["(3.0) -> 3.0"]
+```text
+                (+)  ======> returns 14.0
+               /   \
+              /     \
+    (Number 4)       (*)  ==> returns 10.0
+     returns 4.0    /   \
+                   /     \
+         (Number 5)       (Number 2)
+          returns 5.0      returns 2.0
 ```
 
-Leaves (such as `1.0`, `2.0`, and `3.0`) evaluate immediately to their literal numeric values.  Internal nodes (like `*` and `+`) recursively evaluate their children and apply the arithmetic operator.
+Leaf `NumberExprAST` nodes simply return their stored `double`, while each `BinaryExprAST` recursively evaluates its left and right children and applies its operator.
 
 ---
 
 ## Incremental Code Changes
 
-Open `kaleidoscope.cpp`.  You will add an `eval()` method to your AST class hierarchy and update your driver loop.
+Open `kaleidoscope.cpp` and apply three updates on top of [Step 3.3](03-precedence-climbing.md).
 
-### 1. Adding eval() to ExprAST
+### 1. Add Pure Virtual `eval()` to `ExprAST`
 
-In the AST section, add a pure virtual `eval()` method to `ExprAST`:
+Add `virtual double eval() const = 0;` right below `print()` on `ExprAST`:
 
 ```cpp
 class ExprAST {
@@ -40,24 +40,27 @@ public:
 };
 ```
 
-### 2. Implementing eval() on AST Nodes
+### 2. Implement `eval()` Across the Four AST Classes (With a Guided Stretch!)
 
-Add `eval()` implementations to each concrete AST class:
+Add `eval()` overrides to each concrete AST subclass:
 
-* In `NumberExprAST`, `eval()` simply returns its stored value:
+1.  **`NumberExprAST`**: Return `Val` directly:
 ```cpp
   double eval() const override { return Val; }
 ```
 
-* In `VariableExprAST` and `CallExprAST`, runtime values require symbol tables and machine code generation (which we will introduce with LLVM in Sections 4 and 5).  For now, return `0.0`:
+2.  **`VariableExprAST`**: Variables need function parameter scopes, which arrive in Section 4.  Print a clear diagnostic naming the variable and return `0.0`:
 ```cpp
   double eval() const override {
-    fprintf(stderr, "Error: variables require LLVM compilation\n");
+    fprintf(stderr,
+            "Error: variables require function scopes (coming in Section 4): "
+            "%s\n",
+            Name.c_str());
     return 0.0;
   }
 ```
 
-* In `BinaryExprAST`, implement the recursive evaluation switch:
+3.  **`BinaryExprAST` (Your Stretch!)**: Here is the `eval()` method with `'+'` and `'-'` filled in:
 ```cpp
   double eval() const override {
     double Left = LHS->eval();
@@ -67,16 +70,7 @@ Add `eval()` implementations to each concrete AST class:
       return Left + Right;
     case '-':
       return Left - Right;
-    case '*':
-      return Left * Right;
-    case '/':
-      if (Right == 0.0) {
-        fprintf(stderr, "Warning: division by zero!\n");
-        return 0.0;
-      }
-      return Left / Right;
-    case '<':
-      return Left < Right ? 1.0 : 0.0;
+    // Your stretch: implement '*', '/', and '<' (returning 1.0 or 0.0)!
     default:
       fprintf(stderr, "Error: unknown binary operator: %c\n", Op);
       return 0.0;
@@ -84,9 +78,30 @@ Add `eval()` implementations to each concrete AST class:
   }
 ```
 
-### 3. Updating the REPL Driver
+**Your Stretch**: Fill in the three remaining `case` arms inside `BinaryExprAST::eval()`:
+* `case '*':` returns `Left * Right;`.
+* `case '/':` returns `Left / Right; // Follows IEEE-754 floating-point semantics (inf/nan)`.
+* `case '<':` returns `Left < Right ? 1.0 : 0.0;` (since Kaleidoscope represents booleans as `1.0` for true and `0.0` for false!).
 
-In `MainLoop()`, print the evaluated result immediately after the AST:
+:::{note}
+**IEEE-754 Floating-Point Division by Zero**:
+Why do we not need a special `if (Right == 0.0)` guard before `Left / Right`?  Unlike C++ *integer* division by zero (which is undefined behaviour and traps with `SIGFPE` on x86-64), IEEE-754 `double` division by zero is completely well-defined in hardware: `1.0 / 0.0` evaluates to `+inf`, `-1.0 / 0.0` evaluates to `-inf`, and `0.0 / 0.0` evaluates to `nan`!  Best of all, LLVM's `fdiv` instruction in Section 4 and our JIT in Section 5 follow these exact same IEEE-754 rules.
+:::
+
+4.  **`CallExprAST`**: Function calls will be compiled to LLVM IR in Section 4 and executed by our JIT in Section 5.  Print a helpful message naming `Callee` and return `0.0`:
+```cpp
+  double eval() const override {
+    fprintf(stderr,
+            "Error: function calls will be compiled by LLVM in Section 4/5: "
+            "%s\n",
+            Callee.c_str());
+    return 0.0;
+  }
+```
+
+### 3. Print Evaluated Results in `MainLoop()` and Update `main()`
+
+Inside `MainLoop()`, add one line right after printing the AST so both the tree and its computed value appear together:
 
 ```cpp
       if (auto AST = ParseExpression()) {
@@ -95,15 +110,23 @@ In `MainLoop()`, print the evaluated result immediately after the AST:
         std::cout << "\n";
         std::cout << "Evaluated:  " << AST->eval() << "\n";
       } else {
-        getNextToken();
+        // Skip tokens for error recovery until the next semicolon.
+        while (CurTok != ';' && CurTok != tok_eof)
+          getNextToken();
       }
+```
+
+And update the first `printf` line in `main()`:
+
+```cpp
+  printf("Kaleidoscope Interactive Calculator (Step 3.4)\n");
 ```
 
 ---
 
 ## Verifying Your Code
 
-Before compiling, check that your `kaleidoscope.cpp` has all additions in place.
+Compare your `kaleidoscope.cpp` against the complete Milestone 1 reference file:
 
 <details>
 <summary>Click here to compare against the reference kaleidoscope.cpp</summary>
@@ -135,8 +158,8 @@ enum Token {
   tok_number = -201,
 };
 
-static std::string IdentifierStr;
-static double NumVal;
+static std::string IdentifierStr; // Filled in if tok_identifier
+static double NumVal;             // Filled in if tok_number
 
 static int gettok() {
   static int LastChar = ' ';
@@ -144,6 +167,7 @@ static int gettok() {
   while (isspace(LastChar))
     LastChar = getchar();
 
+  // Recognise identifiers and keywords: [a-zA-Z_][a-zA-Z0-9_]*
   if (isalpha(LastChar) || LastChar == '_') {
     IdentifierStr = LastChar;
     while (isalnum((LastChar = getchar())) || LastChar == '_')
@@ -156,6 +180,7 @@ static int gettok() {
     return tok_identifier;
   }
 
+  // Recognise numeric literals: [0-9.]+
   if (isdigit(LastChar) || LastChar == '.') {
     std::string NumStr;
     do {
@@ -167,6 +192,7 @@ static int gettok() {
     return tok_number;
   }
 
+  // Recognise comments: '#' through end of line.
   if (LastChar == '#') {
     do
       LastChar = getchar();
@@ -201,7 +227,9 @@ class NumberExprAST : public ExprAST {
 public:
   explicit NumberExprAST(double Val) : Val(Val) {}
 
-  void print(std::ostream &OS) const override { OS << Val; }
+  void print(std::ostream &OS) const override {
+    OS << "(Number " << Val << ")";
+  }
 
   double eval() const override { return Val; }
 };
@@ -212,10 +240,12 @@ class VariableExprAST : public ExprAST {
 public:
   explicit VariableExprAST(std::string Name) : Name(std::move(Name)) {}
 
-  void print(std::ostream &OS) const override { OS << Name; }
+  void print(std::ostream &OS) const override { OS << "(Var " << Name << ")"; }
 
   double eval() const override {
-    fprintf(stderr, "Error: variables require LLVM compilation: %s\n",
+    fprintf(stderr,
+            "Error: variables require function scopes (coming in Section 4): "
+            "%s\n",
             Name.c_str());
     return 0.0;
   }
@@ -249,11 +279,8 @@ public:
     case '*':
       return Left * Right;
     case '/':
-      if (Right == 0.0) {
-        fprintf(stderr, "Warning: division by zero!\n");
-        return 0.0;
-      }
-      return Left / Right;
+      return Left /
+             Right; // Follows IEEE-754 floating-point semantics (inf/nan)
     case '<':
       return Left < Right ? 1.0 : 0.0;
     default:
@@ -272,7 +299,7 @@ public:
       : Callee(std::move(Callee)), Args(std::move(Args)) {}
 
   void print(std::ostream &OS) const override {
-    OS << "(" << Callee;
+    OS << "(Call " << Callee;
     for (const auto &Arg : Args) {
       OS << " ";
       Arg->print(OS);
@@ -281,7 +308,10 @@ public:
   }
 
   double eval() const override {
-    fprintf(stderr, "Error: function calls require LLVM JIT compilation\n");
+    fprintf(stderr,
+            "Error: function calls will be compiled by LLVM in Section 4/5: "
+            "%s\n",
+            Callee.c_str());
     return 0.0;
   }
 };
@@ -314,7 +344,7 @@ static std::unique_ptr<ExprAST> ParseExpression();
 
 static std::unique_ptr<ExprAST> ParseNumberExpr() {
   auto Result = std::make_unique<NumberExprAST>(NumVal);
-  getNextToken();
+  getNextToken(); // consume the number
   return Result;
 }
 
@@ -334,9 +364,11 @@ static std::unique_ptr<ExprAST> ParseIdentifierExpr() {
   std::string IdName = IdentifierStr;
   getNextToken(); // eat identifier
 
+  // Simple variable reference.
   if (CurTok != '(')
-    return std::make_unique<VariableExprAST>(IdName);
+    return std::make_unique<VariableExprAST>(std::move(IdName));
 
+  // Function call.
   getNextToken(); // eat '('
   std::vector<std::unique_ptr<ExprAST>> Args;
   if (CurTok != ')') {
@@ -356,7 +388,7 @@ static std::unique_ptr<ExprAST> ParseIdentifierExpr() {
   }
 
   getNextToken(); // eat ')'
-  return std::make_unique<CallExprAST>(IdName, std::move(Args));
+  return std::make_unique<CallExprAST>(std::move(IdName), std::move(Args));
 }
 
 static std::unique_ptr<ExprAST> ParsePrimary() {
@@ -372,6 +404,7 @@ static std::unique_ptr<ExprAST> ParsePrimary() {
   }
 }
 
+/// binoprhs ::= (binop primary)*
 static std::unique_ptr<ExprAST> ParseBinOpRHS(int ExprPrec,
                                               std::unique_ptr<ExprAST> LHS) {
   while (true) {
@@ -381,7 +414,7 @@ static std::unique_ptr<ExprAST> ParseBinOpRHS(int ExprPrec,
       return LHS;
 
     int BinOp = CurTok;
-    getNextToken();
+    getNextToken(); // eat binary operator
 
     auto RHS = ParsePrimary();
     if (!RHS)
@@ -445,14 +478,13 @@ int main() {
   BinopPrecedence['*'] = 40;
   BinopPrecedence['/'] = 40;
 
-  printf("Kaleidoscope Calculator (Step 3.4: Immediate Evaluation)\n");
-  printf("Type math expressions followed by ';' and press Enter (Ctrl+D to exit):\n\n");
+  printf("Kaleidoscope Interactive Calculator (Step 3.4)\n");
+  printf("Type math expressions followed by ';' and press Enter (Ctrl+D to "
+         "exit):\n\n");
 
-  // Prime the first token.
   Prompt();
   getNextToken();
   MainLoop();
-
   return 0;
 }
 ```
@@ -465,51 +497,51 @@ int main() {
 Recompile:
 
 ```bash
-clang++ -Wall -Wextra kaleidoscope.cpp -o kaleidoscope
+clang++ -std=c++17 -fno-rtti -Wall -Wextra kaleidoscope.cpp -o kaleidoscope
 ```
 
-Run the binary:
+Run `./kaleidoscope` and put your calculator through its paces, including `<` comparisons and `1 / 0`:
 
 ```bash
 ./kaleidoscope
 ```
 
-Type complex mathematical expressions:
-
 ```text
-Kaleidoscope Calculator (Step 3.4: Immediate Evaluation)
+Kaleidoscope Interactive Calculator (Step 3.4)
 Type math expressions followed by ';' and press Enter (Ctrl+D to exit):
 
 ready> 4 + 5 * 2;
-Parsed AST: (+ 4 (* 5 2))
+Parsed AST: (+ (Number 4) (* (Number 5) (Number 2)))
 Evaluated:  14
 ready> (4 + 5) * 2;
-Parsed AST: (* (+ 4 5) 2)
+Parsed AST: (* (+ (Number 4) (Number 5)) (Number 2))
 Evaluated:  18
 ready> 10 / 2 - 3;
-Parsed AST: (- (/ 10 2) 3)
+Parsed AST: (- (/ (Number 10) (Number 2)) (Number 3))
 Evaluated:  2
 ready> 3 < 5;
-Parsed AST: (< 3 5)
+Parsed AST: (< (Number 3) (Number 5))
 Evaluated:  1
+ready> 1 / 0;
+Parsed AST: (/ (Number 1) (Number 0))
+Evaluated:  inf
+ready>
 ```
 
 ---
 
-## Milestone 1 Retrospective: A Pure C++ Compiler Frontend
+## Milestone 1 Retrospective: A Complete Pure-C++ Frontend
 
-Congratulations!  You have reached **Milestone 1**.
+Congratulations!  You have completed **Milestone 1** in roughly 350 lines of clean, dependency-free C++:
+1.  **Lexer ([Section 1](../01-lexer/index.md))**: Scans raw characters into tokens while discarding whitespace and `#` comments.
+2.  **AST ([Section 2](../02-parser-ast/index.md))**: Owns expression trees safely via `std::unique_ptr<ExprAST>`.
+3.  **Parser ([Section 2](../02-parser-ast/index.md) and [Section 3](index.md))**: Combines recursive descent for primary atoms with table-driven precedence climbing for binary operators.
+4.  **Tree-Walking Evaluator**: Computes arithmetic and comparisons directly on the AST.
 
-In just three sections, you built a complete, working compiler frontend from scratch:
-1.  **Lexer**: Converts raw characters into typed tokens, buffering input and discarding trivia.
-2.  **AST**: A memory-safe object hierarchy representing numbers, variables, function calls, and binary expressions.
-3.  **Parser**: A recursive-descent parser with operator precedence climbing that handles operator binding and nested grouping.
-4.  **Interpreter**: Direct AST tree-walking evaluation in native C++.
+### Looking Ahead to Section 4: From Tree Walking to LLVM IR
 
-Notice your `kaleidoscope.cpp` file: it is roughly 250 lines of clean, readable C++.
+Keep your single `kaleidoscope.cpp` file right where it is: we will continue evolving this exact file without splitting anything out into separate headers!  In [Section 4: Generating LLVM IR](../04-llvm-ir/index.md), we will swap our toy `print()` and `eval()` methods on `ExprAST` for `llvm::Value *codegen()`, add `def` functions and `extern` prototypes to the parser, and watch LLVM emit Static Single Assignment (SSA) Intermediate Representation for your code.
 
-### Looking Ahead to Section 4: Architectural Refactoring
+---
 
-In [Section 4: Generating LLVM IR](../04-llvm-ir/README.md), our goal shifts from interpreting trees in C++ to generating native LLVM Intermediate Representation.
-
-Before introducing LLVM's types, modules, and builders, we will take a brief architectural step in [Step 4.1](../04-llvm-ir/01-llvm-setup.md): modularising our codebase by extracting our lexer, AST, and parser into clean header files under `include/`.  This keeps our frontend independent and lets `kaleidoscope.cpp` focus purely on LLVM code generation.
+[Previous: Step 3.3 - Precedence Climbing](03-precedence-climbing.md) | [Section 3 Overview](index.md) | [Next: Section 4 - Generating LLVM IR](../04-llvm-ir/index.md)

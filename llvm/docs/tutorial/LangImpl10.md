@@ -2,7 +2,6 @@
 orphan: true
 ---
 
-# Kaleidoscope Tutorial
+# Kaleidoscope Tutorial (Part 2: Systems Programming and Core LLVM)
 
-The Kaleidoscope Tutorial has moved to {doc}`MyFirstLanguageFrontend/index`.
-
+This chapter has moved to {doc}`kaleidoscope/11-integers-and-types/index` in the updated {doc}`kaleidoscope/index` tutorial.

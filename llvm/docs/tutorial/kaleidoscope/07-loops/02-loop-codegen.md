@@ -1,67 +1,100 @@
 # Step 7.2: Emitting Loop Basic Blocks and PHI Nodes
 
-In an imperative language, a loop counter is a variable in memory updated on each iteration (`i++`).  In pure SSA form, how can a loop counter change its value when values cannot be reassigned?
+In C, a loop counter `i` sits in mutable memory and gets overwritten on each pass (`i += step`).  In pure Static Single Assignment (SSA) form, however, virtual registers are immutable.  How do we build a loop counter when no register can ever be reassigned?
 
-The answer is once again the **PHI node**.  On the very first iteration, the counter receives the starting value from outside the loop (the preheader).  On all subsequent iterations, the counter receives the incremented value from the end of the previous iteration!
+You already know the tool from [Step 6.3](../06-control-flow/03-phi-nodes.md): an **SSA PHI node**!
+
+Think about the first instruction of a loop block.  There are two ways control can reach it:
+
+1.  **Initial entry** from the block *before* the loop (`PreheaderBB`), carrying `StartVal`.
+2.  **Loop back-edge** from the end of the loop (`LoopEndBB`), carrying `NextVar = Variable + StepVal`.
+
+A `PHINode` at the top of `loop:` selects `StartVal` on the first pass and `NextVar` on every subsequent pass, giving us a pure SSA **loop induction variable** without touching memory at all!
 
 ---
 
-## The Loop Control Flow Structure
+## Control Flow Graph for `for ... in`
 
-A standard SSA loop consists of three primary regions:
+Here is the cyclic CFG that `ForExprAST::codegen()` constructs:
 
-```mermaid
-flowchart TD
-    Preheader["PreheaderBB<br>compute StartVal: Start->codegen()<br>br label %loop"] --> LoopBB["LoopBB (Header & Body)<br>phi double [%startval, %preheader], [%nextvar, %loopend]<br>compute Body->codegen()<br>compute NextVar = Variable + StepVal<br>compute EndCond: End->codegen()<br>br i1 %loopcond, label %loop, label %afterloop"]
-    LoopBB -->|loopcond is true| LoopBB
-    LoopBB -->|loopcond is false| AfterBB["AfterBB<br>restore shadowed VarName<br>ret 0.0"]
+```text
+     +-------------------------------------------------------+
+     |               PreheaderBB (current block)             |
+     |  %startval = <Start->codegen()>                       |
+     |  br label %loop                                       |
+     +---------------------------+---------------------------+
+                                 |
+                                 v
+     +-------------------------------------------------------+
+     |  loop:                                                |
+     |    %i = phi double [ %startval, %PreheaderBB ],       | <---+
+     |                    [ %nextvar,  %LoopEndBB ]          |     |
+     |    <Body->codegen()>                                  |     |
+     |    %stepval  = <Step->codegen() or 1.0>               |     |
+     |    %nextvar  = fadd double %i, %stepval               |     |
+     |    %endcond  = <End->codegen()>                       |     |
+     |    %loopcond = fcmp one double %endcond, 0.000000e+00 |     |
+     |    br i1 %loopcond, label %loop, label %afterloop     | ----+
+     +---------------------------+---------------------------+  true
+                                 |
+                                 | false
+                                 v
+     +-------------------------------------------------------+
+     |  afterloop:                                           |
+     |    ; restore outer NamedValues[VarName]               |
+     |    ; expression evaluates to 0.0                      |
+     +-------------------------------------------------------+
 ```
 
-> [!NOTE]
-> **Loop Induction Variables in SSA**:
-> In pure Static Single Assignment form, there are no mutable variables.  We cannot emit `i = i + 1` into a fixed memory location.  Instead, a PHI node at the head of `LoopBB` chooses between two incoming values: `StartVal` if entering from `PreheaderBB`, or `NextVar` if looping back from `LoopEndBB`.  This elegantly models iteration within the mathematical constraints of SSA.
+:::{note}
+**Post-Tested Loop Semantics (Counting Iterations Carefully!)**
 
-> [!TIP]
-> **Variable Shadowing and Scope Restoration**:
-> Notice how `NamedValues[VarName]` is carefully saved into `OldVal` before entering the loop body, and restored in `AfterBB`.  If an enclosing function already defined a variable named `i`, the loop shadows it during iteration, and the outer variable is safely restored once the loop terminates.
+Look closely at the CFG above and notice two important properties of Kaleidoscope's `for i = start, cond, step in body` loop:
+
+1.  **Post-tested execution**: Control jumps unconditionally from `PreheaderBB` into `loop:` (`br label %loop`), so `Body` always executes at least once before `End` is tested (similar to C's `do { ... } while (cond);`).
+2.  **`End` tests the current `%i` before `%nextvar` takes effect**: Inside `loop:`, `NamedValues[VarName]` is bound to `%i` (the `PHINode`).  Even though `%nextvar = fadd double %i, %stepval` is computed before `End->codegen()`, `%i` only advances to `%nextvar` when control branches *back* to the `phi` node at the top of `loop:`.  Consequently, `for i = 1, i < n, 1.0 in body` tests `i < n` on the current `i`: when `i = n - 1`, `i < n` is still true, so the loop runs one more pass with `i = n` and then stops because `n < n` is false.  In total, `for i = 1, i < n, 1.0 in body` executes **`n` times** (`i = 1, 2, ..., n`) for `n >= 1`!
+:::
 
 ---
 
-## Phased Code Generation Breakdown
+## Incremental Code Changes
 
-Open `kaleidoscope.cpp` and replace your stub `ForExprAST::codegen()` with the full implementation:
+Open `kaleidoscope.cpp` and replace the stub `ForExprAST::codegen()` with the full SSA loop implementation.
+
+### 1. Entering the Loop and Creating the Induction `PHINode`
+
+First, emit `Start->codegen()` inside the current block (`PreheaderBB`).  Then create `LoopBB`, jump into it, and create the `PHINode` with its first incoming edge (`StartVal` from `PreheaderBB`).  We cannot add the second incoming edge yet because the end of the loop has not been generated!
 
 ```cpp
 llvm::Value *ForExprAST::codegen() {
-  // 1. Evaluate the start expression.
   llvm::Value *StartVal = Start->codegen();
   if (!StartVal)
     return nullptr;
 
-  // 2. Set up basic blocks.
   llvm::Function *TheFunction = Builder->GetInsertBlock()->getParent();
   llvm::BasicBlock *PreheaderBB = Builder->GetInsertBlock();
   llvm::BasicBlock *LoopBB =
       llvm::BasicBlock::Create(*TheContext, "loop", TheFunction);
 
-  // Jump from preheader into the loop header.
   Builder->CreateBr(LoopBB);
   Builder->SetInsertPoint(LoopBB);
 
-  // 3. Create the PHI node for the loop induction variable.
   llvm::PHINode *Variable =
       Builder->CreatePHI(llvm::Type::getDoubleTy(*TheContext), 2, VarName);
   Variable->addIncoming(StartVal, PreheaderBB);
+```
 
-  // Shadow any existing variable with this name in NamedValues.
+### 2. Lexical Shadowing, Body, Step, and Condition
+
+What if a function `def foo(i)` also contains `for i = 1, i < 5 in ...`?  Inside the loop, `i` should refer to the loop variable, and afterwards `i` should refer back to the parameter `i`!  We save `NamedValues[VarName]` in `OldVal`, bind `NamedValues[VarName] = Variable`, and emit `Body`, `Step`, `NextVar`, and `EndCond`:
+
+```cpp
   llvm::Value *OldVal = NamedValues[VarName];
   NamedValues[VarName] = Variable;
 
-  // 4. Emit the loop body.
   if (!Body->codegen())
     return nullptr;
 
-  // 5. Compute the step value (defaulting to 1.0 if omitted).
   llvm::Value *StepVal = nullptr;
   if (Step) {
     StepVal = Step->codegen();
@@ -73,7 +106,6 @@ llvm::Value *ForExprAST::codegen() {
 
   llvm::Value *NextVar = Builder->CreateFAdd(Variable, StepVal, "nextvar");
 
-  // 6. Evaluate the termination condition.
   llvm::Value *EndCond = End->codegen();
   if (!EndCond)
     return nullptr;
@@ -81,35 +113,40 @@ llvm::Value *ForExprAST::codegen() {
   EndCond = Builder->CreateFCmpONE(
       EndCond, llvm::ConstantFP::get(*TheContext, llvm::APFloat(0.0)),
       "loopcond");
+```
 
-  // Record where the loop ended (in case nested expressions branched).
+### 3. Closing the Back-Edge and Restoring Scope
+
+Just like `ThenBB = Builder->GetInsertBlock()` in [Step 6.2](../06-control-flow/02-basic-blocks-branching.md), `Body` or `End` might contain nested `if` expressions or inner `for` loops that created extra blocks!  So we capture `LoopEndBB = Builder->GetInsertBlock()` right before emitting the conditional branch back to `LoopBB` or out to `AfterBB`:
+
+```cpp
   llvm::BasicBlock *LoopEndBB = Builder->GetInsertBlock();
   llvm::BasicBlock *AfterBB =
       llvm::BasicBlock::Create(*TheContext, "afterloop", TheFunction);
 
-  // Branch back to LoopBB if EndCond is true, otherwise jump to AfterBB.
   Builder->CreateCondBr(EndCond, LoopBB, AfterBB);
   Builder->SetInsertPoint(AfterBB);
 
-  // Add the incoming edge from the end of the loop to the induction PHI node.
-  Variable->addIncoming(NextVar, LoopEndBB);
+  // Wire up the back-edge on Variable, restore NamedValues[VarName], and return 0.0...
+```
 
-  // Restore the shadowed variable.
-  if (OldVal)
-    NamedValues[VarName] = OldVal;
-  else
-    NamedValues.erase(VarName);
+**Stretch**: Finish the last eight lines of `ForExprAST::codegen()`!
 
-  // For-loop expressions always return 0.0.
-  return llvm::Constant::getNullValue(llvm::Type::getDoubleTy(*TheContext));
-}
+1.  Attach the loop back-edge to the PHI node: `Variable->addIncoming(NextVar, LoopEndBB);`.
+2.  Restore outer scope: if `OldVal` is non-null, set `NamedValues[VarName] = OldVal;`, otherwise erase `VarName` with `NamedValues.erase(VarName);`.
+3.  Return `0.0` via `llvm::Constant::getNullValue(llvm::Type::getDoubleTy(*TheContext))`.
+
+Finally, update the startup banner in `main()`:
+
+```cpp
+  printf("Kaleidoscope JIT REPL (Step 7.2: Loop SSA Codegen)\n");
 ```
 
 ---
 
 ## Verifying Your Code
 
-Before compiling, verify your complete `kaleidoscope.cpp` implementation against the reference file.
+Check your `ForExprAST::codegen()` implementation against the complete reference file:
 
 <details>
 <summary>Click here to compare against the reference kaleidoscope.cpp</summary>
@@ -126,18 +163,11 @@ Before compiling, verify your complete `kaleidoscope.cpp` implementation against
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
-#include "llvm/IR/PassManager.h"
 #include "llvm/IR/Type.h"
 #include "llvm/IR/Verifier.h"
-#include "llvm/Passes/PassBuilder.h"
-#include "llvm/Passes/StandardInstrumentations.h"
 #include "llvm/Support/TargetSelect.h"
-#include "llvm/Target/TargetMachine.h"
-#include "llvm/Transforms/InstCombine/InstCombine.h"
-#include "llvm/Transforms/Scalar.h"
-#include "llvm/Transforms/Scalar/GVN.h"
-#include "llvm/Transforms/Scalar/Reassociate.h"
-#include "llvm/Transforms/Scalar/SimplifyCFG.h"
+#include "llvm/Support/raw_ostream.h"
+
 #include <cctype>
 #include <cstdio>
 #include <cstdlib>
@@ -146,6 +176,10 @@ Before compiling, verify your complete `kaleidoscope.cpp` implementation against
 #include <string>
 #include <utility>
 #include <vector>
+
+//===----------------------------------------------------------------------===//
+// Lexer
+//===----------------------------------------------------------------------===//
 
 enum Token {
   tok_eof = -1,
@@ -164,8 +198,8 @@ enum Token {
   tok_number = -201,
 };
 
-static std::string IdentifierStr;
-static double NumVal;
+static std::string IdentifierStr; // Filled in if tok_identifier
+static double NumVal;             // Filled in if tok_number
 
 static int gettok() {
   static int LastChar = ' ';
@@ -173,6 +207,7 @@ static int gettok() {
   while (isspace(LastChar))
     LastChar = getchar();
 
+  // Recognise identifiers and keywords: [a-zA-Z_][a-zA-Z0-9_]*
   if (isalpha(LastChar) || LastChar == '_') {
     IdentifierStr = LastChar;
     while (isalnum((LastChar = getchar())) || LastChar == '_')
@@ -195,6 +230,7 @@ static int gettok() {
     return tok_identifier;
   }
 
+  // Recognise numeric literals: [0-9.]+
   if (isdigit(LastChar) || LastChar == '.') {
     std::string NumStr;
     do {
@@ -206,6 +242,7 @@ static int gettok() {
     return tok_number;
   }
 
+  // Recognise comments: '#' through end of line.
   if (LastChar == '#') {
     do
       LastChar = getchar();
@@ -222,6 +259,10 @@ static int gettok() {
   LastChar = getchar();
   return ThisChar;
 }
+
+//===----------------------------------------------------------------------===//
+// Abstract Syntax Tree (AST)
+//===----------------------------------------------------------------------===//
 
 class ExprAST {
 public:
@@ -242,6 +283,7 @@ class VariableExprAST : public ExprAST {
 
 public:
   explicit VariableExprAST(std::string Name) : Name(std::move(Name)) {}
+  const std::string &getName() const { return Name; }
   llvm::Value *codegen() override;
 };
 
@@ -273,7 +315,6 @@ public:
   IfExprAST(std::unique_ptr<ExprAST> Cond, std::unique_ptr<ExprAST> Then,
             std::unique_ptr<ExprAST> Else)
       : Cond(std::move(Cond)), Then(std::move(Then)), Else(std::move(Else)) {}
-
   llvm::Value *codegen() override;
 };
 
@@ -282,12 +323,11 @@ class ForExprAST : public ExprAST {
   std::unique_ptr<ExprAST> Start, End, Step, Body;
 
 public:
-  ForExprAST(const std::string &VarName, std::unique_ptr<ExprAST> Start,
+  ForExprAST(std::string VarName, std::unique_ptr<ExprAST> Start,
              std::unique_ptr<ExprAST> End, std::unique_ptr<ExprAST> Step,
              std::unique_ptr<ExprAST> Body)
-      : VarName(VarName), Start(std::move(Start)), End(std::move(End)),
-        Step(std::move(Step)), Body(std::move(Body)) {}
-
+      : VarName(std::move(VarName)), Start(std::move(Start)),
+        End(std::move(End)), Step(std::move(Step)), Body(std::move(Body)) {}
   llvm::Value *codegen() override;
 };
 
@@ -296,10 +336,11 @@ class PrototypeAST {
   std::vector<std::string> Args;
 
 public:
-  PrototypeAST(const std::string &Name, std::vector<std::string> Args)
-      : Name(Name), Args(std::move(Args)) {}
-  llvm::Function *codegen();
+  PrototypeAST(std::string Name, std::vector<std::string> Args)
+      : Name(std::move(Name)), Args(std::move(Args)) {}
+
   const std::string &getName() const { return Name; }
+  llvm::Function *codegen();
 };
 
 class FunctionAST {
@@ -310,8 +351,13 @@ public:
   FunctionAST(std::unique_ptr<PrototypeAST> Proto,
               std::unique_ptr<ExprAST> Body)
       : Proto(std::move(Proto)), Body(std::move(Body)) {}
+
   llvm::Function *codegen();
 };
+
+//===----------------------------------------------------------------------===//
+// Parser
+//===----------------------------------------------------------------------===//
 
 static int CurTok;
 static int getNextToken() { return CurTok = gettok(); }
@@ -322,7 +368,7 @@ static int GetTokPrecedence() {
   if (!isascii(CurTok))
     return -1;
 
-  int TokPrec = BinopPrecedence[CurTok];
+  int TokPrec = BinopPrecedence[static_cast<char>(CurTok)];
   if (TokPrec <= 0)
     return -1;
   return TokPrec;
@@ -338,39 +384,36 @@ static llvm::Value *LogErrorV(const char *Str) {
   return nullptr;
 }
 
-static std::unique_ptr<PrototypeAST> LogErrorP(const char *Str) {
-  LogError(Str);
-  return nullptr;
-}
-
 static std::unique_ptr<ExprAST> ParseExpression();
 
 static std::unique_ptr<ExprAST> ParseNumberExpr() {
   auto Result = std::make_unique<NumberExprAST>(NumVal);
-  getNextToken();
+  getNextToken(); // consume the number
   return Result;
 }
 
 static std::unique_ptr<ExprAST> ParseParenExpr() {
-  getNextToken();
+  getNextToken(); // eat '('
   auto V = ParseExpression();
   if (!V)
     return nullptr;
 
   if (CurTok != ')')
     return LogError("expected ')'");
-  getNextToken();
+  getNextToken(); // eat ')'
   return V;
 }
 
 static std::unique_ptr<ExprAST> ParseIdentifierExpr() {
   std::string IdName = IdentifierStr;
-  getNextToken();
+  getNextToken(); // eat identifier
 
+  // Simple variable reference.
   if (CurTok != '(')
-    return std::make_unique<VariableExprAST>(IdName);
+    return std::make_unique<VariableExprAST>(std::move(IdName));
 
-  getNextToken();
+  // Function call.
+  getNextToken(); // eat '('
   std::vector<std::unique_ptr<ExprAST>> Args;
   if (CurTok != ')') {
     while (true) {
@@ -384,16 +427,16 @@ static std::unique_ptr<ExprAST> ParseIdentifierExpr() {
 
       if (CurTok != ',')
         return LogError("expected ')' or ',' in argument list");
-      getNextToken();
+      getNextToken(); // eat ','
     }
   }
 
-  getNextToken();
-  return std::make_unique<CallExprAST>(IdName, std::move(Args));
+  getNextToken(); // eat ')'
+  return std::make_unique<CallExprAST>(std::move(IdName), std::move(Args));
 }
 
 static std::unique_ptr<ExprAST> ParseIfExpr() {
-  getNextToken();
+  getNextToken(); // eat 'if'
 
   auto Cond = ParseExpression();
   if (!Cond)
@@ -401,7 +444,7 @@ static std::unique_ptr<ExprAST> ParseIfExpr() {
 
   if (CurTok != tok_then)
     return LogError("expected 'then'");
-  getNextToken();
+  getNextToken(); // eat 'then'
 
   auto Then = ParseExpression();
   if (!Then)
@@ -409,7 +452,7 @@ static std::unique_ptr<ExprAST> ParseIfExpr() {
 
   if (CurTok != tok_else)
     return LogError("expected 'else'");
-  getNextToken();
+  getNextToken(); // eat 'else'
 
   auto Else = ParseExpression();
   if (!Else)
@@ -420,47 +463,49 @@ static std::unique_ptr<ExprAST> ParseIfExpr() {
 }
 
 static std::unique_ptr<ExprAST> ParseForExpr() {
-  getNextToken();
+  getNextToken(); // eat 'for'
 
   if (CurTok != tok_identifier)
-    return LogError("expected identifier after for");
+    return LogError("expected identifier after 'for'");
 
   std::string IdName = IdentifierStr;
-  getNextToken();
+  getNextToken(); // eat identifier
 
   if (CurTok != '=')
-    return LogError("expected '=' after for");
-  getNextToken();
+    return LogError("expected '=' after 'for'");
+  getNextToken(); // eat '='
 
   auto Start = ParseExpression();
   if (!Start)
     return nullptr;
   if (CurTok != ',')
     return LogError("expected ',' after for start value");
-  getNextToken();
+  getNextToken(); // eat ','
 
   auto End = ParseExpression();
   if (!End)
     return nullptr;
 
+  // The step value is optional.
   std::unique_ptr<ExprAST> Step;
   if (CurTok == ',') {
-    getNextToken();
+    getNextToken(); // eat ','
     Step = ParseExpression();
     if (!Step)
       return nullptr;
   }
 
   if (CurTok != tok_in)
-    return LogError("expected 'in' after for");
-  getNextToken();
+    return LogError("expected 'in' after 'for'");
+  getNextToken(); // eat 'in'
 
   auto Body = ParseExpression();
   if (!Body)
     return nullptr;
 
-  return std::make_unique<ForExprAST>(IdName, std::move(Start), std::move(End),
-                                      std::move(Step), std::move(Body));
+  return std::make_unique<ForExprAST>(std::move(IdName), std::move(Start),
+                                      std::move(End), std::move(Step),
+                                      std::move(Body));
 }
 
 static std::unique_ptr<ExprAST> ParsePrimary() {
@@ -480,6 +525,7 @@ static std::unique_ptr<ExprAST> ParsePrimary() {
   }
 }
 
+/// binoprhs ::= (binop primary)*
 static std::unique_ptr<ExprAST> ParseBinOpRHS(int ExprPrec,
                                               std::unique_ptr<ExprAST> LHS) {
   while (true) {
@@ -489,7 +535,7 @@ static std::unique_ptr<ExprAST> ParseBinOpRHS(int ExprPrec,
       return LHS;
 
     int BinOp = CurTok;
-    getNextToken();
+    getNextToken(); // eat binary operator
 
     auto RHS = ParsePrimary();
     if (!RHS)
@@ -502,8 +548,8 @@ static std::unique_ptr<ExprAST> ParseBinOpRHS(int ExprPrec,
         return nullptr;
     }
 
-    LHS = std::make_unique<BinaryExprAST>(BinOp, std::move(LHS),
-                                          std::move(RHS));
+    LHS = std::make_unique<BinaryExprAST>(static_cast<char>(BinOp),
+                                          std::move(LHS), std::move(RHS));
   }
 }
 
@@ -513,6 +559,11 @@ static std::unique_ptr<ExprAST> ParseExpression() {
     return nullptr;
 
   return ParseBinOpRHS(0, std::move(LHS));
+}
+
+static std::unique_ptr<PrototypeAST> LogErrorP(const char *Str) {
+  LogError(Str);
+  return nullptr;
 }
 
 static std::unique_ptr<PrototypeAST> ParsePrototype() {
@@ -528,15 +579,16 @@ static std::unique_ptr<PrototypeAST> ParsePrototype() {
   std::vector<std::string> ArgNames;
   while (getNextToken() == tok_identifier)
     ArgNames.push_back(IdentifierStr);
+
   if (CurTok != ')')
     return LogErrorP("expected ')' in prototype");
 
-  getNextToken();
-  return std::make_unique<PrototypeAST>(FnName, std::move(ArgNames));
+  getNextToken(); // eat ')'
+  return std::make_unique<PrototypeAST>(std::move(FnName), std::move(ArgNames));
 }
 
 static std::unique_ptr<FunctionAST> ParseDefinition() {
-  getNextToken();
+  getNextToken(); // eat 'def'
   auto Proto = ParsePrototype();
   if (!Proto)
     return nullptr;
@@ -556,9 +608,13 @@ static std::unique_ptr<FunctionAST> ParseTopLevelExpr() {
 }
 
 static std::unique_ptr<PrototypeAST> ParseExtern() {
-  getNextToken();
+  getNextToken(); // eat 'extern'
   return ParsePrototype();
 }
+
+//===----------------------------------------------------------------------===//
+// Code Generation
+//===----------------------------------------------------------------------===//
 
 static std::unique_ptr<llvm::LLVMContext> TheContext;
 static std::unique_ptr<llvm::Module> TheModule;
@@ -566,14 +622,8 @@ static std::unique_ptr<llvm::IRBuilder<>> Builder;
 static std::map<std::string, llvm::Value *> NamedValues;
 static std::unique_ptr<llvm::orc::KaleidoscopeJIT> TheJIT;
 static std::map<std::string, std::unique_ptr<PrototypeAST>> FunctionProtos;
+static std::map<std::string, llvm::orc::ResourceTrackerSP> FunctionRTs;
 static llvm::ExitOnError ExitOnErr;
-
-static void InitializeModuleAndManagers() {
-  TheContext = std::make_unique<llvm::LLVMContext>();
-  TheModule = std::make_unique<llvm::Module>("KaleidoscopeJIT", *TheContext);
-  TheModule->setDataLayout(TheJIT->getDataLayout());
-  Builder = std::make_unique<llvm::IRBuilder<>>(*TheContext);
-}
 
 static llvm::Function *getFunction(std::string Name) {
   if (auto *F = TheModule->getFunction(Name))
@@ -584,6 +634,13 @@ static llvm::Function *getFunction(std::string Name) {
     return FI->second->codegen();
 
   return nullptr;
+}
+
+static void InitializeModuleAndManagers() {
+  TheContext = std::make_unique<llvm::LLVMContext>();
+  TheModule = std::make_unique<llvm::Module>("KaleidoscopeJIT", *TheContext);
+  TheModule->setDataLayout(TheJIT->getDataLayout());
+  Builder = std::make_unique<llvm::IRBuilder<>>(*TheContext);
 }
 
 llvm::Value *NumberExprAST::codegen() {
@@ -627,7 +684,7 @@ llvm::Value *CallExprAST::codegen() {
     return LogErrorV("unknown function referenced");
 
   if (CalleeF->arg_size() != Args.size())
-    return LogErrorV("incorrect number of arguments passed");
+    return LogErrorV("incorrect # arguments passed");
 
   std::vector<llvm::Value *> ArgsV;
   for (unsigned i = 0, e = Args.size(); i != e; ++i) {
@@ -656,30 +713,28 @@ llvm::Value *IfExprAST::codegen() {
 
   Builder->CreateCondBr(CondV, ThenBB, ElseBB);
 
+  // Emit 'then' block.
   Builder->SetInsertPoint(ThenBB);
   llvm::Value *ThenV = Then->codegen();
   if (!ThenV)
     return nullptr;
-
   Builder->CreateBr(MergeBB);
   ThenBB = Builder->GetInsertBlock();
 
+  // Emit 'else' block.
   TheFunction->insert(TheFunction->end(), ElseBB);
   Builder->SetInsertPoint(ElseBB);
-
   llvm::Value *ElseV = Else->codegen();
   if (!ElseV)
     return nullptr;
-
   Builder->CreateBr(MergeBB);
   ElseBB = Builder->GetInsertBlock();
 
+  // Emit 'ifcont' merge block with SSA PHI node.
   TheFunction->insert(TheFunction->end(), MergeBB);
   Builder->SetInsertPoint(MergeBB);
-
   llvm::PHINode *PN =
       Builder->CreatePHI(llvm::Type::getDoubleTy(*TheContext), 2, "iftmp");
-
   PN->addIncoming(ThenV, ThenBB);
   PN->addIncoming(ElseV, ElseBB);
   return PN;
@@ -747,11 +802,10 @@ llvm::Value *ForExprAST::codegen() {
 llvm::Function *PrototypeAST::codegen() {
   std::vector<llvm::Type *> Doubles(Args.size(),
                                     llvm::Type::getDoubleTy(*TheContext));
-  llvm::FunctionType *FT = llvm::FunctionType::get(
-      llvm::Type::getDoubleTy(*TheContext), Doubles, false);
-
-  llvm::Function *F = llvm::Function::Create(
-      FT, llvm::Function::ExternalLinkage, Name, TheModule.get());
+  auto *FT = llvm::FunctionType::get(llvm::Type::getDoubleTy(*TheContext),
+                                     Doubles, false);
+  auto *F = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, Name,
+                                   TheModule.get());
 
   unsigned Idx = 0;
   for (auto &Arg : F->args())
@@ -767,8 +821,7 @@ llvm::Function *FunctionAST::codegen() {
   if (!TheFunction)
     return nullptr;
 
-  llvm::BasicBlock *BB =
-      llvm::BasicBlock::Create(*TheContext, "entry", TheFunction);
+  auto *BB = llvm::BasicBlock::Create(*TheContext, "entry", TheFunction);
   Builder->SetInsertPoint(BB);
 
   NamedValues.clear();
@@ -777,7 +830,10 @@ llvm::Function *FunctionAST::codegen() {
 
   if (llvm::Value *RetVal = Body->codegen()) {
     Builder->CreateRet(RetVal);
-    llvm::verifyFunction(*TheFunction);
+    if (llvm::verifyFunction(*TheFunction, &llvm::errs())) {
+      TheFunction->eraseFromParent();
+      return nullptr;
+    }
     return TheFunction;
   }
 
@@ -785,18 +841,33 @@ llvm::Function *FunctionAST::codegen() {
   return nullptr;
 }
 
+//===----------------------------------------------------------------------===//
+// Interactive Driver Loop
+//===----------------------------------------------------------------------===//
+
 static void HandleDefinition() {
   if (auto FnAST = ParseDefinition()) {
     if (auto *FnIR = FnAST->codegen()) {
+      std::string FnName = std::string(FnIR->getName());
       fprintf(stderr, "Read function definition:\n");
       FnIR->print(llvm::errs());
       fprintf(stderr, "\n");
-      ExitOnErr(TheJIT->addModule(llvm::orc::ThreadSafeModule(
-          std::move(TheModule), std::move(TheContext))));
+
+      // If redefining an existing JIT function, remove its previous code first.
+      if (auto It = FunctionRTs.find(FnName); It != FunctionRTs.end()) {
+        ExitOnErr(It->second->remove());
+        FunctionRTs.erase(It);
+      }
+
+      auto RT = TheJIT->getMainJITDylib().createResourceTracker();
+      ExitOnErr(
+          TheJIT->addModule(llvm::orc::ThreadSafeModule(std::move(TheModule),
+                                                        std::move(TheContext)),
+                            RT));
+      FunctionRTs[FnName] = std::move(RT);
       InitializeModuleAndManagers();
     }
   } else {
-    // Skip token for error recovery.
     while (CurTok != ';' && CurTok != tok_eof)
       getNextToken();
   }
@@ -811,7 +882,6 @@ static void HandleExtern() {
       FunctionProtos[ProtoAST->getName()] = std::move(ProtoAST);
     }
   } else {
-    // Skip token for error recovery.
     while (CurTok != ';' && CurTok != tok_eof)
       getNextToken();
   }
@@ -827,15 +897,17 @@ static void HandleTopLevelExpression() {
       ExitOnErr(TheJIT->addModule(std::move(TSM), RT));
       InitializeModuleAndManagers();
 
-      auto ExprSymbol = ExitOnErr(TheJIT->lookup("__anon_expr"));
-
-      double (*FP)() = ExprSymbol.toPtr<double (*)()>();
-      fprintf(stderr, "Evaluated to %f\n", FP());
+      if (auto ExprSymbol = TheJIT->lookup("__anon_expr")) {
+        double (*FP)() = ExprSymbol->getAddress().toPtr<double (*)()>();
+        fprintf(stderr, "Evaluated to %f\n", FP());
+      } else {
+        llvm::logAllUnhandledErrors(ExprSymbol.takeError(), llvm::errs(),
+                                    "JIT Error: ");
+      }
 
       ExitOnErr(RT->remove());
     }
   } else {
-    // Skip token for error recovery.
     while (CurTok != ';' && CurTok != tok_eof)
       getNextToken();
   }
@@ -879,11 +951,13 @@ int main() {
   TheJIT = ExitOnErr(llvm::orc::KaleidoscopeJIT::Create());
   InitializeModuleAndManagers();
 
-  // Prime the first token.
+  printf("Kaleidoscope JIT REPL (Step 7.2: Loop SSA Codegen)\n");
+  printf("Type definitions, externs, or expressions followed by ';' (Ctrl+D to "
+         "exit):\n\n");
+
   Prompt();
   getNextToken();
   MainLoop();
-
   return 0;
 }
 ```
@@ -891,27 +965,29 @@ int main() {
 
 ---
 
-## Compiling and Running
+## Compiling and Inspecting the Loop IR
 
-Compile your compiler:
+Compile `kaleidoscope.cpp`:
 
 ```bash
-clang++ -Iinclude -Wall -Wextra kaleidoscope.cpp $(llvm-config --cxxflags --ldflags --system-libs --libs core orcjit native) -o kaleidoscope
+clang++ -std=c++17 -fno-rtti -Wall -Wextra -rdynamic -Iinclude kaleidoscope.cpp $(llvm-config --cxxflags --ldflags --system-libs --libs core orcjit native) -isystem $(llvm-config --includedir) -o kaleidoscope
 ```
 
-Launch `./kaleidoscope` and inspect the generated IR for a loop function:
+Launch `./kaleidoscope`, define a loop function, and examine the generated SSA back-edge:
 
 ```text
-ready> def looptest(n)
-         for i = 1, i < n, 1.0 in
-           i;
+Kaleidoscope JIT REPL (Step 7.2: Loop SSA Codegen)
+Type definitions, externs, or expressions followed by ';' (Ctrl+D to exit):
+
+ready> def count(n) for i = 1, i < n, 1.0 in i * 2;
 Read function definition:
-define double @looptest(double %n) {
+define double @count(double %n) {
 entry:
   br label %loop
 
 loop:                                             ; preds = %loop, %entry
   %i = phi double [ 1.000000e+00, %entry ], [ %nextvar, %loop ]
+  %multmp = fmul double %i, 2.000000e+00
   %nextvar = fadd double %i, 1.000000e+00
   %cmptmp = fcmp ult double %i, %n
   %booltmp = uitofp i1 %cmptmp to double
@@ -921,8 +997,15 @@ loop:                                             ; preds = %loop, %entry
 afterloop:                                        ; preds = %loop
   ret double 0.000000e+00
 }
+
+ready> count(5);
+Evaluated to 0.000000
 ```
 
-Notice how the PHI node cleanly merges `%entry` and the backedge `%loop`, creating a pure SSA iteration counter without mutable memory.
+Look at `%i = phi double [ 1.000000e+00, %entry ], [ %nextvar, %loop ]`: the loop counter advances cleanly on every iteration without a single mutable memory slot!
 
-In [Step 7.3](03-terminal-graphics.md), we will connect host C I/O routines using `-rdynamic` to draw patterns directly from JIT loops.
+Right now `count(5)` runs silently and returns `0.000000`.  In [Step 7.3](03-terminal-graphics.md), you will link two tiny C output helpers into your binary so your JIT loops can print numbers and draw ASCII art directly in your terminal!
+
+---
+
+[Previous: Lexing and Parsing 'for' Loops](01-for-ast.md) | [Section Overview](index.md) | [Next: Terminal Graphics and Host Calls](03-terminal-graphics.md)

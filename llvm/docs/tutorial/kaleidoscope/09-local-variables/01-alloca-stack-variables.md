@@ -1,54 +1,53 @@
 # Step 9.1: Stack Allocation with 'alloca'
 
-In pure SSA form, register values are immutable.  However, machine architectures have memory (the stack and heap), and memory is mutable.
+In pure SSA form, virtual registers (`%x`, `%addtmp`) are immutable values, **not** memory locations.  CPU stack memory, however, *is* mutable!  LLVM exposes stack memory through three instructions:
 
-LLVM provides the `alloca` instruction to allocate memory on the execution stack of the current function.  Memory allocated with `alloca` is automatically freed when the function returns.
+- `alloca double`: reserves an 8-byte `double` slot in the current function's stack frame and returns its memory address (`ptr`), automatically reclaimed when the function returns.
+- `store double %val, ptr %slot`: writes a `double` into that stack slot.
+- `%v = load double, ptr %slot`: reads the current `double` out of that stack slot.
 
-By storing mutable variables into stack locations:
-* Assignment becomes an LLVM `store` instruction.
-* Reading a variable becomes an LLVM `load` instruction.
-
-Your compiler does not need to worry about complex SSA construction algorithms or manually placing PHI nodes when generating code for mutable variables.
-
----
-
-## Memory Allocation in the Entry Block
-
-```mermaid
-flowchart TD
-    subgraph EntryBlock ["Entry Basic Block"]
-        AllocaArg["AllocaInst: %x = alloca double"]
-        StoreArg["store double %Arg, ptr %x"]
-        AllocaVar["AllocaInst: %a = alloca double"]
-        StoreVar["store double 1.0, ptr %a"]
-    end
-    subgraph LaterBlocks ["Subsequent Basic Blocks"]
-        Load["%val = load double, ptr %a"]
-        Compute["%newval = fadd double %val, 10.0"]
-        Store["store double %newval, ptr %a"]
-    end
-    EntryBlock --> LaterBlocks
+```text
++---------------------------------------------------------------+
+|  entry:  (All stack slots live at the top of entry!)          |
+|    %i  = alloca double, align 8                               |
+|    %x1 = alloca double, align 8                               |
+|    store double %x, ptr %x1, align 8                          |
+|    store double 1.000000e+00, ptr %i, align 8                 |
++-------------------------------+-------------------------------+
+                                |
+                                v
++---------------------------------------------------------------+
+|  loop / body blocks:                                          |
+|    %cur  = load double, ptr %i, align 8                       |
+|    %next = fadd double %cur, 1.000000e+00                     |
+|    store double %next, ptr %i, align 8                        |
++---------------------------------------------------------------+
 ```
 
-> [!IMPORTANT]
-> **Allocas Belong in the Entry Block**:
-> In LLVM IR, always emit `alloca` instructions in the function's entry basic block.  Allocas placed in the entry block are allocated once when the function stack frame is set up upon entry.  If allocas are placed inside loops or dynamic branches, they reallocate stack memory repeatedly on every iteration, leading to stack overflow.  Furthermore, LLVM's `mem2reg` pass only promotes stack variables that reside strictly in the entry basic block.
+:::{note}
+**Always Emit `alloca` Instructions in the `entry` Block!**
 
-> [!NOTE]
-> **Pointer Semantics of Alloca**:
-> The `alloca` instruction returns a pointer (`llvm::AllocaInst *`) to stack memory.  Writing a value to memory uses `Builder->CreateStore(Val, Ptr)`.  Reading a value from memory uses `Builder->CreateLoad(Type, Ptr)`.
+Notice that our helper below creates a temporary `IRBuilder<>` pointed specifically at `TheFunction->getEntryBlock().begin()`, even when we allocate a loop variable halfway through generating a function!  Two critical reasons drive this rule:
+
+1.  **Constant-size stack frames**: An `alloca` in `entry` executes once when the function prologue adjusts the stack pointer.  An `alloca` placed *inside* a `loop:` block would grow the CPU stack on every single iteration until your program crashes with a stack overflow!
+2.  **`mem2reg` eligibility**: LLVM's `PromotePass` (`mem2reg`, arriving in [Step 9.3](03-mem2reg-optimisation.md)) specifically scans the `entry` basic block for `alloca` instructions to promote into hardware registers.
+:::
+
+In this step, you will migrate Kaleidoscope's existing variables (function parameters and `for` loop counters) from immutable `llvm::Value *` SSA values to mutable `llvm::AllocaInst *` stack slots.  Keeping this refactoring cleanly separated in its own step means we can verify everything compiles and runs before adding `var ... in` and `=` in [Step 9.2](02-var-in-expressions.md).
 
 ---
 
 ## Incremental Code Changes
 
-Open `kaleidoscope.cpp` to introduce stack allocations for variables.
+Open `kaleidoscope.cpp` from [Step 8.4](../08-user-defined-ops/04-mandelbrot.md) and apply the four updates below.
 
-### 1. Creating Allocas in the Entry Block
+### 1. Updating `NamedValues` and Adding `CreateEntryBlockAlloca`
 
-Add this helper function above your AST code generation methods:
+Change `NamedValues` from storing `llvm::Value *` to storing `llvm::AllocaInst *`, and add `CreateEntryBlockAlloca()` right below it:
 
 ```cpp
+static std::map<std::string, llvm::AllocaInst *> NamedValues;
+
 static llvm::AllocaInst *CreateEntryBlockAlloca(llvm::Function *TheFunction,
                                                 llvm::StringRef VarName) {
   llvm::IRBuilder<> TmpB(&TheFunction->getEntryBlock(),
@@ -58,17 +57,22 @@ static llvm::AllocaInst *CreateEntryBlockAlloca(llvm::Function *TheFunction,
 }
 ```
 
-Notice that `TmpB` positions itself at the very beginning of the entry block, guaranteeing the allocation happens before any other instructions.
+### 2. Loading Variables in `VariableExprAST::codegen()`
 
-### 2. Updating NamedValues and Function Arguments
-
-Change `NamedValues` to map variable names to stack allocations (`llvm::AllocaInst *`):
+Reading a variable now looks up its `AllocaInst *` in `NamedValues` and emits a `load` instruction:
 
 ```cpp
-static std::map<std::string, llvm::AllocaInst *> NamedValues;
+llvm::Value *VariableExprAST::codegen() {
+  llvm::AllocaInst *A = NamedValues[Name];
+  if (!A)
+    return LogErrorV("unknown variable name");
+  return Builder->CreateLoad(A->getAllocatedType(), A, Name.c_str());
+}
 ```
 
-In `FunctionAST::codegen()`, create an alloca for every function argument in the entry block, store the incoming argument value into it, and record the alloca pointer in `NamedValues`:
+### 3. Storing Function Parameters into Entry-Block Allocas
+
+In `FunctionAST::codegen()`, instead of putting raw `&Arg` pointers directly into `NamedValues`, allocate a stack slot for each parameter in `entry`, store the incoming argument register into it, and record `Alloca` in `NamedValues` (so function parameters themselves can be mutated later!):
 
 ```cpp
   NamedValues.clear();
@@ -80,27 +84,69 @@ In `FunctionAST::codegen()`, create an alloca for every function argument in the
   }
 ```
 
-### 3. Reading Variables with `load`
+### 4. Simplifying `ForExprAST::codegen()` with `AllocaInst`
 
-Update `VariableExprAST::codegen()` to read the value from its stack alloca with `CreateLoad`:
+Remember in [Step 7.2](../07-loops/02-loop-codegen.md) how `ForExprAST::codegen()` had to juggle `PreheaderBB`, `LoopEndBB`, and a two-edge `llvm::PHINode` just to step the loop variable?  Now that `NamedValues` holds `llvm::AllocaInst *`, `ForExprAST::codegen()` actually gets **simpler**!  We allocate a stack slot for `VarName` in `entry`, store `StartVal` before entering `LoopBB`, and load/add/store at the bottom of the loop:
 
 ```cpp
-llvm::Value *VariableExprAST::codegen() {
-  llvm::AllocaInst *A = NamedValues[Name];
-  if (!A)
-    return LogErrorV("unknown variable name");
-  return Builder->CreateLoad(llvm::Type::getDoubleTy(*TheContext), A,
-                             Name.c_str());
-}
+llvm::Value *ForExprAST::codegen() {
+  llvm::Function *TheFunction = Builder->GetInsertBlock()->getParent();
+
+  llvm::AllocaInst *Alloca = CreateEntryBlockAlloca(TheFunction, VarName);
+
+  llvm::Value *StartVal = Start->codegen();
+  if (!StartVal)
+    return nullptr;
+
+  Builder->CreateStore(StartVal, Alloca);
+
+  llvm::BasicBlock *LoopBB =
+      llvm::BasicBlock::Create(*TheContext, "loop", TheFunction);
+
+  Builder->CreateBr(LoopBB);
+  Builder->SetInsertPoint(LoopBB);
+
+  llvm::AllocaInst *OldVal = NamedValues[VarName];
+  NamedValues[VarName] = Alloca;
+
+  if (!Body->codegen())
+    return nullptr;
+
+  llvm::Value *StepVal = nullptr;
+  if (Step) {
+    StepVal = Step->codegen();
+    if (!StepVal)
+      return nullptr;
+  } else {
+    StepVal = llvm::ConstantFP::get(*TheContext, llvm::APFloat(1.0));
+  }
+
+  llvm::Value *EndCond = End->codegen();
+  if (!EndCond)
+    return nullptr;
+
+  // Now reload Alloca into CurVar, add StepVal into NextVar, and store NextVar back into Alloca...
 ```
 
-Now, every variable reference in your language loads its current value from stack memory.
+Notice that we evaluate `End->codegen()` *before* incrementing `Alloca` so our post-tested loop keeps the exact same iteration count (`for i = 1, i < n, 1.0` runs `n` times) as [Step 7.2](../07-loops/02-loop-codegen.md) even if `Body` mutates the loop variable!
+
+**Stretch**: Complete the second half of `ForExprAST::codegen()` right after `if (!EndCond) return nullptr;`:
+
+1.  Load the current value: `llvm::Value *CurVar = Builder->CreateLoad(Alloca->getAllocatedType(), Alloca, VarName.c_str());`.
+2.  Add the step and store it back: `llvm::Value *NextVar = Builder->CreateFAdd(CurVar, StepVal, "nextvar");` followed by `Builder->CreateStore(NextVar, Alloca);`.
+3.  Convert `EndCond` to an `i1` with `Builder->CreateFCmpONE(EndCond, llvm::ConstantFP::get(*TheContext, llvm::APFloat(0.0)), "loopcond")`, create `AfterBB`, emit `Builder->CreateCondBr(EndCond, LoopBB, AfterBB);`, `Builder->SetInsertPoint(AfterBB);`, restore `OldVal` in `NamedValues` (no `LoopEndBB` or `Variable->addIncoming` needed anymore!), and return `0.0`.
+
+Finally, update the startup banner in `main()`:
+
+```cpp
+  printf("Kaleidoscope JIT REPL (Step 9.1: Stack Variables (alloca))\n");
+```
 
 ---
 
 ## Verifying Your Code
 
-Before compiling, verify your `kaleidoscope.cpp` against the reference file.
+Compare your `kaleidoscope.cpp` against the complete reference file:
 
 <details>
 <summary>Click here to compare against the reference kaleidoscope.cpp</summary>
@@ -117,18 +163,11 @@ Before compiling, verify your `kaleidoscope.cpp` against the reference file.
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
-#include "llvm/IR/PassManager.h"
 #include "llvm/IR/Type.h"
 #include "llvm/IR/Verifier.h"
-#include "llvm/Passes/PassBuilder.h"
-#include "llvm/Passes/StandardInstrumentations.h"
 #include "llvm/Support/TargetSelect.h"
-#include "llvm/Target/TargetMachine.h"
-#include "llvm/Transforms/InstCombine/InstCombine.h"
-#include "llvm/Transforms/Scalar.h"
-#include "llvm/Transforms/Scalar/GVN.h"
-#include "llvm/Transforms/Scalar/Reassociate.h"
-#include "llvm/Transforms/Scalar/SimplifyCFG.h"
+#include "llvm/Support/raw_ostream.h"
+
 #include <cctype>
 #include <cstdio>
 #include <cstdlib>
@@ -138,21 +177,9 @@ Before compiling, verify your `kaleidoscope.cpp` against the reference file.
 #include <utility>
 #include <vector>
 
-#ifdef _WIN32
-#define DLLEXPORT __declspec(dllexport)
-#else
-#define DLLEXPORT
-#endif
-
-extern "C" DLLEXPORT double putchard(double X) {
-  fputc(static_cast<char>(X), stderr);
-  return 0;
-}
-
-extern "C" DLLEXPORT double printd(double X) {
-  fprintf(stderr, "%f\n", X);
-  return 0;
-}
+//===----------------------------------------------------------------------===//
+// Lexer
+//===----------------------------------------------------------------------===//
 
 enum Token {
   tok_eof = -1,
@@ -167,15 +194,14 @@ enum Token {
   tok_in = -106,
   tok_binary = -107,
   tok_unary = -108,
-  tok_var = -109,
 
   // Primary
   tok_identifier = -200,
   tok_number = -201,
 };
 
-static std::string IdentifierStr;
-static double NumVal;
+static std::string IdentifierStr; // Filled in if tok_identifier
+static double NumVal;             // Filled in if tok_number
 
 static int gettok() {
   static int LastChar = ' ';
@@ -183,6 +209,7 @@ static int gettok() {
   while (isspace(LastChar))
     LastChar = getchar();
 
+  // Recognise identifiers and keywords: [a-zA-Z_][a-zA-Z0-9_]*
   if (isalpha(LastChar) || LastChar == '_') {
     IdentifierStr = LastChar;
     while (isalnum((LastChar = getchar())) || LastChar == '_')
@@ -206,11 +233,10 @@ static int gettok() {
       return tok_binary;
     if (IdentifierStr == "unary")
       return tok_unary;
-    if (IdentifierStr == "var")
-      return tok_var;
     return tok_identifier;
   }
 
+  // Recognise numeric literals: [0-9.]+
   if (isdigit(LastChar) || LastChar == '.') {
     std::string NumStr;
     do {
@@ -222,6 +248,7 @@ static int gettok() {
     return tok_number;
   }
 
+  // Recognise comments: '#' through end of line.
   if (LastChar == '#') {
     do
       LastChar = getchar();
@@ -238,6 +265,10 @@ static int gettok() {
   LastChar = getchar();
   return ThisChar;
 }
+
+//===----------------------------------------------------------------------===//
+// Abstract Syntax Tree (AST)
+//===----------------------------------------------------------------------===//
 
 class ExprAST {
 public:
@@ -258,8 +289,8 @@ class VariableExprAST : public ExprAST {
 
 public:
   explicit VariableExprAST(std::string Name) : Name(std::move(Name)) {}
-  llvm::Value *codegen() override;
   const std::string &getName() const { return Name; }
+  llvm::Value *codegen() override;
 };
 
 class UnaryExprAST : public ExprAST {
@@ -300,7 +331,6 @@ public:
   IfExprAST(std::unique_ptr<ExprAST> Cond, std::unique_ptr<ExprAST> Then,
             std::unique_ptr<ExprAST> Else)
       : Cond(std::move(Cond)), Then(std::move(Then)), Else(std::move(Else)) {}
-
   llvm::Value *codegen() override;
 };
 
@@ -309,25 +339,11 @@ class ForExprAST : public ExprAST {
   std::unique_ptr<ExprAST> Start, End, Step, Body;
 
 public:
-  ForExprAST(const std::string &VarName, std::unique_ptr<ExprAST> Start,
+  ForExprAST(std::string VarName, std::unique_ptr<ExprAST> Start,
              std::unique_ptr<ExprAST> End, std::unique_ptr<ExprAST> Step,
              std::unique_ptr<ExprAST> Body)
-      : VarName(VarName), Start(std::move(Start)), End(std::move(End)),
-        Step(std::move(Step)), Body(std::move(Body)) {}
-
-  llvm::Value *codegen() override;
-};
-
-class VarExprAST : public ExprAST {
-  std::vector<std::pair<std::string, std::unique_ptr<ExprAST>>> VarNames;
-  std::unique_ptr<ExprAST> Body;
-
-public:
-  VarExprAST(
-      std::vector<std::pair<std::string, std::unique_ptr<ExprAST>>> VarNames,
-      std::unique_ptr<ExprAST> Body)
-      : VarNames(std::move(VarNames)), Body(std::move(Body)) {}
-
+      : VarName(std::move(VarName)), Start(std::move(Start)),
+        End(std::move(End)), Step(std::move(Step)), Body(std::move(Body)) {}
   llvm::Value *codegen() override;
 };
 
@@ -338,17 +354,17 @@ class PrototypeAST {
   unsigned Precedence;
 
 public:
-  PrototypeAST(const std::string &Name, std::vector<std::string> Args,
+  PrototypeAST(std::string Name, std::vector<std::string> Args,
                bool IsOperator = false, unsigned Prec = 0)
-      : Name(Name), Args(std::move(Args)), IsOperator(IsOperator),
+      : Name(std::move(Name)), Args(std::move(Args)), IsOperator(IsOperator),
         Precedence(Prec) {}
 
-  llvm::Function *codegen();
   const std::string &getName() const { return Name; }
   bool isUnaryOp() const { return IsOperator && Args.size() == 1; }
   bool isBinaryOp() const { return IsOperator && Args.size() == 2; }
   char getOperatorName() const { return Name[Name.size() - 1]; }
   unsigned getBinaryPrecedence() const { return Precedence; }
+  llvm::Function *codegen();
 };
 
 class FunctionAST {
@@ -359,8 +375,13 @@ public:
   FunctionAST(std::unique_ptr<PrototypeAST> Proto,
               std::unique_ptr<ExprAST> Body)
       : Proto(std::move(Proto)), Body(std::move(Body)) {}
+
   llvm::Function *codegen();
 };
+
+//===----------------------------------------------------------------------===//
+// Parser
+//===----------------------------------------------------------------------===//
 
 static int CurTok;
 static int getNextToken() { return CurTok = gettok(); }
@@ -371,7 +392,7 @@ static int GetTokPrecedence() {
   if (!isascii(CurTok))
     return -1;
 
-  int TokPrec = BinopPrecedence[CurTok];
+  int TokPrec = BinopPrecedence[static_cast<char>(CurTok)];
   if (TokPrec <= 0)
     return -1;
   return TokPrec;
@@ -379,11 +400,6 @@ static int GetTokPrecedence() {
 
 static std::unique_ptr<ExprAST> LogError(const char *Str) {
   fprintf(stderr, "Error: %s\n", Str);
-  return nullptr;
-}
-
-static std::unique_ptr<PrototypeAST> LogErrorP(const char *Str) {
-  LogError(Str);
   return nullptr;
 }
 
@@ -396,30 +412,32 @@ static std::unique_ptr<ExprAST> ParseExpression();
 
 static std::unique_ptr<ExprAST> ParseNumberExpr() {
   auto Result = std::make_unique<NumberExprAST>(NumVal);
-  getNextToken();
+  getNextToken(); // consume the number
   return Result;
 }
 
 static std::unique_ptr<ExprAST> ParseParenExpr() {
-  getNextToken();
+  getNextToken(); // eat '('
   auto V = ParseExpression();
   if (!V)
     return nullptr;
 
   if (CurTok != ')')
     return LogError("expected ')'");
-  getNextToken();
+  getNextToken(); // eat ')'
   return V;
 }
 
 static std::unique_ptr<ExprAST> ParseIdentifierExpr() {
   std::string IdName = IdentifierStr;
-  getNextToken();
+  getNextToken(); // eat identifier
 
+  // Simple variable reference.
   if (CurTok != '(')
-    return std::make_unique<VariableExprAST>(IdName);
+    return std::make_unique<VariableExprAST>(std::move(IdName));
 
-  getNextToken();
+  // Function call.
+  getNextToken(); // eat '('
   std::vector<std::unique_ptr<ExprAST>> Args;
   if (CurTok != ')') {
     while (true) {
@@ -433,16 +451,16 @@ static std::unique_ptr<ExprAST> ParseIdentifierExpr() {
 
       if (CurTok != ',')
         return LogError("expected ')' or ',' in argument list");
-      getNextToken();
+      getNextToken(); // eat ','
     }
   }
 
-  getNextToken();
-  return std::make_unique<CallExprAST>(IdName, std::move(Args));
+  getNextToken(); // eat ')'
+  return std::make_unique<CallExprAST>(std::move(IdName), std::move(Args));
 }
 
 static std::unique_ptr<ExprAST> ParseIfExpr() {
-  getNextToken();
+  getNextToken(); // eat 'if'
 
   auto Cond = ParseExpression();
   if (!Cond)
@@ -450,7 +468,7 @@ static std::unique_ptr<ExprAST> ParseIfExpr() {
 
   if (CurTok != tok_then)
     return LogError("expected 'then'");
-  getNextToken();
+  getNextToken(); // eat 'then'
 
   auto Then = ParseExpression();
   if (!Then)
@@ -458,7 +476,7 @@ static std::unique_ptr<ExprAST> ParseIfExpr() {
 
   if (CurTok != tok_else)
     return LogError("expected 'else'");
-  getNextToken();
+  getNextToken(); // eat 'else'
 
   auto Else = ParseExpression();
   if (!Else)
@@ -469,88 +487,49 @@ static std::unique_ptr<ExprAST> ParseIfExpr() {
 }
 
 static std::unique_ptr<ExprAST> ParseForExpr() {
-  getNextToken();
+  getNextToken(); // eat 'for'
 
   if (CurTok != tok_identifier)
-    return LogError("expected identifier after for");
+    return LogError("expected identifier after 'for'");
 
   std::string IdName = IdentifierStr;
-  getNextToken();
+  getNextToken(); // eat identifier
 
   if (CurTok != '=')
-    return LogError("expected '=' after for");
-  getNextToken();
+    return LogError("expected '=' after 'for'");
+  getNextToken(); // eat '='
 
   auto Start = ParseExpression();
   if (!Start)
     return nullptr;
   if (CurTok != ',')
     return LogError("expected ',' after for start value");
-  getNextToken();
+  getNextToken(); // eat ','
 
   auto End = ParseExpression();
   if (!End)
     return nullptr;
 
+  // The step value is optional.
   std::unique_ptr<ExprAST> Step;
   if (CurTok == ',') {
-    getNextToken();
+    getNextToken(); // eat ','
     Step = ParseExpression();
     if (!Step)
       return nullptr;
   }
 
   if (CurTok != tok_in)
-    return LogError("expected 'in' after for");
-  getNextToken();
+    return LogError("expected 'in' after 'for'");
+  getNextToken(); // eat 'in'
 
   auto Body = ParseExpression();
   if (!Body)
     return nullptr;
 
-  return std::make_unique<ForExprAST>(IdName, std::move(Start), std::move(End),
-                                      std::move(Step), std::move(Body));
-}
-
-static std::unique_ptr<ExprAST> ParseVarExpr() {
-  getNextToken();
-
-  std::vector<std::pair<std::string, std::unique_ptr<ExprAST>>> VarNames;
-
-  if (CurTok != tok_identifier)
-    return LogError("expected identifier after var");
-
-  while (true) {
-    std::string Name = IdentifierStr;
-    getNextToken();
-
-    std::unique_ptr<ExprAST> Init = nullptr;
-    if (CurTok == '=') {
-      getNextToken();
-      Init = ParseExpression();
-      if (!Init)
-        return nullptr;
-    }
-
-    VarNames.push_back(std::make_pair(Name, std::move(Init)));
-
-    if (CurTok != ',')
-      break;
-    getNextToken();
-
-    if (CurTok != tok_identifier)
-      return LogError("expected identifier list after var");
-  }
-
-  if (CurTok != tok_in)
-    return LogError("expected 'in' keyword after 'var'");
-  getNextToken();
-
-  auto Body = ParseExpression();
-  if (!Body)
-    return nullptr;
-
-  return std::make_unique<VarExprAST>(std::move(VarNames), std::move(Body));
+  return std::make_unique<ForExprAST>(std::move(IdName), std::move(Start),
+                                      std::move(End), std::move(Step),
+                                      std::move(Body));
 }
 
 static std::unique_ptr<ExprAST> ParsePrimary() {
@@ -565,8 +544,6 @@ static std::unique_ptr<ExprAST> ParsePrimary() {
     return ParseIfExpr();
   case tok_for:
     return ParseForExpr();
-  case tok_var:
-    return ParseVarExpr();
   default:
     return LogError("unknown token when expecting an expression");
   }
@@ -579,10 +556,12 @@ static std::unique_ptr<ExprAST> ParseUnary() {
   int Opc = CurTok;
   getNextToken();
   if (auto Operand = ParseUnary())
-    return std::make_unique<UnaryExprAST>(Opc, std::move(Operand));
+    return std::make_unique<UnaryExprAST>(static_cast<char>(Opc),
+                                          std::move(Operand));
   return nullptr;
 }
 
+/// binoprhs ::= (binop unary)*
 static std::unique_ptr<ExprAST> ParseBinOpRHS(int ExprPrec,
                                               std::unique_ptr<ExprAST> LHS) {
   while (true) {
@@ -592,7 +571,7 @@ static std::unique_ptr<ExprAST> ParseBinOpRHS(int ExprPrec,
       return LHS;
 
     int BinOp = CurTok;
-    getNextToken();
+    getNextToken(); // eat binary operator
 
     auto RHS = ParseUnary();
     if (!RHS)
@@ -605,8 +584,8 @@ static std::unique_ptr<ExprAST> ParseBinOpRHS(int ExprPrec,
         return nullptr;
     }
 
-    LHS = std::make_unique<BinaryExprAST>(BinOp, std::move(LHS),
-                                          std::move(RHS));
+    LHS = std::make_unique<BinaryExprAST>(static_cast<char>(BinOp),
+                                          std::move(LHS), std::move(RHS));
   }
 }
 
@@ -618,9 +597,14 @@ static std::unique_ptr<ExprAST> ParseExpression() {
   return ParseBinOpRHS(0, std::move(LHS));
 }
 
+static std::unique_ptr<PrototypeAST> LogErrorP(const char *Str) {
+  LogError(Str);
+  return nullptr;
+}
+
 static std::unique_ptr<PrototypeAST> ParsePrototype() {
   std::string FnName;
-  unsigned Kind = 0;
+  unsigned Kind = 0; // 0 = identifier, 1 = unary, 2 = binary
   unsigned BinaryPrecedence = 30;
 
   switch (CurTok) {
@@ -634,7 +618,7 @@ static std::unique_ptr<PrototypeAST> ParsePrototype() {
     if (!isascii(CurTok))
       return LogErrorP("expected unary operator");
     FnName = "unary";
-    FnName += (char)CurTok;
+    FnName += static_cast<char>(CurTok);
     Kind = 1;
     getNextToken();
     break;
@@ -643,14 +627,14 @@ static std::unique_ptr<PrototypeAST> ParsePrototype() {
     if (!isascii(CurTok))
       return LogErrorP("expected binary operator");
     FnName = "binary";
-    FnName += (char)CurTok;
+    FnName += static_cast<char>(CurTok);
     Kind = 2;
     getNextToken();
 
     if (CurTok == tok_number) {
       if (NumVal < 1 || NumVal > 100)
         return LogErrorP("invalid precedence: must be 1..100");
-      BinaryPrecedence = (unsigned)NumVal;
+      BinaryPrecedence = static_cast<unsigned>(NumVal);
       getNextToken();
     }
     break;
@@ -664,20 +648,21 @@ static std::unique_ptr<PrototypeAST> ParsePrototype() {
   std::vector<std::string> ArgNames;
   while (getNextToken() == tok_identifier)
     ArgNames.push_back(IdentifierStr);
+
   if (CurTok != ')')
     return LogErrorP("expected ')' in prototype");
 
-  getNextToken();
+  getNextToken(); // eat ')'
 
   if (Kind && ArgNames.size() != Kind)
     return LogErrorP("invalid number of operands for operator");
 
-  return std::make_unique<PrototypeAST>(FnName, std::move(ArgNames), Kind != 0,
-                                        BinaryPrecedence);
+  return std::make_unique<PrototypeAST>(std::move(FnName), std::move(ArgNames),
+                                        Kind != 0, BinaryPrecedence);
 }
 
 static std::unique_ptr<FunctionAST> ParseDefinition() {
-  getNextToken();
+  getNextToken(); // eat 'def'
   auto Proto = ParsePrototype();
   if (!Proto)
     return nullptr;
@@ -697,24 +682,30 @@ static std::unique_ptr<FunctionAST> ParseTopLevelExpr() {
 }
 
 static std::unique_ptr<PrototypeAST> ParseExtern() {
-  getNextToken();
+  getNextToken(); // eat 'extern'
   return ParsePrototype();
 }
+
+//===----------------------------------------------------------------------===//
+// Code Generation
+//===----------------------------------------------------------------------===//
 
 static std::unique_ptr<llvm::LLVMContext> TheContext;
 static std::unique_ptr<llvm::Module> TheModule;
 static std::unique_ptr<llvm::IRBuilder<>> Builder;
 static std::map<std::string, llvm::AllocaInst *> NamedValues;
+
+static llvm::AllocaInst *CreateEntryBlockAlloca(llvm::Function *TheFunction,
+                                                llvm::StringRef VarName) {
+  llvm::IRBuilder<> TmpB(&TheFunction->getEntryBlock(),
+                         TheFunction->getEntryBlock().begin());
+  return TmpB.CreateAlloca(llvm::Type::getDoubleTy(*TheContext), nullptr,
+                           VarName);
+}
 static std::unique_ptr<llvm::orc::KaleidoscopeJIT> TheJIT;
 static std::map<std::string, std::unique_ptr<PrototypeAST>> FunctionProtos;
+static std::map<std::string, llvm::orc::ResourceTrackerSP> FunctionRTs;
 static llvm::ExitOnError ExitOnErr;
-
-static void InitializeModuleAndManagers() {
-  TheContext = std::make_unique<llvm::LLVMContext>();
-  TheModule = std::make_unique<llvm::Module>("KaleidoscopeJIT", *TheContext);
-  TheModule->setDataLayout(TheJIT->getDataLayout());
-  Builder = std::make_unique<llvm::IRBuilder<>>(*TheContext);
-}
 
 static llvm::Function *getFunction(std::string Name) {
   if (auto *F = TheModule->getFunction(Name))
@@ -727,12 +718,11 @@ static llvm::Function *getFunction(std::string Name) {
   return nullptr;
 }
 
-static llvm::AllocaInst *CreateEntryBlockAlloca(llvm::Function *TheFunction,
-                                                llvm::StringRef VarName) {
-  llvm::IRBuilder<> TmpB(&TheFunction->getEntryBlock(),
-                         TheFunction->getEntryBlock().begin());
-  return TmpB.CreateAlloca(llvm::Type::getDoubleTy(*TheContext), nullptr,
-                           VarName);
+static void InitializeModuleAndManagers() {
+  TheContext = std::make_unique<llvm::LLVMContext>();
+  TheModule = std::make_unique<llvm::Module>("KaleidoscopeJIT", *TheContext);
+  TheModule->setDataLayout(TheJIT->getDataLayout());
+  Builder = std::make_unique<llvm::IRBuilder<>>(*TheContext);
 }
 
 llvm::Value *NumberExprAST::codegen() {
@@ -743,8 +733,7 @@ llvm::Value *VariableExprAST::codegen() {
   llvm::AllocaInst *A = NamedValues[Name];
   if (!A)
     return LogErrorV("unknown variable name");
-  return Builder->CreateLoad(llvm::Type::getDoubleTy(*TheContext), A,
-                             Name.c_str());
+  return Builder->CreateLoad(A->getAllocatedType(), A, Name.c_str());
 }
 
 llvm::Value *UnaryExprAST::codegen() {
@@ -760,23 +749,6 @@ llvm::Value *UnaryExprAST::codegen() {
 }
 
 llvm::Value *BinaryExprAST::codegen() {
-  if (Op == '=') {
-    VariableExprAST *LHSE = dynamic_cast<VariableExprAST *>(LHS.get());
-    if (!LHSE)
-      return LogErrorV("destination of '=' must be a variable");
-
-    llvm::Value *Val = RHS->codegen();
-    if (!Val)
-      return nullptr;
-
-    llvm::AllocaInst *Variable = NamedValues[LHSE->getName()];
-    if (!Variable)
-      return LogErrorV("unknown variable name");
-
-    Builder->CreateStore(Val, Variable);
-    return Val;
-  }
-
   llvm::Value *L = LHS->codegen();
   llvm::Value *R = RHS->codegen();
   if (!L || !R)
@@ -813,7 +785,7 @@ llvm::Value *CallExprAST::codegen() {
     return LogErrorV("unknown function referenced");
 
   if (CalleeF->arg_size() != Args.size())
-    return LogErrorV("incorrect number of arguments passed");
+    return LogErrorV("incorrect # arguments passed");
 
   std::vector<llvm::Value *> ArgsV;
   for (unsigned i = 0, e = Args.size(); i != e; ++i) {
@@ -842,30 +814,28 @@ llvm::Value *IfExprAST::codegen() {
 
   Builder->CreateCondBr(CondV, ThenBB, ElseBB);
 
+  // Emit 'then' block.
   Builder->SetInsertPoint(ThenBB);
   llvm::Value *ThenV = Then->codegen();
   if (!ThenV)
     return nullptr;
-
   Builder->CreateBr(MergeBB);
   ThenBB = Builder->GetInsertBlock();
 
+  // Emit 'else' block.
   TheFunction->insert(TheFunction->end(), ElseBB);
   Builder->SetInsertPoint(ElseBB);
-
   llvm::Value *ElseV = Else->codegen();
   if (!ElseV)
     return nullptr;
-
   Builder->CreateBr(MergeBB);
   ElseBB = Builder->GetInsertBlock();
 
+  // Emit 'ifcont' merge block with SSA PHI node.
   TheFunction->insert(TheFunction->end(), MergeBB);
   Builder->SetInsertPoint(MergeBB);
-
   llvm::PHINode *PN =
       Builder->CreatePHI(llvm::Type::getDoubleTy(*TheContext), 2, "iftmp");
-
   PN->addIncoming(ThenV, ThenBB);
   PN->addIncoming(ElseV, ElseBB);
   return PN;
@@ -873,6 +843,7 @@ llvm::Value *IfExprAST::codegen() {
 
 llvm::Value *ForExprAST::codegen() {
   llvm::Function *TheFunction = Builder->GetInsertBlock()->getParent();
+
   llvm::AllocaInst *Alloca = CreateEntryBlockAlloca(TheFunction, VarName);
 
   llvm::Value *StartVal = Start->codegen();
@@ -902,15 +873,14 @@ llvm::Value *ForExprAST::codegen() {
     StepVal = llvm::ConstantFP::get(*TheContext, llvm::APFloat(1.0));
   }
 
-  llvm::Value *CurVar =
-      Builder->CreateLoad(llvm::Type::getDoubleTy(*TheContext), Alloca,
-                          VarName.c_str());
-  llvm::Value *NextVar = Builder->CreateFAdd(CurVar, StepVal, "nextvar");
-  Builder->CreateStore(NextVar, Alloca);
-
   llvm::Value *EndCond = End->codegen();
   if (!EndCond)
     return nullptr;
+
+  llvm::Value *CurVar =
+      Builder->CreateLoad(Alloca->getAllocatedType(), Alloca, VarName.c_str());
+  llvm::Value *NextVar = Builder->CreateFAdd(CurVar, StepVal, "nextvar");
+  Builder->CreateStore(NextVar, Alloca);
 
   EndCond = Builder->CreateFCmpONE(
       EndCond, llvm::ConstantFP::get(*TheContext, llvm::APFloat(0.0)),
@@ -930,48 +900,13 @@ llvm::Value *ForExprAST::codegen() {
   return llvm::Constant::getNullValue(llvm::Type::getDoubleTy(*TheContext));
 }
 
-llvm::Value *VarExprAST::codegen() {
-  std::vector<llvm::AllocaInst *> OldBindings;
-  llvm::Function *TheFunction = Builder->GetInsertBlock()->getParent();
-
-  for (unsigned i = 0, e = VarNames.size(); i != e; ++i) {
-    const std::string &VarName = VarNames[i].first;
-    ExprAST *Init = VarNames[i].second.get();
-
-    llvm::Value *InitVal;
-    if (Init) {
-      InitVal = Init->codegen();
-      if (!InitVal)
-        return nullptr;
-    } else {
-      InitVal = llvm::ConstantFP::get(*TheContext, llvm::APFloat(0.0));
-    }
-
-    llvm::AllocaInst *Alloca = CreateEntryBlockAlloca(TheFunction, VarName);
-    Builder->CreateStore(InitVal, Alloca);
-
-    OldBindings.push_back(NamedValues[VarName]);
-    NamedValues[VarName] = Alloca;
-  }
-
-  llvm::Value *BodyVal = Body->codegen();
-  if (!BodyVal)
-    return nullptr;
-
-  for (unsigned i = 0, e = VarNames.size(); i != e; ++i)
-    NamedValues[VarNames[i].first] = OldBindings[i];
-
-  return BodyVal;
-}
-
 llvm::Function *PrototypeAST::codegen() {
   std::vector<llvm::Type *> Doubles(Args.size(),
                                     llvm::Type::getDoubleTy(*TheContext));
-  llvm::FunctionType *FT = llvm::FunctionType::get(
-      llvm::Type::getDoubleTy(*TheContext), Doubles, false);
-
-  llvm::Function *F = llvm::Function::Create(
-      FT, llvm::Function::ExternalLinkage, Name, TheModule.get());
+  auto *FT = llvm::FunctionType::get(llvm::Type::getDoubleTy(*TheContext),
+                                     Doubles, false);
+  auto *F = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, Name,
+                                   TheModule.get());
 
   unsigned Idx = 0;
   for (auto &Arg : F->args())
@@ -990,8 +925,7 @@ llvm::Function *FunctionAST::codegen() {
   if (P.isBinaryOp())
     BinopPrecedence[P.getOperatorName()] = P.getBinaryPrecedence();
 
-  llvm::BasicBlock *BB =
-      llvm::BasicBlock::Create(*TheContext, "entry", TheFunction);
+  auto *BB = llvm::BasicBlock::Create(*TheContext, "entry", TheFunction);
   Builder->SetInsertPoint(BB);
 
   NamedValues.clear();
@@ -1004,7 +938,10 @@ llvm::Function *FunctionAST::codegen() {
 
   if (llvm::Value *RetVal = Body->codegen()) {
     Builder->CreateRet(RetVal);
-    llvm::verifyFunction(*TheFunction);
+    if (llvm::verifyFunction(*TheFunction, &llvm::errs())) {
+      TheFunction->eraseFromParent();
+      return nullptr;
+    }
     return TheFunction;
   }
 
@@ -1014,18 +951,55 @@ llvm::Function *FunctionAST::codegen() {
   return nullptr;
 }
 
+//===----------------------------------------------------------------------===//
+// Host Library Helpers
+//===----------------------------------------------------------------------===//
+
+#ifdef _WIN32
+#define DLLEXPORT __declspec(dllexport)
+#else
+#define DLLEXPORT
+#endif
+
+/// putchard - putchar that takes a double and returns 0.
+extern "C" DLLEXPORT double putchard(double X) {
+  fputc(static_cast<char>(X), stderr);
+  return 0;
+}
+
+/// printd - printf that takes a double prints it as "%f\n", returning 0.
+extern "C" DLLEXPORT double printd(double X) {
+  fprintf(stderr, "%f\n", X);
+  return 0;
+}
+
+//===----------------------------------------------------------------------===//
+// Interactive Driver Loop
+//===----------------------------------------------------------------------===//
+
 static void HandleDefinition() {
   if (auto FnAST = ParseDefinition()) {
     if (auto *FnIR = FnAST->codegen()) {
+      std::string FnName = std::string(FnIR->getName());
       fprintf(stderr, "Read function definition:\n");
       FnIR->print(llvm::errs());
       fprintf(stderr, "\n");
-      ExitOnErr(TheJIT->addModule(llvm::orc::ThreadSafeModule(
-          std::move(TheModule), std::move(TheContext))));
+
+      // If redefining an existing JIT function, remove its previous code first.
+      if (auto It = FunctionRTs.find(FnName); It != FunctionRTs.end()) {
+        ExitOnErr(It->second->remove());
+        FunctionRTs.erase(It);
+      }
+
+      auto RT = TheJIT->getMainJITDylib().createResourceTracker();
+      ExitOnErr(
+          TheJIT->addModule(llvm::orc::ThreadSafeModule(std::move(TheModule),
+                                                        std::move(TheContext)),
+                            RT));
+      FunctionRTs[FnName] = std::move(RT);
       InitializeModuleAndManagers();
     }
   } else {
-    // Skip token for error recovery.
     while (CurTok != ';' && CurTok != tok_eof)
       getNextToken();
   }
@@ -1040,7 +1014,6 @@ static void HandleExtern() {
       FunctionProtos[ProtoAST->getName()] = std::move(ProtoAST);
     }
   } else {
-    // Skip token for error recovery.
     while (CurTok != ';' && CurTok != tok_eof)
       getNextToken();
   }
@@ -1056,15 +1029,17 @@ static void HandleTopLevelExpression() {
       ExitOnErr(TheJIT->addModule(std::move(TSM), RT));
       InitializeModuleAndManagers();
 
-      auto ExprSymbol = ExitOnErr(TheJIT->lookup("__anon_expr"));
-
-      double (*FP)() = ExprSymbol.toPtr<double (*)()>();
-      fprintf(stderr, "Evaluated to %f\n", FP());
+      if (auto ExprSymbol = TheJIT->lookup("__anon_expr")) {
+        double (*FP)() = ExprSymbol->getAddress().toPtr<double (*)()>();
+        fprintf(stderr, "Evaluated to %f\n", FP());
+      } else {
+        llvm::logAllUnhandledErrors(ExprSymbol.takeError(), llvm::errs(),
+                                    "JIT Error: ");
+      }
 
       ExitOnErr(RT->remove());
     }
   } else {
-    // Skip token for error recovery.
     while (CurTok != ';' && CurTok != tok_eof)
       getNextToken();
   }
@@ -1099,7 +1074,6 @@ int main() {
   llvm::InitializeNativeTargetAsmPrinter();
   llvm::InitializeNativeTargetAsmParser();
 
-  BinopPrecedence['='] = 2;
   BinopPrecedence['<'] = 10;
   BinopPrecedence['+'] = 20;
   BinopPrecedence['-'] = 20;
@@ -1109,11 +1083,13 @@ int main() {
   TheJIT = ExitOnErr(llvm::orc::KaleidoscopeJIT::Create());
   InitializeModuleAndManagers();
 
-  // Prime the first token.
+  printf("Kaleidoscope JIT REPL (Step 9.1: Stack Variables (alloca))\n");
+  printf("Type definitions, externs, or expressions followed by ';' (Ctrl+D to "
+         "exit):\n\n");
+
   Prompt();
   getNextToken();
   MainLoop();
-
   return 0;
 }
 ```
@@ -1121,6 +1097,57 @@ int main() {
 
 ---
 
-## Next Steps
+## Compiling and Inspecting the `alloca` IR
 
-In [Step 9.2](02-var-in-expressions.md), we will add `var / in` syntax and the assignment operator `=`.
+Compile `kaleidoscope.cpp`:
+
+```bash
+clang++ -std=c++17 -fno-rtti -Wall -Wextra -rdynamic -Iinclude kaleidoscope.cpp $(llvm-config --cxxflags --ldflags --system-libs --libs core orcjit native) -isystem $(llvm-config --includedir) -o kaleidoscope
+```
+
+Launch `./kaleidoscope` and inspect the generated IR for a function with a parameter and a `for` loop:
+
+```text
+Kaleidoscope JIT REPL (Step 9.1: Stack Variables (alloca))
+Type definitions, externs, or expressions followed by ';' (Ctrl+D to exit):
+
+ready> def add_loop(x)
+  for i = 1, i < 4, 1.0 in
+    x + i;
+Read function definition:
+define double @add_loop(double %x) {
+entry:
+  %i = alloca double, align 8
+  %x1 = alloca double, align 8
+  store double %x, ptr %x1, align 8
+  store double 1.000000e+00, ptr %i, align 8
+  br label %loop
+
+loop:                                             ; preds = %loop, %entry
+  %x2 = load double, ptr %x1, align 8
+  %i3 = load double, ptr %i, align 8
+  %addtmp = fadd double %x2, %i3
+  %i4 = load double, ptr %i, align 8
+  %cmptmp = fcmp ult double %i4, 4.000000e+00
+  %booltmp = uitofp i1 %cmptmp to double
+  %i5 = load double, ptr %i, align 8
+  %nextvar = fadd double %i5, 1.000000e+00
+  store double %nextvar, ptr %i, align 8
+  %loopcond = fcmp one double %booltmp, 0.000000e+00
+  br i1 %loopcond, label %loop, label %afterloop
+
+afterloop:                                        ; preds = %loop
+  ret double 0.000000e+00
+}
+
+ready> add_loop(10);
+Evaluated to 0.000000
+```
+
+Look at `entry:`: even though `%i` was created inside `ForExprAST::codegen()` *after* `%x1`, `TmpB` inserted `%i` right at `entry.begin()`, keeping every single `alloca` cleanly grouped at the top of the function!
+
+Now that every variable lives in a mutable stack slot, [Step 9.2](02-var-in-expressions.md) will unlock `=` assignment and `var ... in` local variable declarations.
+
+---
+
+[Previous: Rendering the Mandelbrot Set](../08-user-defined-ops/04-mandelbrot.md) | [Section Overview](index.md) | [Next: Local Variables and Assignment](02-var-in-expressions.md)

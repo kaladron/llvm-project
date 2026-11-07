@@ -2,7 +2,6 @@
 orphan: true
 ---
 
-# Kaleidoscope Tutorial
+# Kaleidoscope Tutorial (Sections 6 and 7: Control Flow and Loops)
 
-The Kaleidoscope Tutorial has moved to {doc}`MyFirstLanguageFrontend/index`.
-
+This chapter has moved to {doc}`kaleidoscope/06-control-flow/index` in the updated {doc}`kaleidoscope/index` tutorial.

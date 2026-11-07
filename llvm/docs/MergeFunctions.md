@@ -46,9 +46,9 @@ As a good starting point, the Kaleidoscope tutorial can be used:
 
 {doc}`tutorial/index`
 
-It's especially important to understand Chapter 3 of the tutorial:
+It's especially important to understand LLVM IR generation in Section 4 of the tutorial:
 
-{doc}`tutorial/LangImpl03`
+{doc}`tutorial/kaleidoscope/04-llvm-ir/index`
 
 The reader should also know how passes work in LLVM. They can use this
 article as a reference and start point here:

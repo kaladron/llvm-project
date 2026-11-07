@@ -1,0 +1,19 @@
+set(LLVM_LINK_COMPONENTS
+  Analysis
+  Core
+  ExecutionEngine
+  Object
+  OrcJIT
+  RuntimeDyld
+  Support
+  TargetParser
+  native
+  )
+
+add_kaleidoscope_chapter(Kaleidoscope-Sec07
+  kaleidoscope.cpp
+  )
+
+target_include_directories(Kaleidoscope-Sec07 PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../include
+  )

@@ -1,0 +1,10 @@
+# RUN: Kaleidoscope-Sec03 < %s 2>&1 | FileCheck %s
+
+# Verify operator precedence climbing and immediate evaluation.
+1 + 2 * 3;
+(1 + 2) * 3;
+
+# CHECK: Parsed AST: (+ (Number 1) (* (Number 2) (Number 3)))
+# CHECK: Evaluated: 7
+# CHECK: Parsed AST: (* (+ (Number 1) (Number 2)) (Number 3))
+# CHECK: Evaluated: 9

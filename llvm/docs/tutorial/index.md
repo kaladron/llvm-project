@@ -1,25 +1,19 @@
 # LLVM Tutorial: Table of Contents
 
-## Kaleidoscope: Implementing a Language with LLVM
+## Kaleidoscope: Building a Compiler with LLVM
 
 ```{toctree}
 :hidden:
 
-MyFirstLanguageFrontend/index
+kaleidoscope/index
 ```
 
-{doc}`MyFirstLanguageFrontend/index`
+{doc}`kaleidoscope/index`
 
-: This is the "Kaleidoscope" Language tutorial, showing how to implement a simple
-  language using LLVM components in C++.
-
-```{toctree}
-:glob:
-:numbered:
-:titlesonly:
-
-MyFirstLanguageFrontend/LangImpl*
-```
+: A sixteen-section hands-on tutorial that evolves a single-file toy calculator
+  into a statically typed systems language with an ORCv2 JIT, ahead-of-time
+  object emission, opaque pointers, structs, DWARF debug information, and a
+  custom optimisation pass.
 
 ## Building a JIT in LLVM
 
@@ -49,4 +43,3 @@ BuildingAJIT*
 1. [Writing an Optimization for LLVM](https://llvm.org/pubs/2004-09-22-LCPCLLVMTutorial.html)
 
 [howto: implementing llvm integrated assembler]: http://www.embecosm.com/appnotes/ean10/ean10-howto-llvmas-1.0.html
-

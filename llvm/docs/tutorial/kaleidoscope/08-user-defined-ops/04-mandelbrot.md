@@ -1,143 +1,59 @@
-# Step 8.4: The Mandelbrot Set
+# Step 8.4: Rendering the Mandelbrot Set
 
-To celebrate the power of user-defined operators, control flow, loops, and JIT compilation, we will now build a real Kaleidoscope application: a text-mode renderer for the **Mandelbrot set** fractal.
-
-Notice how much of the "language standard library" is implemented in pure Kaleidoscope code!
+Time for a victory lap!  Combining everything you have built across Sections 1 through 8 (functions, `extern` C bindings, `if / then / else` PHI diamonds, `for ... in` SSA loops, and user-defined unary and binary operators), your Kaleidoscope JIT is ready to run a classic benchmark: rendering the **Mandelbrot set** fractal in ASCII art!
 
 ---
 
-## The Fractal Rendering Pipeline
+## How the Mandelbrot Renderer Works
 
-```mermaid
-flowchart TD
-    Mandel["mandel(xmin, xmax, xstep, ymin, ymax, ystep)<br>2D outer loop over rows (y) and cols (x)"] --> Converge["mandelconverge(x, y)<br>z_{k+1} = z_k^2 + c"]
-    Converge --> Palette["printdensity(iters)<br>maps escape iterations to ' ', '.', '+', '*'"]
-    Palette --> Output["putchard(char)<br>host C function prints character to stderr"]
-    Output --> Term["ASCII Mandelbrot Fractal Display"]
-```
+Each character cell `(x, y)` on your terminal represents a point `c = (creal, cimag)` in the complex plane.  Starting from `z = (0.0, 0.0)`, we iterate `z_next = z * z + c` in real and imaginary components:
 
-> [!NOTE]
-> **Functional Sequencing Without Semicolons**:
-> Notice that the sequencing operator `:` (`def binary: 1 (x y) y;`) is not a language keyword!  It is a user-defined binary operator with the lowest precedence (precedence 1) that evaluates its left-hand side for side effects and returns its right-hand side.  This allows sequencing expressions cleanly without introducing imperative semicolon statements.
+- `real_next = real * real - imag * imag + creal`
+- `imag_next = 2 * real * imag + cimag`
 
-> [!TIP]
-> **Native JIT Performance**:
-> The Mandelbrot program evaluates hundreds of thousands of floating-point arithmetic operations and recursive function calls.  Because the Kaleidoscope JIT compiles directly to native host instructions in executable memory, the complete fractal renders in fractions of a second inside your terminal.
-
----
-
-## 1. Defining Standard Library Operators
-
-Launch your compiler (`./kaleidoscope`) and define the following foundational operators:
-
-```kaleidoscope
-extern putchard(x);
-
-# Unary negation:
-def unary-(v) 0 - v;
-
-# Sequencing operator ':': evaluates LHS for side-effects, returns RHS
-def binary: 1 (x y) y;
-
-# Greater-than operator:
-def binary> 10 (LHS RHS) RHS < LHS;
-
-# Logical OR operator:
-def binary| 5 (LHS RHS)
-  if LHS then 1
-  else if RHS then 1
-  else 0;
-```
-
----
-
-## 2. Implementing the Mandelbrot Algorithm
-
-Next, define the convergence test.  For each complex coordinate $(c_r, c_i)$, we iterate $z_{k+1} = z_k^2 + c$ up to 255 times, or until $|z|^2 > 4$:
-
-```kaleidoscope
-def mandelconverger(real imag iters creal cimag)
-  if iters > 255 | (real*real + imag*imag > 4) then
-    iters
-  else
-    mandelconverger(real*real - imag*imag + creal,
-                    2*real*imag + cimag,
-                    iters + 1, creal, cimag);
-
-def mandelconverge(real imag)
-  mandelconverger(real, imag, 0, real, imag);
-```
-
-Define a character palette mapping escape iteration counts to ASCII density characters:
-
-```kaleidoscope
-def printdensity(d)
-  if d > 8 then
-    putchard(32)   # space
-  else if d > 4 then
-    putchard(46)   # '.'
-  else if d > 2 then
-    putchard(43)   # '+'
-  else
-    putchard(42);  # '*'
-```
-
-Finally, write the 2D rendering loop scanning across the complex plane:
-
-```kaleidoscope
-def mandel(xmin xmax xstep ymin ymax ystep)
-  for y = ymin, y < ymax, ystep in (
-    (for x = xmin, x < xmax, xstep in
-       printdensity(mandelconverge(x, y)))
-    : putchard(10)
-  );
-```
-
----
-
-## 3. Rendering the Fractal
-
-Execute `mandel` over the region $[-2.0, 1.0] \times [-1.0, 1.0]$:
-
-```kaleidoscope
-mandel(-2.0, 1.0, 0.05, -1.0, 1.0, 0.1);
-```
-
-Your terminal will print the Mandelbrot fractal:
+If the squared magnitude `real * real + imag * imag` exceeds `4.0` before `255` iterations, the point escapes to infinity, and `printdensity` maps the escape speed (`iters`) to an ASCII shading character (`' '`, `'.'`, `'+'`, or `'*'`).
 
 ```text
-***************************++++++++.. .  +++++***************
-************************++++++++++...   ..++++++*************
-**********************+++++++++....      ..++++++************
-*******************++++++++.......        ..... +++**********
-****************++++++++...                     ++**********
-**************+++++++++....                     ..++*********
-*********+++++. ..........                      . +++********
-****+++++++++..        ..                        ..++********
-**++++++++++...                                  .++++*******
-*+++++......                                    ..++++*******
-                                               ...++++*******
-*+++++......                                    ..++++*******
-**++++++++++...                                  .++++*******
-****+++++++++..        ..                        ..++********
-*********+++++. ..........                      . +++********
-**************+++++++++....                     ..++*********
-****************++++++++...                     ++**********
-*******************++++++++.......        ..... +++**********
-**********************+++++++++....      ..++++++************
-************************++++++++++...   ..++++++*************
-***************************++++++++.. .  +++++***************
-******************************++++++ .+++++******************
-Evaluated to 0.000000
++-------------------------------------------------------------------+
+|  mandel(realstart, imagstart, realmag, imagmag)                   |
+|    Scans a 79-column by 41-row window across the complex plane    |
++---------------------------------+---------------------------------+
+                                  |
+                                  v
++-------------------------------------------------------------------+
+|  mandelconverger(real, imag, iters, creal, cimag)                 |
+|    Iterates (r*r - i*i + creal, 2*r*i + cimag) up to 255 steps    |
+|    or until r*r + i*i > 4                                         |
++---------------------------------+---------------------------------+
+                                  |
+                                  v
++-------------------------------------------------------------------+
+|  printdensity(d)  -->  putchard(32 | 46 | 43 | 42)                |
+|    Maps escape iteration count to ' ', '.', '+', or '*' on stderr |
++-------------------------------------------------------------------+
 ```
 
-Every floating-point operation, recursive function call, user-defined operator, and character output ran as native host machine instructions generated on the fly by your compiler.
+:::{note}
+**A Pure-Kaleidoscope Mini Standard Library**
+
+Notice below that `!`, `-` (unary), `>`, `|`, `&`, `=`, and `:` are all written in Kaleidoscope itself!  Even `:` (sequencing each row's inner `x` loop with `putchard(10)` to print a newline at the end of every row) is just a 1-line user-defined binary operator at precedence `1`.
+:::
+
+---
+
+## Incremental Code Changes
+
+No compiler mechanics change in this step; simply update the startup banner in `main()` to mark Step 8.4:
+
+```cpp
+  printf("Kaleidoscope JIT REPL (Step 8.4: Mandelbrot JIT)\n");
+```
 
 ---
 
 ## Verifying Your Code
 
-Before moving on, verify your complete `kaleidoscope.cpp` against the reference file.
+Compare your `kaleidoscope.cpp` against the complete Section 8 reference implementation:
 
 <details>
 <summary>Click here to compare against the reference kaleidoscope.cpp</summary>
@@ -154,18 +70,11 @@ Before moving on, verify your complete `kaleidoscope.cpp` against the reference 
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
-#include "llvm/IR/PassManager.h"
 #include "llvm/IR/Type.h"
 #include "llvm/IR/Verifier.h"
-#include "llvm/Passes/PassBuilder.h"
-#include "llvm/Passes/StandardInstrumentations.h"
 #include "llvm/Support/TargetSelect.h"
-#include "llvm/Target/TargetMachine.h"
-#include "llvm/Transforms/InstCombine/InstCombine.h"
-#include "llvm/Transforms/Scalar.h"
-#include "llvm/Transforms/Scalar/GVN.h"
-#include "llvm/Transforms/Scalar/Reassociate.h"
-#include "llvm/Transforms/Scalar/SimplifyCFG.h"
+#include "llvm/Support/raw_ostream.h"
+
 #include <cctype>
 #include <cstdio>
 #include <cstdlib>
@@ -175,21 +84,9 @@ Before moving on, verify your complete `kaleidoscope.cpp` against the reference 
 #include <utility>
 #include <vector>
 
-#ifdef _WIN32
-#define DLLEXPORT __declspec(dllexport)
-#else
-#define DLLEXPORT
-#endif
-
-extern "C" DLLEXPORT double putchard(double X) {
-  fputc(static_cast<char>(X), stderr);
-  return 0;
-}
-
-extern "C" DLLEXPORT double printd(double X) {
-  fprintf(stderr, "%f\n", X);
-  return 0;
-}
+//===----------------------------------------------------------------------===//
+// Lexer
+//===----------------------------------------------------------------------===//
 
 enum Token {
   tok_eof = -1,
@@ -210,8 +107,8 @@ enum Token {
   tok_number = -201,
 };
 
-static std::string IdentifierStr;
-static double NumVal;
+static std::string IdentifierStr; // Filled in if tok_identifier
+static double NumVal;             // Filled in if tok_number
 
 static int gettok() {
   static int LastChar = ' ';
@@ -219,6 +116,7 @@ static int gettok() {
   while (isspace(LastChar))
     LastChar = getchar();
 
+  // Recognise identifiers and keywords: [a-zA-Z_][a-zA-Z0-9_]*
   if (isalpha(LastChar) || LastChar == '_') {
     IdentifierStr = LastChar;
     while (isalnum((LastChar = getchar())) || LastChar == '_')
@@ -245,6 +143,7 @@ static int gettok() {
     return tok_identifier;
   }
 
+  // Recognise numeric literals: [0-9.]+
   if (isdigit(LastChar) || LastChar == '.') {
     std::string NumStr;
     do {
@@ -256,6 +155,7 @@ static int gettok() {
     return tok_number;
   }
 
+  // Recognise comments: '#' through end of line.
   if (LastChar == '#') {
     do
       LastChar = getchar();
@@ -272,6 +172,10 @@ static int gettok() {
   LastChar = getchar();
   return ThisChar;
 }
+
+//===----------------------------------------------------------------------===//
+// Abstract Syntax Tree (AST)
+//===----------------------------------------------------------------------===//
 
 class ExprAST {
 public:
@@ -292,6 +196,7 @@ class VariableExprAST : public ExprAST {
 
 public:
   explicit VariableExprAST(std::string Name) : Name(std::move(Name)) {}
+  const std::string &getName() const { return Name; }
   llvm::Value *codegen() override;
 };
 
@@ -333,7 +238,6 @@ public:
   IfExprAST(std::unique_ptr<ExprAST> Cond, std::unique_ptr<ExprAST> Then,
             std::unique_ptr<ExprAST> Else)
       : Cond(std::move(Cond)), Then(std::move(Then)), Else(std::move(Else)) {}
-
   llvm::Value *codegen() override;
 };
 
@@ -342,12 +246,11 @@ class ForExprAST : public ExprAST {
   std::unique_ptr<ExprAST> Start, End, Step, Body;
 
 public:
-  ForExprAST(const std::string &VarName, std::unique_ptr<ExprAST> Start,
+  ForExprAST(std::string VarName, std::unique_ptr<ExprAST> Start,
              std::unique_ptr<ExprAST> End, std::unique_ptr<ExprAST> Step,
              std::unique_ptr<ExprAST> Body)
-      : VarName(VarName), Start(std::move(Start)), End(std::move(End)),
-        Step(std::move(Step)), Body(std::move(Body)) {}
-
+      : VarName(std::move(VarName)), Start(std::move(Start)),
+        End(std::move(End)), Step(std::move(Step)), Body(std::move(Body)) {}
   llvm::Value *codegen() override;
 };
 
@@ -358,17 +261,17 @@ class PrototypeAST {
   unsigned Precedence;
 
 public:
-  PrototypeAST(const std::string &Name, std::vector<std::string> Args,
+  PrototypeAST(std::string Name, std::vector<std::string> Args,
                bool IsOperator = false, unsigned Prec = 0)
-      : Name(Name), Args(std::move(Args)), IsOperator(IsOperator),
+      : Name(std::move(Name)), Args(std::move(Args)), IsOperator(IsOperator),
         Precedence(Prec) {}
 
-  llvm::Function *codegen();
   const std::string &getName() const { return Name; }
   bool isUnaryOp() const { return IsOperator && Args.size() == 1; }
   bool isBinaryOp() const { return IsOperator && Args.size() == 2; }
   char getOperatorName() const { return Name[Name.size() - 1]; }
   unsigned getBinaryPrecedence() const { return Precedence; }
+  llvm::Function *codegen();
 };
 
 class FunctionAST {
@@ -379,8 +282,13 @@ public:
   FunctionAST(std::unique_ptr<PrototypeAST> Proto,
               std::unique_ptr<ExprAST> Body)
       : Proto(std::move(Proto)), Body(std::move(Body)) {}
+
   llvm::Function *codegen();
 };
+
+//===----------------------------------------------------------------------===//
+// Parser
+//===----------------------------------------------------------------------===//
 
 static int CurTok;
 static int getNextToken() { return CurTok = gettok(); }
@@ -391,7 +299,7 @@ static int GetTokPrecedence() {
   if (!isascii(CurTok))
     return -1;
 
-  int TokPrec = BinopPrecedence[CurTok];
+  int TokPrec = BinopPrecedence[static_cast<char>(CurTok)];
   if (TokPrec <= 0)
     return -1;
   return TokPrec;
@@ -399,11 +307,6 @@ static int GetTokPrecedence() {
 
 static std::unique_ptr<ExprAST> LogError(const char *Str) {
   fprintf(stderr, "Error: %s\n", Str);
-  return nullptr;
-}
-
-static std::unique_ptr<PrototypeAST> LogErrorP(const char *Str) {
-  LogError(Str);
   return nullptr;
 }
 
@@ -416,30 +319,32 @@ static std::unique_ptr<ExprAST> ParseExpression();
 
 static std::unique_ptr<ExprAST> ParseNumberExpr() {
   auto Result = std::make_unique<NumberExprAST>(NumVal);
-  getNextToken();
+  getNextToken(); // consume the number
   return Result;
 }
 
 static std::unique_ptr<ExprAST> ParseParenExpr() {
-  getNextToken();
+  getNextToken(); // eat '('
   auto V = ParseExpression();
   if (!V)
     return nullptr;
 
   if (CurTok != ')')
     return LogError("expected ')'");
-  getNextToken();
+  getNextToken(); // eat ')'
   return V;
 }
 
 static std::unique_ptr<ExprAST> ParseIdentifierExpr() {
   std::string IdName = IdentifierStr;
-  getNextToken();
+  getNextToken(); // eat identifier
 
+  // Simple variable reference.
   if (CurTok != '(')
-    return std::make_unique<VariableExprAST>(IdName);
+    return std::make_unique<VariableExprAST>(std::move(IdName));
 
-  getNextToken();
+  // Function call.
+  getNextToken(); // eat '('
   std::vector<std::unique_ptr<ExprAST>> Args;
   if (CurTok != ')') {
     while (true) {
@@ -453,16 +358,16 @@ static std::unique_ptr<ExprAST> ParseIdentifierExpr() {
 
       if (CurTok != ',')
         return LogError("expected ')' or ',' in argument list");
-      getNextToken();
+      getNextToken(); // eat ','
     }
   }
 
-  getNextToken();
-  return std::make_unique<CallExprAST>(IdName, std::move(Args));
+  getNextToken(); // eat ')'
+  return std::make_unique<CallExprAST>(std::move(IdName), std::move(Args));
 }
 
 static std::unique_ptr<ExprAST> ParseIfExpr() {
-  getNextToken();
+  getNextToken(); // eat 'if'
 
   auto Cond = ParseExpression();
   if (!Cond)
@@ -470,7 +375,7 @@ static std::unique_ptr<ExprAST> ParseIfExpr() {
 
   if (CurTok != tok_then)
     return LogError("expected 'then'");
-  getNextToken();
+  getNextToken(); // eat 'then'
 
   auto Then = ParseExpression();
   if (!Then)
@@ -478,7 +383,7 @@ static std::unique_ptr<ExprAST> ParseIfExpr() {
 
   if (CurTok != tok_else)
     return LogError("expected 'else'");
-  getNextToken();
+  getNextToken(); // eat 'else'
 
   auto Else = ParseExpression();
   if (!Else)
@@ -489,47 +394,49 @@ static std::unique_ptr<ExprAST> ParseIfExpr() {
 }
 
 static std::unique_ptr<ExprAST> ParseForExpr() {
-  getNextToken();
+  getNextToken(); // eat 'for'
 
   if (CurTok != tok_identifier)
-    return LogError("expected identifier after for");
+    return LogError("expected identifier after 'for'");
 
   std::string IdName = IdentifierStr;
-  getNextToken();
+  getNextToken(); // eat identifier
 
   if (CurTok != '=')
-    return LogError("expected '=' after for");
-  getNextToken();
+    return LogError("expected '=' after 'for'");
+  getNextToken(); // eat '='
 
   auto Start = ParseExpression();
   if (!Start)
     return nullptr;
   if (CurTok != ',')
     return LogError("expected ',' after for start value");
-  getNextToken();
+  getNextToken(); // eat ','
 
   auto End = ParseExpression();
   if (!End)
     return nullptr;
 
+  // The step value is optional.
   std::unique_ptr<ExprAST> Step;
   if (CurTok == ',') {
-    getNextToken();
+    getNextToken(); // eat ','
     Step = ParseExpression();
     if (!Step)
       return nullptr;
   }
 
   if (CurTok != tok_in)
-    return LogError("expected 'in' after for");
-  getNextToken();
+    return LogError("expected 'in' after 'for'");
+  getNextToken(); // eat 'in'
 
   auto Body = ParseExpression();
   if (!Body)
     return nullptr;
 
-  return std::make_unique<ForExprAST>(IdName, std::move(Start), std::move(End),
-                                      std::move(Step), std::move(Body));
+  return std::make_unique<ForExprAST>(std::move(IdName), std::move(Start),
+                                      std::move(End), std::move(Step),
+                                      std::move(Body));
 }
 
 static std::unique_ptr<ExprAST> ParsePrimary() {
@@ -556,10 +463,12 @@ static std::unique_ptr<ExprAST> ParseUnary() {
   int Opc = CurTok;
   getNextToken();
   if (auto Operand = ParseUnary())
-    return std::make_unique<UnaryExprAST>(Opc, std::move(Operand));
+    return std::make_unique<UnaryExprAST>(static_cast<char>(Opc),
+                                          std::move(Operand));
   return nullptr;
 }
 
+/// binoprhs ::= (binop unary)*
 static std::unique_ptr<ExprAST> ParseBinOpRHS(int ExprPrec,
                                               std::unique_ptr<ExprAST> LHS) {
   while (true) {
@@ -569,7 +478,7 @@ static std::unique_ptr<ExprAST> ParseBinOpRHS(int ExprPrec,
       return LHS;
 
     int BinOp = CurTok;
-    getNextToken();
+    getNextToken(); // eat binary operator
 
     auto RHS = ParseUnary();
     if (!RHS)
@@ -582,8 +491,8 @@ static std::unique_ptr<ExprAST> ParseBinOpRHS(int ExprPrec,
         return nullptr;
     }
 
-    LHS = std::make_unique<BinaryExprAST>(BinOp, std::move(LHS),
-                                          std::move(RHS));
+    LHS = std::make_unique<BinaryExprAST>(static_cast<char>(BinOp),
+                                          std::move(LHS), std::move(RHS));
   }
 }
 
@@ -595,9 +504,14 @@ static std::unique_ptr<ExprAST> ParseExpression() {
   return ParseBinOpRHS(0, std::move(LHS));
 }
 
+static std::unique_ptr<PrototypeAST> LogErrorP(const char *Str) {
+  LogError(Str);
+  return nullptr;
+}
+
 static std::unique_ptr<PrototypeAST> ParsePrototype() {
   std::string FnName;
-  unsigned Kind = 0;
+  unsigned Kind = 0; // 0 = identifier, 1 = unary, 2 = binary
   unsigned BinaryPrecedence = 30;
 
   switch (CurTok) {
@@ -611,7 +525,7 @@ static std::unique_ptr<PrototypeAST> ParsePrototype() {
     if (!isascii(CurTok))
       return LogErrorP("expected unary operator");
     FnName = "unary";
-    FnName += (char)CurTok;
+    FnName += static_cast<char>(CurTok);
     Kind = 1;
     getNextToken();
     break;
@@ -620,14 +534,14 @@ static std::unique_ptr<PrototypeAST> ParsePrototype() {
     if (!isascii(CurTok))
       return LogErrorP("expected binary operator");
     FnName = "binary";
-    FnName += (char)CurTok;
+    FnName += static_cast<char>(CurTok);
     Kind = 2;
     getNextToken();
 
     if (CurTok == tok_number) {
       if (NumVal < 1 || NumVal > 100)
         return LogErrorP("invalid precedence: must be 1..100");
-      BinaryPrecedence = (unsigned)NumVal;
+      BinaryPrecedence = static_cast<unsigned>(NumVal);
       getNextToken();
     }
     break;
@@ -641,20 +555,21 @@ static std::unique_ptr<PrototypeAST> ParsePrototype() {
   std::vector<std::string> ArgNames;
   while (getNextToken() == tok_identifier)
     ArgNames.push_back(IdentifierStr);
+
   if (CurTok != ')')
     return LogErrorP("expected ')' in prototype");
 
-  getNextToken();
+  getNextToken(); // eat ')'
 
   if (Kind && ArgNames.size() != Kind)
     return LogErrorP("invalid number of operands for operator");
 
-  return std::make_unique<PrototypeAST>(FnName, std::move(ArgNames), Kind != 0,
-                                        BinaryPrecedence);
+  return std::make_unique<PrototypeAST>(std::move(FnName), std::move(ArgNames),
+                                        Kind != 0, BinaryPrecedence);
 }
 
 static std::unique_ptr<FunctionAST> ParseDefinition() {
-  getNextToken();
+  getNextToken(); // eat 'def'
   auto Proto = ParsePrototype();
   if (!Proto)
     return nullptr;
@@ -674,9 +589,13 @@ static std::unique_ptr<FunctionAST> ParseTopLevelExpr() {
 }
 
 static std::unique_ptr<PrototypeAST> ParseExtern() {
-  getNextToken();
+  getNextToken(); // eat 'extern'
   return ParsePrototype();
 }
+
+//===----------------------------------------------------------------------===//
+// Code Generation
+//===----------------------------------------------------------------------===//
 
 static std::unique_ptr<llvm::LLVMContext> TheContext;
 static std::unique_ptr<llvm::Module> TheModule;
@@ -684,14 +603,8 @@ static std::unique_ptr<llvm::IRBuilder<>> Builder;
 static std::map<std::string, llvm::Value *> NamedValues;
 static std::unique_ptr<llvm::orc::KaleidoscopeJIT> TheJIT;
 static std::map<std::string, std::unique_ptr<PrototypeAST>> FunctionProtos;
+static std::map<std::string, llvm::orc::ResourceTrackerSP> FunctionRTs;
 static llvm::ExitOnError ExitOnErr;
-
-static void InitializeModuleAndManagers() {
-  TheContext = std::make_unique<llvm::LLVMContext>();
-  TheModule = std::make_unique<llvm::Module>("KaleidoscopeJIT", *TheContext);
-  TheModule->setDataLayout(TheJIT->getDataLayout());
-  Builder = std::make_unique<llvm::IRBuilder<>>(*TheContext);
-}
 
 static llvm::Function *getFunction(std::string Name) {
   if (auto *F = TheModule->getFunction(Name))
@@ -702,6 +615,13 @@ static llvm::Function *getFunction(std::string Name) {
     return FI->second->codegen();
 
   return nullptr;
+}
+
+static void InitializeModuleAndManagers() {
+  TheContext = std::make_unique<llvm::LLVMContext>();
+  TheModule = std::make_unique<llvm::Module>("KaleidoscopeJIT", *TheContext);
+  TheModule->setDataLayout(TheJIT->getDataLayout());
+  Builder = std::make_unique<llvm::IRBuilder<>>(*TheContext);
 }
 
 llvm::Value *NumberExprAST::codegen() {
@@ -764,7 +684,7 @@ llvm::Value *CallExprAST::codegen() {
     return LogErrorV("unknown function referenced");
 
   if (CalleeF->arg_size() != Args.size())
-    return LogErrorV("incorrect number of arguments passed");
+    return LogErrorV("incorrect # arguments passed");
 
   std::vector<llvm::Value *> ArgsV;
   for (unsigned i = 0, e = Args.size(); i != e; ++i) {
@@ -793,30 +713,28 @@ llvm::Value *IfExprAST::codegen() {
 
   Builder->CreateCondBr(CondV, ThenBB, ElseBB);
 
+  // Emit 'then' block.
   Builder->SetInsertPoint(ThenBB);
   llvm::Value *ThenV = Then->codegen();
   if (!ThenV)
     return nullptr;
-
   Builder->CreateBr(MergeBB);
   ThenBB = Builder->GetInsertBlock();
 
+  // Emit 'else' block.
   TheFunction->insert(TheFunction->end(), ElseBB);
   Builder->SetInsertPoint(ElseBB);
-
   llvm::Value *ElseV = Else->codegen();
   if (!ElseV)
     return nullptr;
-
   Builder->CreateBr(MergeBB);
   ElseBB = Builder->GetInsertBlock();
 
+  // Emit 'ifcont' merge block with SSA PHI node.
   TheFunction->insert(TheFunction->end(), MergeBB);
   Builder->SetInsertPoint(MergeBB);
-
   llvm::PHINode *PN =
       Builder->CreatePHI(llvm::Type::getDoubleTy(*TheContext), 2, "iftmp");
-
   PN->addIncoming(ThenV, ThenBB);
   PN->addIncoming(ElseV, ElseBB);
   return PN;
@@ -884,11 +802,10 @@ llvm::Value *ForExprAST::codegen() {
 llvm::Function *PrototypeAST::codegen() {
   std::vector<llvm::Type *> Doubles(Args.size(),
                                     llvm::Type::getDoubleTy(*TheContext));
-  llvm::FunctionType *FT = llvm::FunctionType::get(
-      llvm::Type::getDoubleTy(*TheContext), Doubles, false);
-
-  llvm::Function *F = llvm::Function::Create(
-      FT, llvm::Function::ExternalLinkage, Name, TheModule.get());
+  auto *FT = llvm::FunctionType::get(llvm::Type::getDoubleTy(*TheContext),
+                                     Doubles, false);
+  auto *F = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, Name,
+                                   TheModule.get());
 
   unsigned Idx = 0;
   for (auto &Arg : F->args())
@@ -907,8 +824,7 @@ llvm::Function *FunctionAST::codegen() {
   if (P.isBinaryOp())
     BinopPrecedence[P.getOperatorName()] = P.getBinaryPrecedence();
 
-  llvm::BasicBlock *BB =
-      llvm::BasicBlock::Create(*TheContext, "entry", TheFunction);
+  auto *BB = llvm::BasicBlock::Create(*TheContext, "entry", TheFunction);
   Builder->SetInsertPoint(BB);
 
   NamedValues.clear();
@@ -917,7 +833,10 @@ llvm::Function *FunctionAST::codegen() {
 
   if (llvm::Value *RetVal = Body->codegen()) {
     Builder->CreateRet(RetVal);
-    llvm::verifyFunction(*TheFunction);
+    if (llvm::verifyFunction(*TheFunction, &llvm::errs())) {
+      TheFunction->eraseFromParent();
+      return nullptr;
+    }
     return TheFunction;
   }
 
@@ -927,18 +846,55 @@ llvm::Function *FunctionAST::codegen() {
   return nullptr;
 }
 
+//===----------------------------------------------------------------------===//
+// Host Library Helpers
+//===----------------------------------------------------------------------===//
+
+#ifdef _WIN32
+#define DLLEXPORT __declspec(dllexport)
+#else
+#define DLLEXPORT
+#endif
+
+/// putchard - putchar that takes a double and returns 0.
+extern "C" DLLEXPORT double putchard(double X) {
+  fputc(static_cast<char>(X), stderr);
+  return 0;
+}
+
+/// printd - printf that takes a double prints it as "%f\n", returning 0.
+extern "C" DLLEXPORT double printd(double X) {
+  fprintf(stderr, "%f\n", X);
+  return 0;
+}
+
+//===----------------------------------------------------------------------===//
+// Interactive Driver Loop
+//===----------------------------------------------------------------------===//
+
 static void HandleDefinition() {
   if (auto FnAST = ParseDefinition()) {
     if (auto *FnIR = FnAST->codegen()) {
+      std::string FnName = std::string(FnIR->getName());
       fprintf(stderr, "Read function definition:\n");
       FnIR->print(llvm::errs());
       fprintf(stderr, "\n");
-      ExitOnErr(TheJIT->addModule(llvm::orc::ThreadSafeModule(
-          std::move(TheModule), std::move(TheContext))));
+
+      // If redefining an existing JIT function, remove its previous code first.
+      if (auto It = FunctionRTs.find(FnName); It != FunctionRTs.end()) {
+        ExitOnErr(It->second->remove());
+        FunctionRTs.erase(It);
+      }
+
+      auto RT = TheJIT->getMainJITDylib().createResourceTracker();
+      ExitOnErr(
+          TheJIT->addModule(llvm::orc::ThreadSafeModule(std::move(TheModule),
+                                                        std::move(TheContext)),
+                            RT));
+      FunctionRTs[FnName] = std::move(RT);
       InitializeModuleAndManagers();
     }
   } else {
-    // Skip token for error recovery.
     while (CurTok != ';' && CurTok != tok_eof)
       getNextToken();
   }
@@ -953,7 +909,6 @@ static void HandleExtern() {
       FunctionProtos[ProtoAST->getName()] = std::move(ProtoAST);
     }
   } else {
-    // Skip token for error recovery.
     while (CurTok != ';' && CurTok != tok_eof)
       getNextToken();
   }
@@ -969,15 +924,17 @@ static void HandleTopLevelExpression() {
       ExitOnErr(TheJIT->addModule(std::move(TSM), RT));
       InitializeModuleAndManagers();
 
-      auto ExprSymbol = ExitOnErr(TheJIT->lookup("__anon_expr"));
-
-      double (*FP)() = ExprSymbol.toPtr<double (*)()>();
-      fprintf(stderr, "Evaluated to %f\n", FP());
+      if (auto ExprSymbol = TheJIT->lookup("__anon_expr")) {
+        double (*FP)() = ExprSymbol->getAddress().toPtr<double (*)()>();
+        fprintf(stderr, "Evaluated to %f\n", FP());
+      } else {
+        llvm::logAllUnhandledErrors(ExprSymbol.takeError(), llvm::errs(),
+                                    "JIT Error: ");
+      }
 
       ExitOnErr(RT->remove());
     }
   } else {
-    // Skip token for error recovery.
     while (CurTok != ';' && CurTok != tok_eof)
       getNextToken();
   }
@@ -1021,11 +978,13 @@ int main() {
   TheJIT = ExitOnErr(llvm::orc::KaleidoscopeJIT::Create());
   InitializeModuleAndManagers();
 
-  // Prime the first token.
+  printf("Kaleidoscope JIT REPL (Step 8.4: Mandelbrot JIT)\n");
+  printf("Type definitions, externs, or expressions followed by ';' (Ctrl+D to "
+         "exit):\n\n");
+
   Prompt();
   getNextToken();
   MainLoop();
-
   return 0;
 }
 ```
@@ -1033,6 +992,118 @@ int main() {
 
 ---
 
+## Compiling and Rendering the Mandelbrot Fractal
+
+Compile `kaleidoscope.cpp`:
+
+```bash
+clang++ -std=c++17 -fno-rtti -Wall -Wextra -rdynamic -Iinclude kaleidoscope.cpp $(llvm-config --cxxflags --ldflags --system-libs --libs core orcjit native) -isystem $(llvm-config --includedir) -o kaleidoscope
+```
+
+Launch `./kaleidoscope` and paste the complete Mandelbrot program (starting with `extern putchard(char);` so `printdensity` and `mandelhelp` can emit characters!):
+
+```text
+extern putchard(char);
+
+# Logical unary NOT, unary negation, comparisons, boolean ops, and sequencing:
+def unary!(v) if v then 0 else 1;
+def unary-(v) 0-v;
+def binary> 10 (LHS RHS) RHS < LHS;
+def binary| 5 (LHS RHS) if LHS then 1 else if RHS then 1 else 0;
+def binary& 6 (LHS RHS) if !LHS then 0 else !!RHS;
+def binary= 9 (LHS RHS) !(LHS < RHS | LHS > RHS);
+def binary : 1 (x y) y;
+
+def printdensity(d)
+  if d > 8 then putchard(32)
+  else if d > 4 then putchard(46)
+  else if d > 2 then putchard(43)
+  else putchard(42);
+
+def mandelconverger(real imag iters creal cimag)
+  if iters > 255 | (real*real + imag*imag > 4) then iters
+  else mandelconverger(real*real - imag*imag + creal, 2*real*imag + cimag, iters+1, creal, cimag);
+
+def mandelconverge(real imag) mandelconverger(real, imag, 0, real, imag);
+
+def mandelhelp(xmin xmax xstep ymin ymax ystep)
+  for y = ymin, y < ymax, ystep in (
+    (for x = xmin, x < xmax, xstep in printdensity(mandelconverge(x,y))) : putchard(10)
+  );
+
+def mandel(realstart imagstart realmag imagmag)
+  mandelhelp(realstart, realstart+realmag*78, realmag, imagstart, imagstart+imagmag*40, imagmag);
+
+mandel(-2.3, -1.3, 0.05, 0.07);
+```
+
+In a fraction of a second, your JIT-compiled native machine code renders the entire Mandelbrot set over `[-2.3, 1.6]` by `[-1.3, 1.5]`:
+
+```text
+*******************************************************************************
+*******************************************************************************
+****************************************++++++*********************************
+************************************+++++...++++++*****************************
+*********************************++++++++.. ...+++++***************************
+*******************************++++++++++..   ..+++++**************************
+******************************++++++++++.     ..++++++*************************
+****************************+++++++++....      ..++++++************************
+**************************++++++++.......      .....++++***********************
+*************************++++++++.   .            ... .++**********************
+***********************++++++++...                     ++**********************
+*********************+++++++++....                    .+++*********************
+******************+++..+++++....                      ..+++********************
+**************++++++. ..........                        +++********************
+***********++++++++..        ..                         .++********************
+*********++++++++++...                                 .++++*******************
+********++++++++++..                                   .++++*******************
+*******++++++.....                                    ..++++*******************
+*******+........                                     ...++++*******************
+*******+... ....                                     ...++++*******************
+*******+++++......                                    ..++++*******************
+*******++++++++++...                                   .++++*******************
+*********++++++++++...                                  ++++*******************
+**********+++++++++..        ..                        ..++********************
+*************++++++.. ..........                        +++********************
+******************+++...+++.....                      ..+++********************
+*********************+++++++++....                    ..++*********************
+***********************++++++++...                     +++*********************
+*************************+++++++..   .            ... .++**********************
+**************************++++++++.......      ......+++***********************
+****************************+++++++++....      ..++++++************************
+*****************************++++++++++..     ..++++++*************************
+*******************************++++++++++..  ...+++++**************************
+*********************************++++++++.. ...+++++***************************
+***********************************++++++....+++++*****************************
+***************************************++++++++********************************
+*******************************************************************************
+*******************************************************************************
+*******************************************************************************
+*******************************************************************************
+*******************************************************************************
+Evaluated to 0.000000
+```
+
+---
+
+## Try It Yourself: Zooming Into the Left Bulb
+
+Because `mandel` is already compiled into native memory inside your running REPL session, you can interactively zoom into any region of the complex plane just by calling `mandel` with smaller step sizes (`realmag` and `imagmag`)!
+
+Try zooming into the intricate boundary around the left circular bulb right at the `ready>` prompt:
+
+```text
+ready> mandel(-2.0, -1.0, 0.02, 0.05);
+```
+
+---
+
 ## Next Steps
 
-In [Section 9: Local Variables and Mutability](../09-local-variables/README.md), we will introduce mutable local variables using stack allocation (`alloca`) and SSA promotion with `mem2reg`.
+Look closely at `mandelconverger`: because Kaleidoscope variables are currently **immutable**, we had to write the inner escape test as a 5-argument recursive function instead of mutating local `real`, `imag`, and `iters` variables inside a loop!
+
+In [Section 9: Local Variables and Mutability](../09-local-variables/index.md), you will add mutable stack variables (`alloca`), assignment (`=`), and `var ... in` expressions, and then unleash LLVM's famous `mem2reg` pass to promote stack variables right back into fast SSA hardware registers automatically!
+
+---
+
+[Previous: User Binary Operators](03-binary-operators.md) | [Section Overview](index.md) | [Next: Section 9 - Local Variables and Mutability](../09-local-variables/index.md)

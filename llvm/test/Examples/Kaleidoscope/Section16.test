@@ -1,0 +1,17 @@
+# RUN: Kaleidoscope-Sec16 --run-peephole < %s 2>&1 | FileCheck %s
+# REQUIRES: default_triple
+
+# Test custom New Pass Manager peephole pass eliminating +0, *1, and x-x.
+def simplify_me(x: int) -> int
+  ((x + 0) * 1) + (x - x);
+
+simplify_me(42);
+
+# CHECK: --- IR before ks-peephole ---
+# CHECK: [peephole] Simplified identity:
+# CHECK: [peephole] Folded to zero:
+# CHECK: define i32 @simplify_me(i32 %x) {
+# CHECK-NEXT: entry:
+# CHECK-NEXT:   ret i32 %x
+# CHECK-NEXT: }
+# CHECK: Evaluated to 42

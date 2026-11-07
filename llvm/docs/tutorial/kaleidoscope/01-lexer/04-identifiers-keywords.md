@@ -1,35 +1,35 @@
 # Step 1.4: Identifiers and Keywords
 
-In this step, we add the ability to recognise words.  In programming languages, words fall into two categories:
-1.  **Reserved keywords**: Words defined by the language grammar itself, such as `def` (to define a function) and `extern` (to declare a library function).
-2.  **Identifiers**: Names chosen by the programmer, such as variable names (`x`, `y`) or function names (`square`, `fib`).
+With numbers working from [Step 1.3](03-numeric-literals.md), our scanner is ready to read words.  In programming languages, word-like tokens fall into two categories:
+1.  **Reserved keywords**: Words owned by the language grammar itself, such as `def` (to define a function) and `extern` (to declare an external library function like `sin` or `cos`).
+2.  **Identifiers**: Names chosen by the programmer, such as variable names (`x`, `my_val`) or function names (`square`, `fib`).
 
 ---
 
-## Recognising Words
+## Recognising Words (Including Underscores)
 
-In Kaleidoscope, an identifier begins with an alphabetical letter or underscore and is followed by any combination of letters, digits, and underscores (`[a-zA-Z_][a-zA-Z0-9_]*`).
+In Kaleidoscope, a word starts with an ASCII letter or an underscore (`_`), followed by zero or more ASCII letters, digits, or underscores:
 
-Whenever `gettok()` sees an alphabetical character or underscore, it collects characters into a global string named `IdentifierStr`.  Once the word is complete, it checks if the word matches a keyword:
-* If `IdentifierStr == "def"`, it returns `tok_def`.
-* If `IdentifierStr == "extern"`, it returns `tok_extern`.
-* Otherwise, it returns `tok_identifier`.
+```text
+Identifier / Keyword rule:  [a-zA-Z_][a-zA-Z0-9_]*
+```
+
+Supporting underscores (`_`) right from the start lets programmers write natural snake_case names like `step_size` or `my_x`, and also matches compiler-generated names like `__anon_expr` that we will meet in Section 4.  Notice why a word cannot *start* with a digit: `2fast` begins with `'2'`, which would collide with numeric scanning from [Step 1.3](03-numeric-literals.md), whereas `fast2` begins with `'f'` and scans cleanly as a single identifier!
+
+Whenever `gettok()` sees a letter or `'_'`, it accumulates the full word into a `static std::string IdentifierStr` and then checks whether the word is a reserved keyword:
+* `"def"` returns `tok_def` (`-100`).
+* `"extern"` returns `tok_extern` (`-101`).
+* Any other word returns `tok_identifier` (`-200`), leaving the name itself in `IdentifierStr` for the parser to read.
 
 ---
 
 ## Incremental Code Changes
 
-Open your `kaleidoscope.cpp` file.  You will build upon the code you wrote in Step 1.3 by making three targeted additions.
+Open `kaleidoscope.cpp` and build on your [Step 1.3](03-numeric-literals.md) code.  We will walk through `def` together and let you **stretch** on `extern`!
 
-### 1. Token Codes and IdentifierStr
+### 1. Populate the Reserved `Token` Ranges and `IdentifierStr`
 
-Update your `enum Token` to separate token categories into distinct numeric ranges:
-* Commands and keywords start at `-100` (`tok_def = -100`, `tok_extern = -101`).
-* Primary expressions start at `-200` (`tok_identifier = -200`, `tok_number = -201`).
-
-Splitting these categories numerically means that whenever you add new keywords to your language later (such as `if` or `for`), you can simply increment within the keyword range without shifting or renumbering other tokens.
-
-Declare `IdentifierStr` directly above `NumVal`:
+In [Step 1.3](03-numeric-literals.md), we placed `tok_number` at `-201` so keywords could live in the `-100`s and primary atoms in the `-200`s.  Update `enum Token` to add `tok_def`, `tok_extern`, and `tok_identifier`, and declare `IdentifierStr` right above `NumVal`:
 
 ```cpp
 enum Token {
@@ -48,9 +48,9 @@ static std::string IdentifierStr; // Filled in if tok_identifier
 static double NumVal;             // Filled in if tok_number
 ```
 
-### 2. Scanning Identifiers in `gettok()`
+### 2. Scan Identifiers and Keywords in `gettok()` (With a Quick Stretch!)
 
-In `gettok()`, right after the `while (isspace(LastChar))` loop skips whitespace, check if `LastChar` is an alphabetical character or an underscore.  Place this block immediately before your numeric literal check:
+Inside `gettok()`, right after `while (isspace(LastChar))` and *before* the numeric literal `if`, add the identifier scanner.  Here is the logic with `def` wired in:
 
 ```cpp
   // Recognise identifiers and keywords: [a-zA-Z_][a-zA-Z0-9_]*
@@ -61,25 +61,24 @@ In `gettok()`, right after the `while (isspace(LastChar))` loop skips whitespace
 
     if (IdentifierStr == "def")
       return tok_def;
-    if (IdentifierStr == "extern")
-      return tok_extern;
+    // Your stretch: recognise "extern" and return tok_extern here!
     return tok_identifier;
   }
 ```
 
-Notice how this works:
-* The first character is already known to be alphabetical or an underscore, so we initialise `IdentifierStr` with it.
-* The `while` loop calls `getchar()` and appends characters as long as they are alphanumeric (`isalnum`) or underscores.
-* Once a non-identifier character is encountered, the loop finishes.  `LastChar` holds that character, ready for the next token call.
-* We then test `IdentifierStr` against our known keywords.  If it matches `"def"` or `"extern"`, we return the respective keyword token.  Otherwise, it is a user identifier.
+**Your Stretch**: Replace that comment with the two-line check that returns `tok_extern` whenever `IdentifierStr == "extern"`.
 
-### 3. Updating `main()` to Handle All Tokens
+Trace how cleanly this mirrors our number loop:
+* Once `isalnum((LastChar = getchar())) || LastChar == '_'` becomes false (say on `'('` in `fib(x)`), the `while` loop stops with `LastChar` already holding `'('` for the next call to `gettok()`.
+* Checking `"def"` and `"extern"` *after* reading the whole word ensures that an identifier like `default_value` is read in full as `"default_value"` (`tok_identifier`) rather than prematurely chopped into `def` + `ault_value`!
 
-In `main()`, replace the previous `if-else` statement with a `switch` statement that formats keywords and identifiers:
+### 3. Switch on All Token Kinds in `main()`
+
+In `main()`, update the step banner to `Step 1.4: Identifiers & Keywords` and replace the `if (tok == tok_number)` check with a `switch` statement.  Here is the skeleton with `tok_def` shown; fill in the parallel `case tok_extern:` branch (`printf("Token: KEYWORD(extern)\n");`) as part of your stretch:
 
 ```cpp
 int main() {
-  printf("Kaleidoscope Token Inspector (Step 4: Identifiers & Keywords)\n");
+  printf("Kaleidoscope Token Inspector (Step 1.4: Identifiers & Keywords)\n");
   printf("Type code and press Enter (Ctrl+D to exit):\n\n");
 
   int tok;
@@ -89,8 +88,7 @@ int main() {
       printf("Token: KEYWORD(def)\n");
       break;
     case tok_extern:
-      printf("Token: KEYWORD(extern)\n");
-      break;
+      // Your stretch: print "Token: KEYWORD(extern)\n" and break!
     case tok_identifier:
       printf("Token: IDENTIFIER(\"%s\")\n", IdentifierStr.c_str());
       break;
@@ -112,7 +110,7 @@ int main() {
 
 ## Verifying Your Code
 
-Before compiling, check that your `kaleidoscope.cpp` has all additions in place.
+Once you have filled in both `extern` spots, open the fold below to compare your `kaleidoscope.cpp` line-for-line against the reference implementation:
 
 <details>
 <summary>Click here to compare against the reference kaleidoscope.cpp</summary>
@@ -178,7 +176,7 @@ static int gettok() {
 }
 
 int main() {
-  printf("Kaleidoscope Token Inspector (Step 4: Identifiers & Keywords)\n");
+  printf("Kaleidoscope Token Inspector (Step 1.4: Identifiers & Keywords)\n");
   printf("Type code and press Enter (Ctrl+D to exit):\n\n");
 
   int tok;
@@ -215,22 +213,26 @@ int main() {
 Recompile your scanner:
 
 ```bash
-clang++ -Wall -Wextra kaleidoscope.cpp -o kaleidoscope
+clang++ -std=c++17 -fno-rtti -Wall -Wextra kaleidoscope.cpp -o kaleidoscope
 ```
 
-Run the binary:
+Run the binary and test `extern`, `def`, and an identifier containing an underscore:
 
 ```bash
 ./kaleidoscope
 ```
 
-Type a function definition prototype:
-
 ```text
-Kaleidoscope Token Inspector (Step 4: Identifiers & Keywords)
+Kaleidoscope Token Inspector (Step 1.4: Identifiers & Keywords)
 Type code and press Enter (Ctrl+D to exit):
 
-def square(x) x * x;
+extern sin(my_x); def square(x) x * x;
+Token: KEYWORD(extern)
+Token: IDENTIFIER("sin")
+Token: '(' (ASCII 40)
+Token: IDENTIFIER("my_x")
+Token: ')' (ASCII 41)
+Token: ';' (ASCII 59)
 Token: KEYWORD(def)
 Token: IDENTIFIER("square")
 Token: '(' (ASCII 40)
@@ -240,8 +242,13 @@ Token: IDENTIFIER("x")
 Token: '*' (ASCII 42)
 Token: IDENTIFIER("x")
 Token: ';' (ASCII 59)
+[EOF]
 ```
 
-The lexer correctly identifies `def` as a language command while preserving `square` and `x` as identifiers.
+Both `extern` and `def` are recognised as language keywords, while `sin`, `my_x`, `square`, and `x` come through as identifiers with their exact names intact.
 
-In [Step 1.5](05-skipping-comments.md), we will add comment handling and test your skills with an active learning challenge.
+In [Step 1.5](05-skipping-comments.md), we will finish our lexer by discarding `#` comments and put your scanner knowledge to the test with a hands-on challenge.
+
+---
+
+[Previous: Step 1.3 - Numeric Literals](03-numeric-literals.md) | [Section 1 Overview](index.md) | [Next: Step 1.5 - Skipping Comments](05-skipping-comments.md)

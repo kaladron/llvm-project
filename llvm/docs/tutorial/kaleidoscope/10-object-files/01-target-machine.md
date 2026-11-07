@@ -1,93 +1,1397 @@
 # Step 10.1: Configuring the Target Machine
 
-To emit machine code for a specific CPU, LLVM must know the details of the host architecture: register conventions, pointer widths, ABI calling conventions, and instruction set extensions.  All of this configuration is managed through **`llvm::TargetMachine`**.
+When ORCv2 JIT-compiled our modules in Sections 5 through 9, `KaleidoscopeJIT::Create()` quietly queried your host CPU and created an internal `TargetMachine` behind the scenes.  To emit standalone `.o` files directly (or even cross-compile for another architecture!), we configure an explicit **`llvm::TargetMachine`**.
 
----
+`TargetMachine` encapsulates everything LLVM's backend needs to know about the destination platform:
 
-## Target Machine Configuration
+- **Target Triple** (such as `x86_64-pc-linux-gnu` or `aarch64-apple-darwin`): selects the instruction set, calling convention ABI, and object file format (ELF, Mach-O, or COFF).
+- **CPU and Subtarget Features** (such as `"generic"` or `"znver4"`, `"+avx2"`): controls instruction scheduling and vector extensions.
+- **Relocation Model** (`llvm::Reloc::PIC_`): generates Position-Independent Code so modern OS linkers can place your functions into executables protected by Address Space Layout Randomisation (ASLR) or shared libraries!
 
-```mermaid
-flowchart TD
-    Host["Host Operating System & CPU"] --> Triple["getDefaultTargetTriple()<br>(e.g. x86_64-unknown-linux-gnu)"]
-    Triple --> Lookup["TargetRegistry::lookupTarget(TargetTriple)"]
-    Lookup --> TM["TargetMachine<br>createTargetMachine(TargetTriple, CPU, Features, opt, PIC_)"]
-    TM --> ConfigMod["TheModule->setTargetTriple(TargetTriple)<br>TheModule->setDataLayout(TM->createDataLayout())"]
+```text
++-------------------------------------------------------------------+
+|  main(argc, argv)                                                 |
+|    --emit-obj <path> ?                                            |
++----------------+---------------------------------+----------------+
+                 | Yes (EmitObjectMode = true)     | No (REPL mode)
+                 v                                 v
++-----------------------------------+   +---------------------------+
+|  ConfigureTargetMachine()         |   |  InitializeNativeTarget() |
+|  1. InitializeAllTargets / MCs    |   |  KaleidoscopeJIT::Create  |
+|  2. getDefaultTargetTriple()      |   |  Per-definition JIT       |
+|  3. TargetRegistry::lookupTarget  |   |  modules + live REPL      |
+|  4. createTargetMachine(PIC_)     |   +---------------------------+
+|  5. Accumulate all defs in        |
+|     one single TheModule          |
++-----------------------------------+
 ```
 
-> [!NOTE]
-> **Understanding Target Triples**:
-> A target triple is a canonical string specifying the processor architecture, vendor, operating system, and ABI/environment (e.g. `x86_64-unknown-linux-gnu` or `aarch64-apple-darwin`).  LLVM uses this string to determine instruction sets, register names, and object container formats (ELF, Mach-O, COFF).
+:::{note}
+**Single-Module Batching vs Per-Definition JIT Modules**
 
-> [!TIP]
-> **Position-Independent Code (PIC)**:
-> We configure `TheTargetMachine` with `llvm::Reloc::PIC_` (Position-Independent Code).  Position-independent code can be loaded at arbitrary virtual memory addresses without requiring base address fixups, making it compatible with modern shared libraries and Address Space Layout Randomisation (ASLR).
+In interactive REPL mode ([Step 5.4](../05-jit/04-functions-and-externs.md)), `HandleDefinition()` ships each function off to `TheJIT` immediately and resets `TheModule` via `InitializeModuleAndManagers()`.  In `--emit-obj` AOT mode, we want *every* function in the input file (`average`, `fib`, helper operators) emitted into **one** `.o` file!  Guarding the JIT submission block with `if (!EmitObjectMode)` leaves all parsed functions inside `TheModule` ready to be written out together in [Step 10.2](02-emitting-object-code.md).
+:::
 
 ---
 
 ## Incremental Code Changes
 
-Open `kaleidoscope.cpp` to configure ahead-of-time target emission.
+Open `kaleidoscope.cpp` from [Step 9.3](../09-local-variables/03-mem2reg-optimisation.md) and apply the updates below.
 
-### 1. Initialising Target Registries
+### 1. Including Target, FileSystem, and Legacy CodeGen Headers
 
-Include the target registry and host parsing headers:
+Add the target registry, triple/host parser, filesystem, `<cstring>`, and `LegacyPassManager.h` headers (we will use `LegacyPassManager.h` and `FileSystem.h` in [Step 10.2](02-emitting-object-code.md), so adding all Section 10 headers together keeps our `#include` block tidy):
 
 ```cpp
+#include "llvm/IR/Instructions.h"
+#include "llvm/IR/LLVMContext.h"
+#include "llvm/IR/LegacyPassManager.h"
+#include "llvm/IR/Module.h"
+#include "llvm/IR/PassManager.h"
+#include "llvm/IR/Type.h"
+#include "llvm/IR/Verifier.h"
 #include "llvm/MC/TargetRegistry.h"
+#include "llvm/Passes/PassBuilder.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Target/TargetOptions.h"
 #include "llvm/TargetParser/Host.h"
+#include "llvm/TargetParser/Triple.h"
+#include "llvm/Transforms/InstCombine/InstCombine.h"
+#include "llvm/Transforms/Scalar/GVN.h"
+#include "llvm/Transforms/Scalar/Reassociate.h"
+#include "llvm/Transforms/Scalar/SimplifyCFG.h"
+#include "llvm/Transforms/Utils/Mem2Reg.h"
+#include <cstring>
 ```
 
-In `main()`, initialise all supported LLVM target info, assembly parsers, and machine code printers:
+### 2. Adding AOT State and Updating `InitializeModuleAndManagers()`
+
+Declare `TheTargetMachine`, `ObjectOutputPath`, and `EmitObjectMode` right below `ExitOnErr`:
 
 ```cpp
+static llvm::ExitOnError ExitOnErr;
+static std::unique_ptr<llvm::TargetMachine> TheTargetMachine;
+static std::string ObjectOutputPath;
+static bool EmitObjectMode = false;
+```
+
+Inside `InitializeModuleAndManagers()`, configure `TheModule`'s target triple and `DataLayout` from `TheTargetMachine` when `EmitObjectMode` is active, and from `TheJIT` otherwise:
+
+```cpp
+static void InitializeModuleAndManagers() {
+  TheContext = std::make_unique<llvm::LLVMContext>();
+  TheModule = std::make_unique<llvm::Module>("Kaleidoscope", *TheContext);
+  if (EmitObjectMode) {
+    TheModule->setTargetTriple(TheTargetMachine->getTargetTriple());
+    TheModule->setDataLayout(TheTargetMachine->createDataLayout());
+  } else {
+    TheModule->setDataLayout(TheJIT->getDataLayout());
+  }
+  Builder = std::make_unique<llvm::IRBuilder<>>(*TheContext);
+  // ... TheFPM and AnalysisManager setup unchanged ...
+```
+
+### 3. Batching Definitions and Silencing REPL Prompts in AOT Mode
+
+Update three small places in your driver helpers so `--emit-obj` accumulates functions cleanly without touching `TheJIT`:
+
+1.  In `HandleDefinition()`, wrap the `FunctionRTs` lookup, `TheJIT->addModule(...)`, and `InitializeModuleAndManagers()` reset inside `if (!EmitObjectMode)`:
+
+```cpp
+      fprintf(stderr, "Read function definition:\n");
+      FnIR->print(llvm::errs());
+      fprintf(stderr, "\n");
+
+      if (!EmitObjectMode) {
+        if (auto It = FunctionRTs.find(FnName); It != FunctionRTs.end()) {
+          ExitOnErr(It->second->remove());
+          FunctionRTs.erase(It);
+        }
+
+        auto RT = TheJIT->getMainJITDylib().createResourceTracker();
+        ExitOnErr(
+            TheJIT->addModule(llvm::orc::ThreadSafeModule(
+                                  std::move(TheModule), std::move(TheContext)),
+                              RT));
+        FunctionRTs[FnName] = std::move(RT);
+        InitializeModuleAndManagers();
+      }
+```
+
+2.  At the very top of `HandleTopLevelExpression()`, validate and discard any stray anonymous top-level expression when `EmitObjectMode` is true (since an object file exports named functions rather than executing anonymous expressions):
+
+```cpp
+static void HandleTopLevelExpression() {
+  if (EmitObjectMode) {
+    if (auto FnAST = ParseTopLevelExpr()) {
+      if (auto *FnIR = FnAST->codegen())
+        FnIR->eraseFromParent();
+    } else {
+      while (CurTok != ';' && CurTok != tok_eof)
+        getNextToken();
+    }
+    return;
+  }
+  // ... existing JIT execution path unchanged ...
+```
+
+3.  In `Prompt()`, only print `"ready> "` during interactive JIT sessions:
+
+```cpp
+static void Prompt() {
+  if (!EmitObjectMode)
+    fprintf(stderr, "ready> ");
+}
+```
+
+### 4. Writing `ConfigureTargetMachine()` and CLI Flag Parsing in `main()`
+
+Right above `main()`, add `ConfigureTargetMachine()` to initialise all target registries, look up the host target triple, and construct `TheTargetMachine` with `llvm::Reloc::PIC_`:
+
+```cpp
+static bool ConfigureTargetMachine() {
   llvm::InitializeAllTargetInfos();
   llvm::InitializeAllTargets();
   llvm::InitializeAllTargetMCs();
   llvm::InitializeAllAsmParsers();
   llvm::InitializeAllAsmPrinters();
-```
 
-### 2. Setting the Target Triple
+  std::string TargetTripleStr = llvm::sys::getDefaultTargetTriple();
+  llvm::Triple TargetTriple(TargetTripleStr);
 
-Query LLVM for the default host target triple and set it on the module:
-
-```cpp
-  llvm::Triple TargetTriple(llvm::sys::getDefaultTargetTriple());
-  TheModule->setTargetTriple(TargetTriple);
-```
-
-### 3. Creating the TargetMachine
-
-Look up the target architecture in LLVM's registry:
-
-```cpp
   std::string Error;
-  auto Target = llvm::TargetRegistry::lookupTarget(TargetTriple, Error);
+  const llvm::Target *Target =
+      llvm::TargetRegistry::lookupTarget(TargetTriple, Error);
   if (!Target) {
-    llvm::errs() << Error;
-    return 1;
+    llvm::errs() << "Target lookup error: " << Error << "\n";
+    return false;
   }
+
+  llvm::TargetOptions Opt;
+  TheTargetMachine.reset(Target->createTargetMachine(
+      TargetTriple, "generic", "", Opt, llvm::Reloc::PIC_));
+  fprintf(stderr, "Configured TargetMachine for %s\n", TargetTripleStr.c_str());
+  return true;
+}
 ```
 
-Construct the `TargetMachine` configured with Position-Independent Code (`PIC_`):
+**Stretch**: Update `main(int argc, char **argv)` to parse `--emit-obj <output.o>` and select between `ConfigureTargetMachine()` and `TheJIT`!
+
+1.  Loop `for (int i = 1; i < argc; ++i)`: if `std::strcmp(argv[i], "--emit-obj") == 0 && i + 1 < argc`, set `EmitObjectMode = true;` and `ObjectOutputPath = argv[++i];`; otherwise print `"Usage: %s [--emit-obj <output.o>]\n"` to `stderr` and `return 1;`.
+2.  Keep the six `BinopPrecedence[...]` lines unchanged.
+3.  If `EmitObjectMode` is true, call `if (!ConfigureTargetMachine()) return 1;`.  Otherwise (`else`), run the three `InitializeNativeTarget*()` calls, `TheJIT = ExitOnErr(llvm::orc::KaleidoscopeJIT::Create());`, and print the two startup banner lines (`"Kaleidoscope Compiler (Step 10.1: TargetMachine Configured)\n"` and `"Type definitions, externs, or expressions followed by ';' (Ctrl+D to exit):\n\n"`).
+4.  Call `InitializeModuleAndManagers();`, `Prompt();`, `getNextToken();`, `MainLoop();`, and `return 0;`.
+
+---
+
+## Verifying Your Code
+
+Compare your `kaleidoscope.cpp` against the complete reference file:
+
+<details>
+<summary>Click here to compare against the reference kaleidoscope.cpp</summary>
 
 ```cpp
-  auto CPU = "generic";
-  auto Features = "";
-  llvm::TargetOptions opt;
-  auto TheTargetMachine = Target->createTargetMachine(
-      TargetTriple, CPU, Features, opt, llvm::Reloc::PIC_);
+#include "KaleidoscopeJIT.h"
+#include "llvm/ADT/APFloat.h"
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/IR/BasicBlock.h"
+#include "llvm/IR/Constants.h"
+#include "llvm/IR/DerivedTypes.h"
+#include "llvm/IR/Function.h"
+#include "llvm/IR/IRBuilder.h"
+#include "llvm/IR/Instructions.h"
+#include "llvm/IR/LLVMContext.h"
+#include "llvm/IR/LegacyPassManager.h"
+#include "llvm/IR/Module.h"
+#include "llvm/IR/PassManager.h"
+#include "llvm/IR/Type.h"
+#include "llvm/IR/Verifier.h"
+#include "llvm/MC/TargetRegistry.h"
+#include "llvm/Passes/PassBuilder.h"
+#include "llvm/Support/FileSystem.h"
+#include "llvm/Support/TargetSelect.h"
+#include "llvm/Support/raw_ostream.h"
+#include "llvm/Target/TargetMachine.h"
+#include "llvm/Target/TargetOptions.h"
+#include "llvm/TargetParser/Host.h"
+#include "llvm/TargetParser/Triple.h"
+#include "llvm/Transforms/InstCombine/InstCombine.h"
+#include "llvm/Transforms/Scalar/GVN.h"
+#include "llvm/Transforms/Scalar/Reassociate.h"
+#include "llvm/Transforms/Scalar/SimplifyCFG.h"
+#include "llvm/Transforms/Utils/Mem2Reg.h"
+#include <cstring>
+
+#include <cctype>
+#include <cstdio>
+#include <cstdlib>
+#include <map>
+#include <memory>
+#include <string>
+#include <utility>
+#include <vector>
+
+//===----------------------------------------------------------------------===//
+// Lexer
+//===----------------------------------------------------------------------===//
+
+enum Token {
+  tok_eof = -1,
+
+  // Commands / Keywords
+  tok_def = -100,
+  tok_extern = -101,
+  tok_if = -102,
+  tok_then = -103,
+  tok_else = -104,
+  tok_for = -105,
+  tok_in = -106,
+  tok_binary = -107,
+  tok_unary = -108,
+  tok_var = -109,
+
+  // Primary
+  tok_identifier = -200,
+  tok_number = -201,
+};
+
+static std::string IdentifierStr; // Filled in if tok_identifier
+static double NumVal;             // Filled in if tok_number
+
+static int gettok() {
+  static int LastChar = ' ';
+
+  while (isspace(LastChar))
+    LastChar = getchar();
+
+  // Recognise identifiers and keywords: [a-zA-Z_][a-zA-Z0-9_]*
+  if (isalpha(LastChar) || LastChar == '_') {
+    IdentifierStr = LastChar;
+    while (isalnum((LastChar = getchar())) || LastChar == '_')
+      IdentifierStr += LastChar;
+
+    if (IdentifierStr == "def")
+      return tok_def;
+    if (IdentifierStr == "extern")
+      return tok_extern;
+    if (IdentifierStr == "if")
+      return tok_if;
+    if (IdentifierStr == "then")
+      return tok_then;
+    if (IdentifierStr == "else")
+      return tok_else;
+    if (IdentifierStr == "for")
+      return tok_for;
+    if (IdentifierStr == "in")
+      return tok_in;
+    if (IdentifierStr == "binary")
+      return tok_binary;
+    if (IdentifierStr == "unary")
+      return tok_unary;
+    if (IdentifierStr == "var")
+      return tok_var;
+    return tok_identifier;
+  }
+
+  // Recognise numeric literals: [0-9.]+
+  if (isdigit(LastChar) || LastChar == '.') {
+    std::string NumStr;
+    do {
+      NumStr += LastChar;
+      LastChar = getchar();
+    } while (isdigit(LastChar) || LastChar == '.');
+
+    NumVal = strtod(NumStr.c_str(), nullptr);
+    return tok_number;
+  }
+
+  // Recognise comments: '#' through end of line.
+  if (LastChar == '#') {
+    do
+      LastChar = getchar();
+    while (LastChar != EOF && LastChar != '\n' && LastChar != '\r');
+
+    if (LastChar != EOF)
+      return gettok();
+  }
+
+  if (LastChar == EOF)
+    return tok_eof;
+
+  int ThisChar = LastChar;
+  LastChar = getchar();
+  return ThisChar;
+}
+
+//===----------------------------------------------------------------------===//
+// Abstract Syntax Tree (AST)
+//===----------------------------------------------------------------------===//
+
+class ExprAST {
+public:
+  virtual ~ExprAST() = default;
+  virtual llvm::Value *codegen() = 0;
+  virtual llvm::Value *codegenAddress();
+};
+
+class NumberExprAST : public ExprAST {
+  double Val;
+
+public:
+  explicit NumberExprAST(double Val) : Val(Val) {}
+  llvm::Value *codegen() override;
+};
+
+class VariableExprAST : public ExprAST {
+  std::string Name;
+
+public:
+  explicit VariableExprAST(std::string Name) : Name(std::move(Name)) {}
+  const std::string &getName() const { return Name; }
+  llvm::Value *codegen() override;
+  llvm::Value *codegenAddress() override;
+};
+
+class UnaryExprAST : public ExprAST {
+  char Opcode;
+  std::unique_ptr<ExprAST> Operand;
+
+public:
+  UnaryExprAST(char Opcode, std::unique_ptr<ExprAST> Operand)
+      : Opcode(Opcode), Operand(std::move(Operand)) {}
+  llvm::Value *codegen() override;
+};
+
+class BinaryExprAST : public ExprAST {
+  char Op;
+  std::unique_ptr<ExprAST> LHS, RHS;
+
+public:
+  BinaryExprAST(char Op, std::unique_ptr<ExprAST> LHS,
+                std::unique_ptr<ExprAST> RHS)
+      : Op(Op), LHS(std::move(LHS)), RHS(std::move(RHS)) {}
+  llvm::Value *codegen() override;
+};
+
+class CallExprAST : public ExprAST {
+  std::string Callee;
+  std::vector<std::unique_ptr<ExprAST>> Args;
+
+public:
+  CallExprAST(std::string Callee, std::vector<std::unique_ptr<ExprAST>> Args)
+      : Callee(std::move(Callee)), Args(std::move(Args)) {}
+  llvm::Value *codegen() override;
+};
+
+class IfExprAST : public ExprAST {
+  std::unique_ptr<ExprAST> Cond, Then, Else;
+
+public:
+  IfExprAST(std::unique_ptr<ExprAST> Cond, std::unique_ptr<ExprAST> Then,
+            std::unique_ptr<ExprAST> Else)
+      : Cond(std::move(Cond)), Then(std::move(Then)), Else(std::move(Else)) {}
+  llvm::Value *codegen() override;
+};
+
+class ForExprAST : public ExprAST {
+  std::string VarName;
+  std::unique_ptr<ExprAST> Start, End, Step, Body;
+
+public:
+  ForExprAST(std::string VarName, std::unique_ptr<ExprAST> Start,
+             std::unique_ptr<ExprAST> End, std::unique_ptr<ExprAST> Step,
+             std::unique_ptr<ExprAST> Body)
+      : VarName(std::move(VarName)), Start(std::move(Start)),
+        End(std::move(End)), Step(std::move(Step)), Body(std::move(Body)) {}
+  llvm::Value *codegen() override;
+};
+
+class VarExprAST : public ExprAST {
+  std::vector<std::pair<std::string, std::unique_ptr<ExprAST>>> VarNames;
+  std::unique_ptr<ExprAST> Body;
+
+public:
+  VarExprAST(
+      std::vector<std::pair<std::string, std::unique_ptr<ExprAST>>> VarNames,
+      std::unique_ptr<ExprAST> Body)
+      : VarNames(std::move(VarNames)), Body(std::move(Body)) {}
+
+  llvm::Value *codegen() override;
+};
+
+class PrototypeAST {
+  std::string Name;
+  std::vector<std::string> Args;
+  bool IsOperator;
+  unsigned Precedence;
+
+public:
+  PrototypeAST(std::string Name, std::vector<std::string> Args,
+               bool IsOperator = false, unsigned Prec = 0)
+      : Name(std::move(Name)), Args(std::move(Args)), IsOperator(IsOperator),
+        Precedence(Prec) {}
+
+  const std::string &getName() const { return Name; }
+  bool isUnaryOp() const { return IsOperator && Args.size() == 1; }
+  bool isBinaryOp() const { return IsOperator && Args.size() == 2; }
+  char getOperatorName() const { return Name[Name.size() - 1]; }
+  unsigned getBinaryPrecedence() const { return Precedence; }
+  llvm::Function *codegen();
+};
+
+class FunctionAST {
+  std::unique_ptr<PrototypeAST> Proto;
+  std::unique_ptr<ExprAST> Body;
+
+public:
+  FunctionAST(std::unique_ptr<PrototypeAST> Proto,
+              std::unique_ptr<ExprAST> Body)
+      : Proto(std::move(Proto)), Body(std::move(Body)) {}
+
+  llvm::Function *codegen();
+};
+
+//===----------------------------------------------------------------------===//
+// Parser
+//===----------------------------------------------------------------------===//
+
+static int CurTok;
+static int getNextToken() { return CurTok = gettok(); }
+
+static std::map<char, int> BinopPrecedence;
+
+static int GetTokPrecedence() {
+  if (!isascii(CurTok))
+    return -1;
+
+  int TokPrec = BinopPrecedence[static_cast<char>(CurTok)];
+  if (TokPrec <= 0)
+    return -1;
+  return TokPrec;
+}
+
+static std::unique_ptr<ExprAST> LogError(const char *Str) {
+  fprintf(stderr, "Error: %s\n", Str);
+  return nullptr;
+}
+
+static llvm::Value *LogErrorV(const char *Str) {
+  LogError(Str);
+  return nullptr;
+}
+
+static std::unique_ptr<ExprAST> ParseExpression();
+
+static std::unique_ptr<ExprAST> ParseNumberExpr() {
+  auto Result = std::make_unique<NumberExprAST>(NumVal);
+  getNextToken(); // consume the number
+  return Result;
+}
+
+static std::unique_ptr<ExprAST> ParseParenExpr() {
+  getNextToken(); // eat '('
+  auto V = ParseExpression();
+  if (!V)
+    return nullptr;
+
+  if (CurTok != ')')
+    return LogError("expected ')'");
+  getNextToken(); // eat ')'
+  return V;
+}
+
+static std::unique_ptr<ExprAST> ParseIdentifierExpr() {
+  std::string IdName = IdentifierStr;
+  getNextToken(); // eat identifier
+
+  // Simple variable reference.
+  if (CurTok != '(')
+    return std::make_unique<VariableExprAST>(std::move(IdName));
+
+  // Function call.
+  getNextToken(); // eat '('
+  std::vector<std::unique_ptr<ExprAST>> Args;
+  if (CurTok != ')') {
+    while (true) {
+      if (auto Arg = ParseExpression())
+        Args.push_back(std::move(Arg));
+      else
+        return nullptr;
+
+      if (CurTok == ')')
+        break;
+
+      if (CurTok != ',')
+        return LogError("expected ')' or ',' in argument list");
+      getNextToken(); // eat ','
+    }
+  }
+
+  getNextToken(); // eat ')'
+  return std::make_unique<CallExprAST>(std::move(IdName), std::move(Args));
+}
+
+static std::unique_ptr<ExprAST> ParseIfExpr() {
+  getNextToken(); // eat 'if'
+
+  auto Cond = ParseExpression();
+  if (!Cond)
+    return nullptr;
+
+  if (CurTok != tok_then)
+    return LogError("expected 'then'");
+  getNextToken(); // eat 'then'
+
+  auto Then = ParseExpression();
+  if (!Then)
+    return nullptr;
+
+  if (CurTok != tok_else)
+    return LogError("expected 'else'");
+  getNextToken(); // eat 'else'
+
+  auto Else = ParseExpression();
+  if (!Else)
+    return nullptr;
+
+  return std::make_unique<IfExprAST>(std::move(Cond), std::move(Then),
+                                     std::move(Else));
+}
+
+static std::unique_ptr<ExprAST> ParseForExpr() {
+  getNextToken(); // eat 'for'
+
+  if (CurTok != tok_identifier)
+    return LogError("expected identifier after 'for'");
+
+  std::string IdName = IdentifierStr;
+  getNextToken(); // eat identifier
+
+  if (CurTok != '=')
+    return LogError("expected '=' after 'for'");
+  getNextToken(); // eat '='
+
+  auto Start = ParseExpression();
+  if (!Start)
+    return nullptr;
+  if (CurTok != ',')
+    return LogError("expected ',' after for start value");
+  getNextToken(); // eat ','
+
+  auto End = ParseExpression();
+  if (!End)
+    return nullptr;
+
+  // The step value is optional.
+  std::unique_ptr<ExprAST> Step;
+  if (CurTok == ',') {
+    getNextToken(); // eat ','
+    Step = ParseExpression();
+    if (!Step)
+      return nullptr;
+  }
+
+  if (CurTok != tok_in)
+    return LogError("expected 'in' after 'for'");
+  getNextToken(); // eat 'in'
+
+  auto Body = ParseExpression();
+  if (!Body)
+    return nullptr;
+
+  return std::make_unique<ForExprAST>(std::move(IdName), std::move(Start),
+                                      std::move(End), std::move(Step),
+                                      std::move(Body));
+}
+
+static std::unique_ptr<ExprAST> ParseVarExpr() {
+  getNextToken(); // eat 'var'
+
+  std::vector<std::pair<std::string, std::unique_ptr<ExprAST>>> VarNames;
+
+  if (CurTok != tok_identifier)
+    return LogError("expected identifier after 'var'");
+
+  while (true) {
+    std::string Name = IdentifierStr;
+    getNextToken(); // eat identifier
+
+    std::unique_ptr<ExprAST> Init;
+    if (CurTok == '=') {
+      getNextToken(); // eat '='
+      Init = ParseExpression();
+      if (!Init)
+        return nullptr;
+    }
+
+    VarNames.emplace_back(std::move(Name), std::move(Init));
+
+    if (CurTok != ',')
+      break;
+    getNextToken(); // eat ','
+
+    if (CurTok != tok_identifier)
+      return LogError("expected identifier list after 'var'");
+  }
+
+  if (CurTok != tok_in)
+    return LogError("expected 'in' keyword after 'var'");
+  getNextToken(); // eat 'in'
+
+  auto Body = ParseExpression();
+  if (!Body)
+    return nullptr;
+
+  return std::make_unique<VarExprAST>(std::move(VarNames), std::move(Body));
+}
+
+static std::unique_ptr<ExprAST> ParsePrimary() {
+  switch (CurTok) {
+  case tok_identifier:
+    return ParseIdentifierExpr();
+  case tok_number:
+    return ParseNumberExpr();
+  case '(':
+    return ParseParenExpr();
+  case tok_if:
+    return ParseIfExpr();
+  case tok_for:
+    return ParseForExpr();
+  case tok_var:
+    return ParseVarExpr();
+  default:
+    return LogError("unknown token when expecting an expression");
+  }
+}
+
+static std::unique_ptr<ExprAST> ParseUnary() {
+  if (!isascii(CurTok) || CurTok == '(' || CurTok == ',')
+    return ParsePrimary();
+
+  int Opc = CurTok;
+  getNextToken();
+  if (auto Operand = ParseUnary())
+    return std::make_unique<UnaryExprAST>(static_cast<char>(Opc),
+                                          std::move(Operand));
+  return nullptr;
+}
+
+/// binoprhs ::= (binop unary)*
+static std::unique_ptr<ExprAST> ParseBinOpRHS(int ExprPrec,
+                                              std::unique_ptr<ExprAST> LHS) {
+  while (true) {
+    int TokPrec = GetTokPrecedence();
+
+    if (TokPrec < ExprPrec)
+      return LHS;
+
+    int BinOp = CurTok;
+    getNextToken(); // eat binary operator
+
+    auto RHS = ParseUnary();
+    if (!RHS)
+      return nullptr;
+
+    int NextPrec = GetTokPrecedence();
+    if (TokPrec < NextPrec) {
+      RHS = ParseBinOpRHS(TokPrec + 1, std::move(RHS));
+      if (!RHS)
+        return nullptr;
+    }
+
+    LHS = std::make_unique<BinaryExprAST>(static_cast<char>(BinOp),
+                                          std::move(LHS), std::move(RHS));
+  }
+}
+
+static std::unique_ptr<ExprAST> ParseExpression() {
+  auto LHS = ParseUnary();
+  if (!LHS)
+    return nullptr;
+
+  return ParseBinOpRHS(0, std::move(LHS));
+}
+
+static std::unique_ptr<PrototypeAST> LogErrorP(const char *Str) {
+  LogError(Str);
+  return nullptr;
+}
+
+static std::unique_ptr<PrototypeAST> ParsePrototype() {
+  std::string FnName;
+  unsigned Kind = 0; // 0 = identifier, 1 = unary, 2 = binary
+  unsigned BinaryPrecedence = 30;
+
+  switch (CurTok) {
+  case tok_identifier:
+    FnName = IdentifierStr;
+    Kind = 0;
+    getNextToken();
+    break;
+  case tok_unary:
+    getNextToken();
+    if (!isascii(CurTok))
+      return LogErrorP("expected unary operator");
+    FnName = "unary";
+    FnName += static_cast<char>(CurTok);
+    Kind = 1;
+    getNextToken();
+    break;
+  case tok_binary:
+    getNextToken();
+    if (!isascii(CurTok))
+      return LogErrorP("expected binary operator");
+    FnName = "binary";
+    FnName += static_cast<char>(CurTok);
+    Kind = 2;
+    getNextToken();
+
+    if (CurTok == tok_number) {
+      if (NumVal < 1 || NumVal > 100)
+        return LogErrorP("invalid precedence: must be 1..100");
+      BinaryPrecedence = static_cast<unsigned>(NumVal);
+      getNextToken();
+    }
+    break;
+  default:
+    return LogErrorP("expected function name in prototype");
+  }
+
+  if (CurTok != '(')
+    return LogErrorP("expected '(' in prototype");
+
+  std::vector<std::string> ArgNames;
+  while (getNextToken() == tok_identifier)
+    ArgNames.push_back(IdentifierStr);
+
+  if (CurTok != ')')
+    return LogErrorP("expected ')' in prototype");
+
+  getNextToken(); // eat ')'
+
+  if (Kind && ArgNames.size() != Kind)
+    return LogErrorP("invalid number of operands for operator");
+
+  return std::make_unique<PrototypeAST>(std::move(FnName), std::move(ArgNames),
+                                        Kind != 0, BinaryPrecedence);
+}
+
+static std::unique_ptr<FunctionAST> ParseDefinition() {
+  getNextToken(); // eat 'def'
+  auto Proto = ParsePrototype();
+  if (!Proto)
+    return nullptr;
+
+  if (auto E = ParseExpression())
+    return std::make_unique<FunctionAST>(std::move(Proto), std::move(E));
+  return nullptr;
+}
+
+static std::unique_ptr<FunctionAST> ParseTopLevelExpr() {
+  if (auto E = ParseExpression()) {
+    auto Proto = std::make_unique<PrototypeAST>("__anon_expr",
+                                                std::vector<std::string>());
+    return std::make_unique<FunctionAST>(std::move(Proto), std::move(E));
+  }
+  return nullptr;
+}
+
+static std::unique_ptr<PrototypeAST> ParseExtern() {
+  getNextToken(); // eat 'extern'
+  return ParsePrototype();
+}
+
+//===----------------------------------------------------------------------===//
+// Code Generation
+//===----------------------------------------------------------------------===//
+
+static std::unique_ptr<llvm::LLVMContext> TheContext;
+static std::unique_ptr<llvm::Module> TheModule;
+static std::unique_ptr<llvm::IRBuilder<>> Builder;
+static std::map<std::string, llvm::AllocaInst *> NamedValues;
+
+static llvm::AllocaInst *CreateEntryBlockAlloca(llvm::Function *TheFunction,
+                                                llvm::StringRef VarName) {
+  llvm::IRBuilder<> TmpB(&TheFunction->getEntryBlock(),
+                         TheFunction->getEntryBlock().begin());
+  return TmpB.CreateAlloca(llvm::Type::getDoubleTy(*TheContext), nullptr,
+                           VarName);
+}
+static std::unique_ptr<llvm::orc::KaleidoscopeJIT> TheJIT;
+static std::map<std::string, std::unique_ptr<PrototypeAST>> FunctionProtos;
+static std::map<std::string, llvm::orc::ResourceTrackerSP> FunctionRTs;
+static llvm::ExitOnError ExitOnErr;
+static std::unique_ptr<llvm::TargetMachine> TheTargetMachine;
+static std::string ObjectOutputPath;
+static bool EmitObjectMode = false;
+static std::unique_ptr<llvm::FunctionPassManager> TheFPM;
+static std::unique_ptr<llvm::LoopAnalysisManager> TheLAM;
+static std::unique_ptr<llvm::FunctionAnalysisManager> TheFAM;
+static std::unique_ptr<llvm::CGSCCAnalysisManager> TheCGAM;
+static std::unique_ptr<llvm::ModuleAnalysisManager> TheMAM;
+
+static llvm::Function *getFunction(std::string Name) {
+  if (auto *F = TheModule->getFunction(Name))
+    return F;
+
+  auto FI = FunctionProtos.find(Name);
+  if (FI != FunctionProtos.end())
+    return FI->second->codegen();
+
+  return nullptr;
+}
+
+static void InitializeModuleAndManagers() {
+  TheContext = std::make_unique<llvm::LLVMContext>();
+  TheModule = std::make_unique<llvm::Module>("Kaleidoscope", *TheContext);
+  if (EmitObjectMode) {
+    TheModule->setTargetTriple(TheTargetMachine->getTargetTriple());
+    TheModule->setDataLayout(TheTargetMachine->createDataLayout());
+  } else {
+    TheModule->setDataLayout(TheJIT->getDataLayout());
+  }
+  Builder = std::make_unique<llvm::IRBuilder<>>(*TheContext);
+
+  TheFPM = std::make_unique<llvm::FunctionPassManager>();
+  TheLAM = std::make_unique<llvm::LoopAnalysisManager>();
+  TheFAM = std::make_unique<llvm::FunctionAnalysisManager>();
+  TheCGAM = std::make_unique<llvm::CGSCCAnalysisManager>();
+  TheMAM = std::make_unique<llvm::ModuleAnalysisManager>();
+
+  // Promote allocas to SSA registers (mem2reg) and simplify expressions.
+  TheFPM->addPass(llvm::PromotePass());
+  TheFPM->addPass(llvm::InstCombinePass());
+  TheFPM->addPass(llvm::ReassociatePass());
+  TheFPM->addPass(llvm::GVNPass());
+  TheFPM->addPass(llvm::SimplifyCFGPass());
+
+  llvm::PassBuilder PB;
+  PB.registerModuleAnalyses(*TheMAM);
+  PB.registerCGSCCAnalyses(*TheCGAM);
+  PB.registerFunctionAnalyses(*TheFAM);
+  PB.registerLoopAnalyses(*TheLAM);
+  PB.crossRegisterProxies(*TheLAM, *TheFAM, *TheCGAM, *TheMAM);
+}
+
+llvm::Value *ExprAST::codegenAddress() {
+  return LogErrorV("destination of '=' must be a variable");
+}
+
+llvm::Value *NumberExprAST::codegen() {
+  return llvm::ConstantFP::get(*TheContext, llvm::APFloat(Val));
+}
+
+llvm::Value *VariableExprAST::codegenAddress() {
+  llvm::AllocaInst *A = NamedValues[Name];
+  if (!A)
+    return LogErrorV("unknown variable name");
+  return A;
+}
+
+llvm::Value *VariableExprAST::codegen() {
+  llvm::Value *Addr = codegenAddress();
+  if (!Addr)
+    return nullptr;
+  return Builder->CreateLoad(llvm::Type::getDoubleTy(*TheContext), Addr,
+                             Name.c_str());
+}
+
+llvm::Value *UnaryExprAST::codegen() {
+  llvm::Value *OperandV = Operand->codegen();
+  if (!OperandV)
+    return nullptr;
+
+  llvm::Function *F = getFunction(std::string("unary") + Opcode);
+  if (!F)
+    return LogErrorV("unknown unary operator");
+
+  return Builder->CreateCall(F, OperandV, "unop");
+}
+
+llvm::Value *BinaryExprAST::codegen() {
+  if (Op == '=') {
+    llvm::Value *Variable = LHS->codegenAddress();
+    if (!Variable)
+      return nullptr;
+    llvm::Value *Val = RHS->codegen();
+    if (!Val)
+      return nullptr;
+    Builder->CreateStore(Val, Variable);
+    return Val;
+  }
+
+  llvm::Value *L = LHS->codegen();
+  llvm::Value *R = RHS->codegen();
+  if (!L || !R)
+    return nullptr;
+
+  switch (Op) {
+  case '+':
+    return Builder->CreateFAdd(L, R, "addtmp");
+  case '-':
+    return Builder->CreateFSub(L, R, "subtmp");
+  case '*':
+    return Builder->CreateFMul(L, R, "multmp");
+  case '/':
+    return Builder->CreateFDiv(L, R, "divtmp");
+  case '<':
+    L = Builder->CreateFCmpULT(L, R, "cmptmp");
+    return Builder->CreateUIToFP(L, llvm::Type::getDoubleTy(*TheContext),
+                                 "booltmp");
+  default:
+    break;
+  }
+
+  llvm::Function *F = getFunction(std::string("binary") + Op);
+  if (!F)
+    return LogErrorV("binary operator not found");
+
+  llvm::Value *Ops[2] = {L, R};
+  return Builder->CreateCall(F, Ops, "binop");
+}
+
+llvm::Value *CallExprAST::codegen() {
+  llvm::Function *CalleeF = getFunction(Callee);
+  if (!CalleeF)
+    return LogErrorV("unknown function referenced");
+
+  if (CalleeF->arg_size() != Args.size())
+    return LogErrorV("incorrect # arguments passed");
+
+  std::vector<llvm::Value *> ArgsV;
+  for (unsigned i = 0, e = Args.size(); i != e; ++i) {
+    ArgsV.push_back(Args[i]->codegen());
+    if (!ArgsV.back())
+      return nullptr;
+  }
+
+  return Builder->CreateCall(CalleeF, ArgsV, "calltmp");
+}
+
+llvm::Value *IfExprAST::codegen() {
+  llvm::Value *CondV = Cond->codegen();
+  if (!CondV)
+    return nullptr;
+
+  CondV = Builder->CreateFCmpONE(
+      CondV, llvm::ConstantFP::get(*TheContext, llvm::APFloat(0.0)), "ifcond");
+
+  llvm::Function *TheFunction = Builder->GetInsertBlock()->getParent();
+
+  llvm::BasicBlock *ThenBB =
+      llvm::BasicBlock::Create(*TheContext, "then", TheFunction);
+  llvm::BasicBlock *ElseBB = llvm::BasicBlock::Create(*TheContext, "else");
+  llvm::BasicBlock *MergeBB = llvm::BasicBlock::Create(*TheContext, "ifcont");
+
+  Builder->CreateCondBr(CondV, ThenBB, ElseBB);
+
+  // Emit 'then' block.
+  Builder->SetInsertPoint(ThenBB);
+  llvm::Value *ThenV = Then->codegen();
+  if (!ThenV)
+    return nullptr;
+  Builder->CreateBr(MergeBB);
+  ThenBB = Builder->GetInsertBlock();
+
+  // Emit 'else' block.
+  TheFunction->insert(TheFunction->end(), ElseBB);
+  Builder->SetInsertPoint(ElseBB);
+  llvm::Value *ElseV = Else->codegen();
+  if (!ElseV)
+    return nullptr;
+  Builder->CreateBr(MergeBB);
+  ElseBB = Builder->GetInsertBlock();
+
+  // Emit 'ifcont' merge block with SSA PHI node.
+  TheFunction->insert(TheFunction->end(), MergeBB);
+  Builder->SetInsertPoint(MergeBB);
+  llvm::PHINode *PN =
+      Builder->CreatePHI(llvm::Type::getDoubleTy(*TheContext), 2, "iftmp");
+  PN->addIncoming(ThenV, ThenBB);
+  PN->addIncoming(ElseV, ElseBB);
+  return PN;
+}
+
+llvm::Value *ForExprAST::codegen() {
+  llvm::Function *TheFunction = Builder->GetInsertBlock()->getParent();
+
+  llvm::AllocaInst *Alloca = CreateEntryBlockAlloca(TheFunction, VarName);
+
+  llvm::Value *StartVal = Start->codegen();
+  if (!StartVal)
+    return nullptr;
+
+  Builder->CreateStore(StartVal, Alloca);
+
+  llvm::BasicBlock *LoopBB =
+      llvm::BasicBlock::Create(*TheContext, "loop", TheFunction);
+
+  Builder->CreateBr(LoopBB);
+  Builder->SetInsertPoint(LoopBB);
+
+  llvm::AllocaInst *OldVal = NamedValues[VarName];
+  NamedValues[VarName] = Alloca;
+
+  if (!Body->codegen())
+    return nullptr;
+
+  llvm::Value *StepVal = nullptr;
+  if (Step) {
+    StepVal = Step->codegen();
+    if (!StepVal)
+      return nullptr;
+  } else {
+    StepVal = llvm::ConstantFP::get(*TheContext, llvm::APFloat(1.0));
+  }
+
+  llvm::Value *EndCond = End->codegen();
+  if (!EndCond)
+    return nullptr;
+
+  llvm::Value *CurVar =
+      Builder->CreateLoad(Alloca->getAllocatedType(), Alloca, VarName.c_str());
+  llvm::Value *NextVar = Builder->CreateFAdd(CurVar, StepVal, "nextvar");
+  Builder->CreateStore(NextVar, Alloca);
+
+  EndCond = Builder->CreateFCmpONE(
+      EndCond, llvm::ConstantFP::get(*TheContext, llvm::APFloat(0.0)),
+      "loopcond");
+
+  llvm::BasicBlock *AfterBB =
+      llvm::BasicBlock::Create(*TheContext, "afterloop", TheFunction);
+
+  Builder->CreateCondBr(EndCond, LoopBB, AfterBB);
+  Builder->SetInsertPoint(AfterBB);
+
+  if (OldVal)
+    NamedValues[VarName] = OldVal;
+  else
+    NamedValues.erase(VarName);
+
+  return llvm::Constant::getNullValue(llvm::Type::getDoubleTy(*TheContext));
+}
+
+llvm::Value *VarExprAST::codegen() {
+  std::vector<llvm::AllocaInst *> OldBindings;
+  llvm::Function *TheFunction = Builder->GetInsertBlock()->getParent();
+
+  for (unsigned i = 0, e = VarNames.size(); i != e; ++i) {
+    const std::string &VarName = VarNames[i].first;
+    ExprAST *Init = VarNames[i].second.get();
+
+    llvm::Value *InitVal;
+    if (Init) {
+      InitVal = Init->codegen();
+      if (!InitVal)
+        return nullptr;
+    } else {
+      InitVal = llvm::ConstantFP::get(*TheContext, llvm::APFloat(0.0));
+    }
+
+    llvm::AllocaInst *Alloca = CreateEntryBlockAlloca(TheFunction, VarName);
+    Builder->CreateStore(InitVal, Alloca);
+
+    OldBindings.push_back(NamedValues[VarName]);
+    NamedValues[VarName] = Alloca;
+  }
+
+  llvm::Value *BodyVal = Body->codegen();
+  if (!BodyVal)
+    return nullptr;
+
+  for (unsigned i = 0, e = VarNames.size(); i != e; ++i) {
+    if (OldBindings[i])
+      NamedValues[VarNames[i].first] = OldBindings[i];
+    else
+      NamedValues.erase(VarNames[i].first);
+  }
+
+  return BodyVal;
+}
+
+llvm::Function *PrototypeAST::codegen() {
+  std::vector<llvm::Type *> Doubles(Args.size(),
+                                    llvm::Type::getDoubleTy(*TheContext));
+  auto *FT = llvm::FunctionType::get(llvm::Type::getDoubleTy(*TheContext),
+                                     Doubles, false);
+  auto *F = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, Name,
+                                   TheModule.get());
+
+  unsigned Idx = 0;
+  for (auto &Arg : F->args())
+    Arg.setName(Args[Idx++]);
+
+  return F;
+}
+
+llvm::Function *FunctionAST::codegen() {
+  auto &P = *Proto;
+  FunctionProtos[Proto->getName()] = std::move(Proto);
+  llvm::Function *TheFunction = getFunction(P.getName());
+  if (!TheFunction)
+    return nullptr;
+
+  if (P.isBinaryOp())
+    BinopPrecedence[P.getOperatorName()] = P.getBinaryPrecedence();
+
+  auto *BB = llvm::BasicBlock::Create(*TheContext, "entry", TheFunction);
+  Builder->SetInsertPoint(BB);
+
+  NamedValues.clear();
+  for (auto &Arg : TheFunction->args()) {
+    llvm::AllocaInst *Alloca =
+        CreateEntryBlockAlloca(TheFunction, Arg.getName());
+    Builder->CreateStore(&Arg, Alloca);
+    NamedValues[std::string(Arg.getName())] = Alloca;
+  }
+
+  if (llvm::Value *RetVal = Body->codegen()) {
+    Builder->CreateRet(RetVal);
+    if (llvm::verifyFunction(*TheFunction, &llvm::errs())) {
+      TheFunction->eraseFromParent();
+      return nullptr;
+    }
+
+    TheFPM->run(*TheFunction, *TheFAM);
+    return TheFunction;
+  }
+
+  TheFunction->eraseFromParent();
+  if (P.isBinaryOp())
+    BinopPrecedence.erase(P.getOperatorName());
+  return nullptr;
+}
+
+//===----------------------------------------------------------------------===//
+// Host Library Helpers
+//===----------------------------------------------------------------------===//
+
+#ifdef _WIN32
+#define DLLEXPORT __declspec(dllexport)
+#else
+#define DLLEXPORT
+#endif
+
+/// putchard - putchar that takes a double and returns 0.
+extern "C" DLLEXPORT double putchard(double X) {
+  fputc(static_cast<char>(X), stderr);
+  return 0;
+}
+
+/// printd - printf that takes a double prints it as "%f\n", returning 0.
+extern "C" DLLEXPORT double printd(double X) {
+  fprintf(stderr, "%f\n", X);
+  return 0;
+}
+
+//===----------------------------------------------------------------------===//
+// Interactive Driver Loop
+//===----------------------------------------------------------------------===//
+
+static void HandleDefinition() {
+  if (auto FnAST = ParseDefinition()) {
+    if (auto *FnIR = FnAST->codegen()) {
+      std::string FnName = std::string(FnIR->getName());
+      fprintf(stderr, "Read function definition:\n");
+      FnIR->print(llvm::errs());
+      fprintf(stderr, "\n");
+
+      if (!EmitObjectMode) {
+        if (auto It = FunctionRTs.find(FnName); It != FunctionRTs.end()) {
+          ExitOnErr(It->second->remove());
+          FunctionRTs.erase(It);
+        }
+
+        auto RT = TheJIT->getMainJITDylib().createResourceTracker();
+        ExitOnErr(
+            TheJIT->addModule(llvm::orc::ThreadSafeModule(
+                                  std::move(TheModule), std::move(TheContext)),
+                              RT));
+        FunctionRTs[FnName] = std::move(RT);
+        InitializeModuleAndManagers();
+      }
+    }
+  } else {
+    while (CurTok != ';' && CurTok != tok_eof)
+      getNextToken();
+  }
+}
+
+static void HandleExtern() {
+  if (auto ProtoAST = ParseExtern()) {
+    if (auto *FnIR = ProtoAST->codegen()) {
+      fprintf(stderr, "Read extern:\n");
+      FnIR->print(llvm::errs());
+      fprintf(stderr, "\n");
+      FunctionProtos[ProtoAST->getName()] = std::move(ProtoAST);
+    }
+  } else {
+    while (CurTok != ';' && CurTok != tok_eof)
+      getNextToken();
+  }
+}
+
+static void HandleTopLevelExpression() {
+  if (EmitObjectMode) {
+    if (auto FnAST = ParseTopLevelExpr()) {
+      if (auto *FnIR = FnAST->codegen())
+        FnIR->eraseFromParent();
+    } else {
+      while (CurTok != ';' && CurTok != tok_eof)
+        getNextToken();
+    }
+    return;
+  }
+  if (auto FnAST = ParseTopLevelExpr()) {
+    if (FnAST->codegen()) {
+      auto RT = TheJIT->getMainJITDylib().createResourceTracker();
+
+      auto TSM = llvm::orc::ThreadSafeModule(std::move(TheModule),
+                                             std::move(TheContext));
+      ExitOnErr(TheJIT->addModule(std::move(TSM), RT));
+      InitializeModuleAndManagers();
+
+      if (auto ExprSymbol = TheJIT->lookup("__anon_expr")) {
+        double (*FP)() = ExprSymbol->getAddress().toPtr<double (*)()>();
+        fprintf(stderr, "Evaluated to %f\n", FP());
+      } else {
+        llvm::logAllUnhandledErrors(ExprSymbol.takeError(), llvm::errs(),
+                                    "JIT Error: ");
+      }
+
+      ExitOnErr(RT->remove());
+    }
+  } else {
+    while (CurTok != ';' && CurTok != tok_eof)
+      getNextToken();
+  }
+}
+
+static void Prompt() {
+  if (!EmitObjectMode)
+    fprintf(stderr, "ready> ");
+}
+
+static void MainLoop() {
+  while (true) {
+    switch (CurTok) {
+    case tok_eof:
+      return;
+    case ';':
+      Prompt();
+      getNextToken();
+      break;
+    case tok_def:
+      HandleDefinition();
+      break;
+    case tok_extern:
+      HandleExtern();
+      break;
+    default:
+      HandleTopLevelExpression();
+      break;
+    }
+  }
+}
+
+static bool ConfigureTargetMachine() {
+  llvm::InitializeAllTargetInfos();
+  llvm::InitializeAllTargets();
+  llvm::InitializeAllTargetMCs();
+  llvm::InitializeAllAsmParsers();
+  llvm::InitializeAllAsmPrinters();
+
+  std::string TargetTripleStr = llvm::sys::getDefaultTargetTriple();
+  llvm::Triple TargetTriple(TargetTripleStr);
+
+  std::string Error;
+  const llvm::Target *Target =
+      llvm::TargetRegistry::lookupTarget(TargetTriple, Error);
+  if (!Target) {
+    llvm::errs() << "Target lookup error: " << Error << "\n";
+    return false;
+  }
+
+  llvm::TargetOptions Opt;
+  TheTargetMachine.reset(Target->createTargetMachine(
+      TargetTriple, "generic", "", Opt, llvm::Reloc::PIC_));
+  fprintf(stderr, "Configured TargetMachine for %s\n", TargetTripleStr.c_str());
+  return true;
+}
+
+int main(int argc, char **argv) {
+  for (int i = 1; i < argc; ++i) {
+    if (std::strcmp(argv[i], "--emit-obj") == 0 && i + 1 < argc) {
+      EmitObjectMode = true;
+      ObjectOutputPath = argv[++i];
+    } else {
+      fprintf(stderr, "Usage: %s [--emit-obj <output.o>]\n", argv[0]);
+      return 1;
+    }
+  }
+
+  BinopPrecedence['='] = 2;
+  BinopPrecedence['<'] = 10;
+  BinopPrecedence['+'] = 20;
+  BinopPrecedence['-'] = 20;
+  BinopPrecedence['*'] = 40;
+  BinopPrecedence['/'] = 40;
+
+  if (EmitObjectMode) {
+    if (!ConfigureTargetMachine())
+      return 1;
+  } else {
+    llvm::InitializeNativeTarget();
+    llvm::InitializeNativeTargetAsmPrinter();
+    llvm::InitializeNativeTargetAsmParser();
+    TheJIT = ExitOnErr(llvm::orc::KaleidoscopeJIT::Create());
+    printf("Kaleidoscope Compiler (Step 10.1: TargetMachine Configured)\n");
+    printf("Type definitions, externs, or expressions followed by ';' (Ctrl+D "
+           "to exit):\n\n");
+  }
+
+  InitializeModuleAndManagers();
+
+  Prompt();
+  getNextToken();
+  MainLoop();
+  return 0;
+}
+```
+</details>
+
+---
+
+## Compiling and Testing Target Configuration
+
+Compile `kaleidoscope.cpp` with `all-targets` added to `--libs`:
+
+```bash
+clang++ -std=c++17 -fno-rtti -Wall -Wextra -rdynamic -Iinclude kaleidoscope.cpp $(llvm-config --cxxflags --ldflags --system-libs --libs core orcjit native passes all-targets) -isystem $(llvm-config --includedir) -o kaleidoscope
 ```
 
-Finally, configure your module's data layout to match the target machine:
+Verify that passing `--emit-obj` configures `TargetMachine` for your host architecture and optimises definitions into `TheModule`:
 
-```cpp
-  TheModule->setDataLayout(TheTargetMachine->createDataLayout());
+```text
+$ echo 'def average(x y) (x + y) * 0.5;' | ./kaleidoscope --emit-obj output.o
+Configured TargetMachine for x86_64-pc-linux-gnu
+Read function definition:
+define double @average(double %x, double %y) {
+entry:
+  %addtmp = fadd double %x, %y
+  %multmp = fmul double %addtmp, 5.000000e-01
+  ret double %multmp
+}
 ```
 
-In [Step 10.2](02-emitting-object-code.md), we will run LLVM's code emission passes to write a native `.o` object file to disk.
+(Your triple will reflect your own machine, such as `x86_64-pc-linux-gnu` on Linux x86-64 or `aarch64-apple-darwin` on Apple Silicon.)
+
+In [Step 10.2](02-emitting-object-code.md), you will add the 20-line `EmitObjectFile()` function to write the compiled machine code out to `output.o`!
+
+---
+
+[Previous: Automatic SSA Promotion with 'mem2reg'](../09-local-variables/03-mem2reg-optimisation.md) | [Section Overview](index.md) | [Next: Emitting Object Code](02-emitting-object-code.md)

@@ -22,7 +22,7 @@ In compiler engineering, each of these indivisible units of syntax is called a *
 
 ## The Atom of Syntax
 
-An atom is an indivisible entity: something that cannot be divided into smaller pieces without destroying what it is.  In chemistry, an atom is the fundamental building block of matter.  In compiler construction, a token is the atom of syntax.
+An atom is an indivisible entity: something that cannot be divided into smaller pieces without losing its identity.  In chemistry, an atom is the fundamental building block of matter.  In compiler construction, a token is the atom of syntax.
 
 Consider the expression:
 
@@ -51,7 +51,7 @@ Imagine trying to define a grammar rule for addition:
 expression = term + term
 ```
 
-If the parser operated directly on raw characters, that rule could not look like that.  It would have to account for any number of spaces between digits, handle tabs or carriage returns, recognise comment characters, and assemble decimal points on the fly:
+If the parser operated directly on raw characters, that rule could not look so clean.  It would have to account for any number of spaces between digits, handle tabs or carriage returns, recognise comment characters, and assemble decimal points on the fly:
 
 ```text
 expression = (optional spaces) (sequence of digits or characters) (optional spaces) '+' (optional spaces) ...
@@ -59,17 +59,18 @@ expression = (optional spaces) (sequence of digits or characters) (optional spac
 
 Every single grammar rule in the compiler would be buried under the bookkeeping of skipping spaces and assembling words.  The grammar would collapse under its own weight.
 
-```mermaid
-flowchart LR
-    Bytes["Raw Bytes<br>'4' '2' ' ' '+' ' ' '1' '0'"] -->|Lexer / Scanner| Tokens["Atomic Tokens<br>[42]  [+]  [10]"]
-    Tokens -->|Parser| Ast["Syntax Tree (AST)<br>(+ 42 10)"]
+```text
++---------------------------+  Lexer   +---------------------+  Parser  +--------------------+
+|         Raw Bytes         | -------> |    Atomic Tokens    | -------> | Syntax Tree (AST)  |
+| '4' '2' ' ' '+' ' ' '1' '0'|          |   [42]  [+]  [10]   |          |     (+ 42 10)      |
++---------------------------+          +---------------------+          +--------------------+
 ```
 
-Notice the representation `(+ 42 10)`: in an Abstract Syntax Tree, the operator `+` becomes the root node governing its two operand children, `42` and `10`.  The flat sequence of tokens has become a hierarchical tree.
+Notice the representation `(+ 42 10)`: in an Abstract Syntax Tree, the operator `+` becomes the root node governing its two operand children, `42` and `10`.  The flat sequence of tokens becomes a hierarchical tree.
 
 By establishing tokens as our fundamental building block, we draw a clean boundary:
 * **Below the boundary (The Lexer)**: Slices a messy stream of bytes into a tidy sequence of atomic tokens, throwing away whitespace and comments.
-* **Above the boundary (The Parser)**: Arranges those tokens into expressions and logic, completely oblivious to characters, spaces, or tabs.
+* **Above the boundary (The Parser)**: Arranges those tokens into expressions and functions, completely oblivious to raw characters, spaces, or tabs.
 
 Once the lexer runs, the rest of the compiler never thinks about raw characters again.
 
@@ -77,7 +78,7 @@ Once the lexer runs, the rest of the compiler never thinks about raw characters 
 
 ## Starting with Single-Character Tokens
 
-Before our scanner recognises multi-character words (`def`) or numbers (`3.14159`), we will begin with the simplest tokens in the language: single-character punctuation like `+`, `*`, and `;`.
+Before our scanner recognises multi-character words (`def`) or numbers (`3.14159`), let us begin with the simplest tokens in the language: single-character punctuation like `+`, `*`, and `;`.
 
 Create a file named `kaleidoscope.cpp` in your favourite editor, and type the following fifteen lines by hand:
 
@@ -85,7 +86,7 @@ Create a file named `kaleidoscope.cpp` in your favourite editor, and type the fo
 #include <cstdio>
 
 int main() {
-  printf("Kaleidoscope Token Inspector (Step 1)\n");
+  printf("Kaleidoscope Token Inspector (Step 1.1: Single Characters)\n");
   printf("Type characters and press Enter (Ctrl+D to exit):\n\n");
 
   int c;
@@ -99,6 +100,10 @@ int main() {
 }
 ```
 
+:::{tip}
+Notice the `-std=c++17 -fno-rtti` flags in our compile command below.  LLVM is built with C++17 and disables C++ Run-Time Type Information (`-fno-rtti`) by default to shrink binary sizes and speed up compilation.  Passing these flags right from Step 1.1 keeps your build setup consistent when we link against LLVM libraries in Section 4.
+:::
+
 ---
 
 ## Compiling and Running
@@ -106,7 +111,7 @@ int main() {
 Compile the code with Clang:
 
 ```bash
-clang++ -Wall -Wextra kaleidoscope.cpp -o kaleidoscope
+clang++ -std=c++17 -fno-rtti -Wall -Wextra kaleidoscope.cpp -o kaleidoscope
 ```
 
 Run the binary:
@@ -115,10 +120,10 @@ Run the binary:
 ./kaleidoscope
 ```
 
-Type `+ * ;` and press Enter:
+Type `+ * ;` and press Enter, then press `Ctrl+D` (or `Ctrl+Z` on Windows) to send end-of-file (`EOF`) and exit:
 
 ```text
-Kaleidoscope Token Inspector (Step 1)
+Kaleidoscope Token Inspector (Step 1.1: Single Characters)
 Type characters and press Enter (Ctrl+D to exit):
 
 + * ;
@@ -127,12 +132,13 @@ Token: ' ' (ASCII 32)
 Token: '*' (ASCII 42)
 Token: ' ' (ASCII 32)
 Token: ';' (ASCII 59)
+[EOF]
 ```
-
-Press `Ctrl+D` (or `Ctrl+Z` on Windows) to send EOF and exit.
 
 Notice what happened: your binary consumed standard input character by character using `getchar()` and printed each character along with its ASCII code.
 
-However, notice the output for the spaces: our naive scanner treated spaces as tokens (`ASCII 32`).  As we observed earlier, whitespace separates atoms, but is not an atom itself.
+Look closely at the output for the spaces, though: our naive loop treated each space as a token (`ASCII 32`).  As we saw earlier, whitespace separates atoms, but it is not an atom itself.  In [Step 1.2](02-skipping-whitespace.md), we will extract a dedicated `gettok()` function that discards whitespace automatically.
 
-In [Step 1.2](02-skipping-whitespace.md), we will teach our scanner to discard whitespace automatically.
+---
+
+[Section 1 Overview](index.md) | [Next: Step 1.2 - Skipping Whitespace](02-skipping-whitespace.md)

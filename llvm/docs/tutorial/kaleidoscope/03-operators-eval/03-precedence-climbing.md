@@ -1,58 +1,65 @@
 # Step 3.3: Precedence Climbing
 
-In this step, we implement the core parsing algorithm: **Operator Precedence Climbing**.
+In [Step 3.1](01-binary-ast.md) and [Step 3.2](02-precedence-table.md), we saw why a flat loop mis-parses `1 + 2 * 3`: as soon as it reads `1`, `+`, and `2`, it rushes to build `(+ 1 2)` without peeking at what comes *after* `2`.
+
+**Operator Precedence Climbing** fixes that with one elegant rule: before folding `(LHS BinOp RHS)` together, peek at the *next* operator (`NextPrec`).  If `NextPrec` binds more tightly than `BinOp` (`TokPrec < NextPrec`), let the tighter operator steal `RHS` as *its* left-hand side first!
 
 ---
 
-## How Precedence Climbing Works
+## Tracing Precedence Climbing on `1 + 2 * 3 + 4`
 
-Consider parsing `a + b * c + d`:
+Think of any expression as a leading primary atom followed by zero or more `(binop, primary)` pairs:
 
-```mermaid
-sequenceDiagram
-    autonumber
-    actor Parser
-    participant Top as ParseBinOpRHS(Prec=0, LHS=a)
-    participant Rec as ParseBinOpRHS(Prec=21, LHS=b)
-
-    Parser->>Top: Start with LHS='a', sees '+' (prec 20)
-    Top->>Top: Eat '+', ParsePrimary -> RHS='b'
-    Top->>Top: Peek next op '*' (prec 40 > 20)
-    Top->>Rec: Recurse with min precedence 21
-    Rec->>Rec: Eat '*', ParsePrimary -> RHS='c'
-    Rec->>Rec: Peek next op '+' (prec 20 < 21)
-    Rec-->>Top: Return merged subexpression (b * c)
-    Top->>Top: Merge LHS = a + (b * c)
-    Top->>Top: Continue loop with pending '+' (prec 20 >= 0)
+```text
+expression ::= primary binoprhs
+binoprhs   ::= (binop primary)*
 ```
 
-1.  The parser reads the leading primary expression, `a`.
-2.  It inspects `+` (precedence 20), which is greater than or equal to the starting baseline precedence `0`.  It consumes `+` and parses primary `b`.
-3.  Next, it looks ahead at `*` (precedence 40).  Because 40 is strictly greater than 20, the right-hand side `b` binds more tightly to `*` than `a` binds to `+`.
-4.  The parser recursively calls itself with minimum precedence 21 (`TokPrec + 1`) to parse `b * c` first.
-5.  When the recursive call inspects the second `+` (precedence 20), 20 is less than 21.  The recursive call returns `(b * c)` back to the outer caller.
-6.  The outer caller merges `a + (b * c)` and continues its loop with the pending `+` operator.
+Watch `ParseBinOpRHS(ExprPrec, LHS)` trace `1 + 2 * 3 + 4`:
+
+```text
+ParseExpression()
+  LHS = (Number 1)
+  |
+  +--> ParseBinOpRHS(ExprPrec = 0, LHS = 1)
+         1. Sees '+' (TokPrec = 20 >= 0).  Eats '+', parses RHS = (Number 2).
+         2. Peeks ahead: sees '*' (NextPrec = 40).
+            20 < 40!  '*' binds tighter than '+', so climb!
+            |
+            +--> ParseBinOpRHS(ExprPrec = 21, LHS = 2)
+                   3. Sees '*' (TokPrec = 40 >= 21).  Eats '*', parses RHS = (Number 3).
+                   4. Peeks ahead: sees '+' (NextPrec = 20).
+                      40 < 20 is FALSE.  Fold LHS = (* 2 3).
+                   5. Next loop iteration: sees '+' (TokPrec = 20 < ExprPrec 21).
+                      Returns (* 2 3) to outer call!
+            |
+         6. Outer call receives RHS = (* 2 3), folds LHS = (+ 1 (* 2 3)).
+         7. Next loop iteration: sees '+' (TokPrec = 20 >= 0).
+            Eats '+', parses RHS = (Number 4), peeks ';' (NextPrec = -1),
+            folds LHS = (+ (+ 1 (* 2 3)) 4), and returns on ';'!
+```
+
+Notice why step 2 passes `TokPrec + 1` (`21`) instead of `TokPrec` (`20`):
+* Any operator strictly tighter than `+` (such as `*` at `40`) satisfies `40 >= 21` and gets absorbed into `RHS`.
+* Another `+` or `-` at the *same* precedence (`20`) fails `20 >= 21`, forcing the recursive call to return so equal-precedence operators (`10 - 4 - 2`) associate **left-to-right** as `(- (- 10 4) 2)` instead of `(- 10 (- 4 2))`!
 
 ---
 
 ## Incremental Code Changes
 
-Open `kaleidoscope.cpp`.  In your parser section, you will add `ParseBinOpRHS()` and update `ParseExpression()`.
+Open `kaleidoscope.cpp` and replace our temporary flat loop from [Step 3.2](02-precedence-table.md) with `ParseBinOpRHS()` and the final five-line `ParseExpression()`.
 
-### 1. The ParseBinOpRHS() Function
+### 1. Add `ParseBinOpRHS()` and Update `ParseExpression()`
 
-Directly above `ParseExpression()`, add the precedence climbing loop:
+Directly below `ParsePrimary()`, replace the Step 3.2 `ParseExpression()` function with `ParseBinOpRHS()` and the updated `ParseExpression()`:
 
 ```cpp
-/// binoprhs
-///   ::= ('+' primary)*
+/// binoprhs ::= (binop primary)*
 static std::unique_ptr<ExprAST> ParseBinOpRHS(int ExprPrec,
                                               std::unique_ptr<ExprAST> LHS) {
   while (true) {
     int TokPrec = GetTokPrecedence();
 
-    // If this binary operator binds at least as tightly as the current operator,
-    // consume it; otherwise we are done.
     if (TokPrec < ExprPrec)
       return LHS;
 
@@ -63,8 +70,6 @@ static std::unique_ptr<ExprAST> ParseBinOpRHS(int ExprPrec,
     if (!RHS)
       return nullptr;
 
-    // If BinOp binds less tightly with RHS than the operator after RHS, let
-    // the pending operator take RHS as its LHS.
     int NextPrec = GetTokPrecedence();
     if (TokPrec < NextPrec) {
       RHS = ParseBinOpRHS(TokPrec + 1, std::move(RHS));
@@ -72,22 +77,11 @@ static std::unique_ptr<ExprAST> ParseBinOpRHS(int ExprPrec,
         return nullptr;
     }
 
-    // Merge LHS/RHS into a binary expression node.
     LHS = std::make_unique<BinaryExprAST>(static_cast<char>(BinOp),
                                           std::move(LHS), std::move(RHS));
   }
 }
-```
 
-Notice the termination condition: when `GetTokPrecedence()` returns `-1` (for tokens like `;` or `\n`), `TokPrec < ExprPrec` is immediately true, returning `LHS` to the caller.
-
-### 2. Updating ParseExpression()
-
-Replace your old stub `ParseExpression()` with one that kicks off precedence climbing with a baseline precedence of `0`:
-
-```cpp
-/// expression
-///   ::= primary binoprhs
 static std::unique_ptr<ExprAST> ParseExpression() {
   auto LHS = ParsePrimary();
   if (!LHS)
@@ -97,11 +91,24 @@ static std::unique_ptr<ExprAST> ParseExpression() {
 }
 ```
 
+Check what happens when an expression has *no* binary operators at all, such as `42;`:
+1.  `ParseExpression()` parses `LHS = (Number 42)`, leaving `CurTok` on `';'`.
+2.  `ParseBinOpRHS(0, LHS)` calls `GetTokPrecedence()`, which returns `-1` for `';'`.
+3.  `-1 < 0` (`TokPrec < ExprPrec`) is immediately true, so `ParseBinOpRHS` returns `(Number 42)` untouched!
+
+### 2. Update the `main()` Banner
+
+Update the first `printf` line in `main()` to `Step 3.3: Precedence Climbing`:
+
+```cpp
+  printf("Kaleidoscope AST Inspector (Step 3.3: Precedence Climbing)\n");
+```
+
 ---
 
 ## Verifying Your Code
 
-Before compiling, check that your `kaleidoscope.cpp` has all additions in place.
+Compare your `kaleidoscope.cpp` against the complete reference file:
 
 <details>
 <summary>Click here to compare against the reference kaleidoscope.cpp</summary>
@@ -133,8 +140,8 @@ enum Token {
   tok_number = -201,
 };
 
-static std::string IdentifierStr;
-static double NumVal;
+static std::string IdentifierStr; // Filled in if tok_identifier
+static double NumVal;             // Filled in if tok_number
 
 static int gettok() {
   static int LastChar = ' ';
@@ -142,6 +149,7 @@ static int gettok() {
   while (isspace(LastChar))
     LastChar = getchar();
 
+  // Recognise identifiers and keywords: [a-zA-Z_][a-zA-Z0-9_]*
   if (isalpha(LastChar) || LastChar == '_') {
     IdentifierStr = LastChar;
     while (isalnum((LastChar = getchar())) || LastChar == '_')
@@ -154,6 +162,7 @@ static int gettok() {
     return tok_identifier;
   }
 
+  // Recognise numeric literals: [0-9.]+
   if (isdigit(LastChar) || LastChar == '.') {
     std::string NumStr;
     do {
@@ -165,6 +174,7 @@ static int gettok() {
     return tok_number;
   }
 
+  // Recognise comments: '#' through end of line.
   if (LastChar == '#') {
     do
       LastChar = getchar();
@@ -276,7 +286,7 @@ static std::unique_ptr<ExprAST> ParseExpression();
 
 static std::unique_ptr<ExprAST> ParseNumberExpr() {
   auto Result = std::make_unique<NumberExprAST>(NumVal);
-  getNextToken();
+  getNextToken(); // consume the number
   return Result;
 }
 
@@ -296,9 +306,11 @@ static std::unique_ptr<ExprAST> ParseIdentifierExpr() {
   std::string IdName = IdentifierStr;
   getNextToken(); // eat identifier
 
+  // Simple variable reference.
   if (CurTok != '(')
-    return std::make_unique<VariableExprAST>(IdName);
+    return std::make_unique<VariableExprAST>(std::move(IdName));
 
+  // Function call.
   getNextToken(); // eat '('
   std::vector<std::unique_ptr<ExprAST>> Args;
   if (CurTok != ')') {
@@ -318,7 +330,7 @@ static std::unique_ptr<ExprAST> ParseIdentifierExpr() {
   }
 
   getNextToken(); // eat ')'
-  return std::make_unique<CallExprAST>(IdName, std::move(Args));
+  return std::make_unique<CallExprAST>(std::move(IdName), std::move(Args));
 }
 
 static std::unique_ptr<ExprAST> ParsePrimary() {
@@ -334,8 +346,7 @@ static std::unique_ptr<ExprAST> ParsePrimary() {
   }
 }
 
-/// binoprhs
-///   ::= ('+' primary)*
+/// binoprhs ::= (binop primary)*
 static std::unique_ptr<ExprAST> ParseBinOpRHS(int ExprPrec,
                                               std::unique_ptr<ExprAST> LHS) {
   while (true) {
@@ -345,7 +356,7 @@ static std::unique_ptr<ExprAST> ParseBinOpRHS(int ExprPrec,
       return LHS;
 
     int BinOp = CurTok;
-    getNextToken();
+    getNextToken(); // eat binary operator
 
     auto RHS = ParsePrimary();
     if (!RHS)
@@ -363,8 +374,6 @@ static std::unique_ptr<ExprAST> ParseBinOpRHS(int ExprPrec,
   }
 }
 
-/// expression
-///   ::= primary binoprhs
 static std::unique_ptr<ExprAST> ParseExpression() {
   auto LHS = ParsePrimary();
   if (!LHS)
@@ -411,13 +420,12 @@ int main() {
   BinopPrecedence['/'] = 40;
 
   printf("Kaleidoscope AST Inspector (Step 3.3: Precedence Climbing)\n");
-  printf("Type math expressions followed by ';' and press Enter (Ctrl+D to exit):\n\n");
+  printf("Type math expressions followed by ';' and press Enter (Ctrl+D to "
+         "exit):\n\n");
 
-  // Prime the first token.
   Prompt();
   getNextToken();
   MainLoop();
-
   return 0;
 }
 ```
@@ -430,29 +438,35 @@ int main() {
 Recompile:
 
 ```bash
-clang++ -Wall -Wextra kaleidoscope.cpp -o kaleidoscope
+clang++ -std=c++17 -fno-rtti -Wall -Wextra kaleidoscope.cpp -o kaleidoscope
 ```
 
-Run the binary:
+Run `./kaleidoscope` and test mixed precedence, parenthesised overrides, and left-associative subtraction:
 
 ```bash
 ./kaleidoscope
 ```
-
-Type mathematical expressions with mixed operators and parentheses:
 
 ```text
 Kaleidoscope AST Inspector (Step 3.3: Precedence Climbing)
 Type math expressions followed by ';' and press Enter (Ctrl+D to exit):
 
 ready> 1 + 2 * 3;
-Parsed AST: (+ 1 (* 2 3))
+Parsed AST: (+ (Number 1) (* (Number 2) (Number 3)))
 ready> (1 + 2) * 3;
-Parsed AST: (* (+ 1 2) 3)
+Parsed AST: (* (+ (Number 1) (Number 2)) (Number 3))
 ready> 10 - 4 - 2;
-Parsed AST: (- (- 10 4) 2)
+Parsed AST: (- (- (Number 10) (Number 4)) (Number 2))
+ready>
 ```
 
-Look closely at `1 + 2 * 3`.  The tree is `(+ 1 (* 2 3))`.  Multiplication was grouped as the right child of addition, preserving standard arithmetic order of operations.
+Look at all three trees:
+* `1 + 2 * 3;` is now `(+ (Number 1) (* (Number 2) (Number 3)))`: the bug from [Step 3.1](01-binary-ast.md) is gone!
+* `(1 + 2) * 3;` routes `(1 + 2)` through `ParseParenExpr()` from [Step 2.2](../02-parser-ast/02-parentheses.md), overriding `*` cleanly to build `(* (+ (Number 1) (Number 2)) (Number 3))`.
+* `10 - 4 - 2;` groups left-to-right as `(- (- (Number 10) (Number 4)) (Number 2))` (`(10 - 4) - 2 = 4`, not `10 - (4 - 2) = 8`).
 
-In [Step 3.4](04-immediate-eval.md), we will add direct mathematical evaluation to our AST, turning our parser into an interactive calculator in pure C++.
+In [Step 3.4](04-immediate-eval.md), we will evaluate these trees directly in C++ so your REPL computes real numbers!
+
+---
+
+[Previous: Step 3.2 - The Precedence Table](02-precedence-table.md) | [Section 3 Overview](index.md) | [Next: Step 3.4 - Immediate Evaluation](04-immediate-eval.md)

@@ -2,7 +2,6 @@
 orphan: true
 ---
 
-# Kaleidoscope Tutorial
+# Kaleidoscope Tutorial (Section 4: Generating LLVM Intermediate Representation)
 
-The Kaleidoscope Tutorial has moved to {doc}`MyFirstLanguageFrontend/index`.
-
+This chapter has moved to {doc}`kaleidoscope/04-llvm-ir/index` in the updated {doc}`kaleidoscope/index` tutorial.

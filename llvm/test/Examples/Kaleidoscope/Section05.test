@@ -1,0 +1,12 @@
+# RUN: Kaleidoscope-Sec05 < %s 2>&1 | FileCheck %s
+# REQUIRES: default_triple
+
+# Test ORCv2 JIT execution, cross-module calls, and live function redefinition.
+def foo(x) x + 1;
+def bar(x) foo(2 * x);
+bar(2);
+def foo(x) x + 10;
+foo(4);
+
+# CHECK: Evaluated to 5.000000
+# CHECK: Evaluated to 14.000000

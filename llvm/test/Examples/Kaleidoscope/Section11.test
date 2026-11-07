@@ -1,0 +1,15 @@
+# RUN: Kaleidoscope-Sec11 < %s 2>&1 | FileCheck %s
+# REQUIRES: default_triple
+
+# Test signed vs unsigned arithmetic, icmp comparisons, and explicit casts.
+def sdiv_test(a: int, b: int) -> int a / b;
+def udiv_test(a: uint, b: uint) -> uint a / b;
+sdiv_test(-20, 4);
+udiv_test(20 as uint, 4 as uint);
+(-1) < 1;
+(7 as double) / 2.0;
+
+# CHECK: Evaluated to -5
+# CHECK: Evaluated to 5
+# CHECK: Evaluated to true
+# CHECK: Evaluated to 3.500000

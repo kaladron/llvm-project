@@ -1,0 +1,12 @@
+# RUN: Kaleidoscope-Sec06 < %s 2>&1 | FileCheck %s
+# REQUIRES: default_triple
+
+# Test conditional branching, PHI nodes, and recursive Fibonacci.
+def fib(x)
+  if x < 3 then
+    1
+  else
+    fib(x - 1) + fib(x - 2);
+
+fib(10);
+# CHECK: Evaluated to 55.000000

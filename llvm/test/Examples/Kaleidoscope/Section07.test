@@ -1,0 +1,13 @@
+# RUN: Kaleidoscope-Sec07 < %s 2>&1 | FileCheck %s
+# REQUIRES: default_triple
+
+# Test post-tested for-loop execution and host C symbol calls.
+extern printd(x);
+for i = 1, i < 4, 1.0 in
+  printd(i);
+
+# CHECK: 1.000000
+# CHECK: 2.000000
+# CHECK: 3.000000
+# CHECK: 4.000000
+# CHECK: Evaluated to 0.000000

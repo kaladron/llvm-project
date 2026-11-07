@@ -1,51 +1,46 @@
 # Step 2.4: Function Calls and Active Learning Challenge
 
-In this step, we add function call expressions like `sqrt(16)` or `add(a, b)`.
+In [Step 2.3](03-variables.md), every identifier became a `VariableExprAST`.  Now we add function call expressions like `sqrt(16)`, `foo(x, 10)`, and zero-argument calls like `run()`.
 
 ---
 
-## Distinguishing Variables from Calls
+## Distinguishing Variables from Calls with Lookahead
 
-Both variable references and function calls begin with an identifier token.  The parser distinguishes between the two by peeking at the very next token:
-* If the token following the identifier is `'('`, it is a function call.
-* Otherwise, it is a simple variable reference.
+Both a variable reference (`x`) and a function call (`foo(x, 10)`) begin with `tok_identifier`.  How does a recursive-descent parser tell them apart?  By consuming the identifier and inspecting `CurTok` (our one-token lookahead from [Step 2.1](01-first-ast-node.md)):
+* If `CurTok != '('`, the identifier stands alone as a `VariableExprAST`.
+* If `CurTok == '('`, it is a function call, so we parse a comma-separated list of argument expressions and build a `CallExprAST`:
 
-```mermaid
-flowchart TD
-    Call["CallExprAST: 'foo'"]
-    Call --> Arg1["VariableExprAST: 'x'"]
-    Call --> Arg2["NumberExprAST: 10.0"]
+```text
+                +--------------------+
+                | CallExprAST: "foo" |
+                +--------------------+
+                   /              \
+                  v                v
+    +---------------------+  +--------------------+
+    | VariableExprAST "x" |  | NumberExprAST (10) |
+    +---------------------+  +--------------------+
 ```
-
-A function call stores two items: the name of the function being called (`Callee`), and a vector of argument expressions (`Args`).
 
 ---
 
 ## Incremental Code Changes
 
-Open your `kaleidoscope.cpp` file.  You will make three targeted updates.
+Open `kaleidoscope.cpp` and make three targeted updates on top of [Step 2.3](03-variables.md).
 
-### 1. New Header Includes
+### 1. Include `<vector>`
 
-At the top of `kaleidoscope.cpp`, include `<utility>` (for `std::move`) and `<vector>` (for `std::vector`):
+At the top of `kaleidoscope.cpp`, add `#include <vector>` right below `#include <utility>` so `CallExprAST` can hold a dynamic list of argument subtrees:
 
 ```cpp
-#include <cctype>
-#include <cstdio>
-#include <cstdlib>
-#include <iostream>
-#include <memory>
-#include <string>
 #include <utility>
 #include <vector>
 ```
 
-### 2. Defining CallExprAST
+### 2. Define `CallExprAST` (With a Quick `print()` Stretch!)
 
-In the AST section, directly below `VariableExprAST`, add `CallExprAST`:
+Directly below `VariableExprAST`, add `CallExprAST`.  It owns the `Callee` function name and a `std::vector<std::unique_ptr<ExprAST>> Args`:
 
 ```cpp
-/// CallExprAST - Expression class for function calls, like "foo(a, 2.0)".
 class CallExprAST : public ExprAST {
   std::string Callee;
   std::vector<std::unique_ptr<ExprAST>> Args;
@@ -57,31 +52,27 @@ public:
   void print(std::ostream &OS) const override {
     OS << "(Call " << Callee;
     for (const auto &Arg : Args) {
-      OS << " ";
-      Arg->print(OS);
+      // Your stretch: print a space followed by Arg's S-expression!
     }
     OS << ")";
   }
 };
 ```
 
-Notice that `Args` stores expressions as `std::vector<std::unique_ptr<ExprAST>>`.  This allows each argument to be any valid expression, including nested function calls like `foo(bar(x))`.
+**Your Stretch**: Fill in the two lines inside the `for` loop (`OS << " ";` and `Arg->print(OS);`) so `foo(x, 10)` prints `(Call foo (Var x) (Number 10))` and a zero-argument call `run()` prints `(Call run)`.
 
-### 3. Updating ParseIdentifierExpr() for Arguments
+### 3. Upgrade `ParseIdentifierExpr()` and Update `main()`
 
-In the parser section, replace your previous `ParseIdentifierExpr()` with one that inspects whether `'('` follows:
+Replace `ParseIdentifierExpr()` with the lookahead-aware version that handles both variables and comma-separated argument lists:
 
 ```cpp
-/// identifierexpr
-///   ::= identifier
-///   ::= identifier '(' expression* ')'
 static std::unique_ptr<ExprAST> ParseIdentifierExpr() {
   std::string IdName = IdentifierStr;
   getNextToken(); // eat identifier
 
   // Simple variable reference.
   if (CurTok != '(')
-    return std::make_unique<VariableExprAST>(IdName);
+    return std::make_unique<VariableExprAST>(std::move(IdName));
 
   // Function call.
   getNextToken(); // eat '('
@@ -103,19 +94,26 @@ static std::unique_ptr<ExprAST> ParseIdentifierExpr() {
   }
 
   getNextToken(); // eat ')'
-  return std::make_unique<CallExprAST>(IdName, std::move(Args));
+  return std::make_unique<CallExprAST>(std::move(IdName), std::move(Args));
 }
 ```
 
-Notice the argument loop:
-* If the very next token is `')'`, it is a zero-argument function call like `run()`.
-* Otherwise, it repeatedly parses expressions separated by commas until it reaches the closing `')'`.
+Trace how cleanly recursion handles nested calls like `foo(bar(x), 10)`:
+* If `CurTok == ')'` right after `'('`, we skip the loop altogether and build a zero-argument `CallExprAST` (`run()`).
+* Otherwise, each argument is parsed with `ParseExpression()`, which can itself be a number, parenthesised expression, variable, or another nested `CallExprAST`!
+* After each argument, `CurTok` must be either `')'` (end of call) or `','` (more arguments follow).
+
+Finally, update the banner in `main()` to `Step 2.4: Function Calls`:
+
+```cpp
+  printf("Kaleidoscope AST Inspector (Step 2.4: Function Calls)\n");
+```
 
 ---
 
 ## Verifying Your Code
 
-Before compiling, check that your `kaleidoscope.cpp` has all additions in place.
+Compare your `kaleidoscope.cpp` against the complete reference file:
 
 <details>
 <summary>Click here to compare against the reference kaleidoscope.cpp</summary>
@@ -146,8 +144,8 @@ enum Token {
   tok_number = -201,
 };
 
-static std::string IdentifierStr;
-static double NumVal;
+static std::string IdentifierStr; // Filled in if tok_identifier
+static double NumVal;             // Filled in if tok_number
 
 static int gettok() {
   static int LastChar = ' ';
@@ -155,6 +153,7 @@ static int gettok() {
   while (isspace(LastChar))
     LastChar = getchar();
 
+  // Recognise identifiers and keywords: [a-zA-Z_][a-zA-Z0-9_]*
   if (isalpha(LastChar) || LastChar == '_') {
     IdentifierStr = LastChar;
     while (isalnum((LastChar = getchar())) || LastChar == '_')
@@ -167,6 +166,7 @@ static int gettok() {
     return tok_identifier;
   }
 
+  // Recognise numeric literals: [0-9.]+
   if (isdigit(LastChar) || LastChar == '.') {
     std::string NumStr;
     do {
@@ -178,6 +178,7 @@ static int gettok() {
     return tok_number;
   }
 
+  // Recognise comments: '#' through end of line.
   if (LastChar == '#') {
     do
       LastChar = getchar();
@@ -259,7 +260,7 @@ static std::unique_ptr<ExprAST> ParseExpression();
 
 static std::unique_ptr<ExprAST> ParseNumberExpr() {
   auto Result = std::make_unique<NumberExprAST>(NumVal);
-  getNextToken();
+  getNextToken(); // consume the number
   return Result;
 }
 
@@ -279,9 +280,11 @@ static std::unique_ptr<ExprAST> ParseIdentifierExpr() {
   std::string IdName = IdentifierStr;
   getNextToken(); // eat identifier
 
+  // Simple variable reference.
   if (CurTok != '(')
-    return std::make_unique<VariableExprAST>(IdName);
+    return std::make_unique<VariableExprAST>(std::move(IdName));
 
+  // Function call.
   getNextToken(); // eat '('
   std::vector<std::unique_ptr<ExprAST>> Args;
   if (CurTok != ')') {
@@ -301,7 +304,7 @@ static std::unique_ptr<ExprAST> ParseIdentifierExpr() {
   }
 
   getNextToken(); // eat ')'
-  return std::make_unique<CallExprAST>(IdName, std::move(Args));
+  return std::make_unique<CallExprAST>(std::move(IdName), std::move(Args));
 }
 
 static std::unique_ptr<ExprAST> ParsePrimary() {
@@ -354,11 +357,9 @@ int main() {
   printf(
       "Type expressions followed by ';' and press Enter (Ctrl+D to exit):\n\n");
 
-  // Prime the first token.
   Prompt();
   getNextToken();
   MainLoop();
-
   return 0;
 }
 ```
@@ -371,20 +372,18 @@ int main() {
 Recompile:
 
 ```bash
-clang++ -Wall -Wextra kaleidoscope.cpp -o kaleidoscope
+clang++ -std=c++17 -fno-rtti -Wall -Wextra kaleidoscope.cpp -o kaleidoscope
 ```
 
-Run the binary:
+Run `./kaleidoscope` and test multi-argument, single-argument, and zero-argument calls:
 
 ```bash
 ./kaleidoscope
 ```
 
-Type function calls with zero, one, or multiple arguments:
-
 ```text
 Kaleidoscope AST Inspector (Step 2.4: Function Calls)
-Type expressions and press Enter (Ctrl+D to exit):
+Type expressions followed by ';' and press Enter (Ctrl+D to exit):
 
 ready> foo(x, 10);
 Parsed AST: (Call foo (Var x) (Number 10))
@@ -392,23 +391,24 @@ ready> sqrt(16);
 Parsed AST: (Call sqrt (Number 16))
 ready> run();
 Parsed AST: (Call run)
+ready>
 ```
 
 ---
 
 ## Active Learning Challenge: Indented Tree Printing
 
-S-expressions are compact, but nested trees are often clearer as an indented hierarchy.
+Compact S-expressions fit nicely on a single line, while indented multi-line dumps make deep trees easy to scan visually.  Try writing an indented printer as a quick experiment!
 
 ### The Challenge
 
-Update the `print()` method on `ExprAST` to accept an optional `int Indent = 0` parameter:
+Temporarily add an optional `int Indent = 0` parameter to `ExprAST::print()`:
 
 ```cpp
 virtual void print(std::ostream &OS, int Indent = 0) const = 0;
 ```
 
-Update each AST class so child nodes are printed on new lines indented by two spaces per level.  When you type `foo(x, (42));`, your binary should print:
+Update `NumberExprAST`, `VariableExprAST`, and `CallExprAST` so each child node prints on its own line indented by `Indent + 2` spaces.  When you type `foo(x, (42));`, your experiment can print:
 
 ```text
 Call: foo
@@ -416,12 +416,10 @@ Call: foo
   Number: 42
 ```
 
-Give this a try in your editor before expanding the solution fold below.
+Try coding this yourself before checking the fold below.
 
 <details>
-<summary>Click here to reveal the solution</summary>
-
-Here are the required changes:
+<summary>Click here to reveal the challenge solution</summary>
 
 1.  Update `ExprAST`:
 ```cpp
@@ -456,10 +454,19 @@ public:
 ```
 </details>
 
+:::{important}
+**Keep the Compact S-Expression `print()` Before Starting Section 3!**
+Once you have tested your indented tree printer, **switch `print()` back to the compact single-line S-expression format** shown in the Step 2.4 reference fold above (`void print(std::ostream &OS) const`).  Section 3 adds `BinaryExprAST::print()` using that compact `(+ (Number 1) (Number 2))` format so you can spot operator-precedence bugs at a single glance!
+:::
+
 ---
 
 ## Next Steps
 
-Congratulations!  You have created a complete Abstract Syntax Tree and recursive-descent parser for primary expressions.
+Congratulations!  You now have a complete AST hierarchy and recursive-descent parser for all primary expressions in Kaleidoscope.
 
-In [Section 3: Operator Precedence and The Calculator](../03-operators-eval/README.md), we will implement operator precedence climbing to parse expressions like `1 + 2 * 3` and evaluate mathematical results directly in C++.
+In [Section 3: Operator Precedence and Evaluation](../03-operators-eval/index.md), we will add binary infix operators (`+`, `-`, `*`, `/`, `<`), watch a naive left-to-right parser mis-group `1 + 2 * 3`, fix it with operator-precedence climbing, and turn Kaleidoscope into an interactive calculator!
+
+---
+
+[Previous: Step 2.3 - Variables](03-variables.md) | [Section 2 Overview](index.md) | [Next: Section 3 - Operator Precedence and Evaluation](../03-operators-eval/index.md)

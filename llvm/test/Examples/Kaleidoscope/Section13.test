@@ -1,0 +1,30 @@
+# RUN: Kaleidoscope-Sec13 < %s 2>&1 | FileCheck %s
+# REQUIRES: default_triple
+
+# Test opaque pointers, address-of, dereference, sizeof, and heap allocation.
+def binary : 1 (x y) y;
+extern malloc(n: i64) -> ptr<byte>;
+extern free(p: ptr<byte>) -> void;
+
+def swap_ints(a: ptr<int>, b: ptr<int>) -> int
+  var tmp: int = *a in
+  (*a = *b) : (*b = tmp) : 0;
+
+def test_swap() -> int
+  var x: int = 11, y: int = 99 in
+  swap_ints(&x, &y) : (x * 100 + y);
+
+def test_heap() -> i64
+  var raw: ptr<byte> = malloc(sizeof(i64)),
+      p: ptr<i64> = raw as ptr<i64>,
+      res: i64 = 0 as i64 in
+  (*p = 123456 as i64) :
+  (res = *p) :
+  free(raw) :
+  res;
+
+test_swap();
+test_heap();
+
+# CHECK: Evaluated to 9911
+# CHECK: Evaluated to 123456

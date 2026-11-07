@@ -1,61 +1,80 @@
-# Step 5.4: Functions and Library Calls in the JIT
+# Step 5.4: Functions and `extern` Calls in the JIT
 
-In this step, we enable calling user-defined functions and external C standard library functions from the JIT REPL.
+At the end of [Step 5.3](03-executing-expressions.md), we spotted why splitting each JIT submission into its own `llvm::Module` broke subsequent calls: every time `addModule()` takes ownership of `TheModule` and `InitializeModuleAndManagers()` creates a fresh empty module, any `extern` or `def` declarations that lived in the old module are no longer visible in the new `TheModule`!
+
+In this final step of Milestone 2, we add two small maps (`FunctionProtos` and `FunctionRTs`) so functions and `extern` prototypes work seamlessly across modules **and** user-defined `def` functions can be redefined live in the REPL!
 
 ---
 
-## Cross-Module Declarations in the JIT
+## Cross-Module Prototypes (`FunctionProtos`) and Live Redefinition (`FunctionRTs`)
 
-When a function definition like `def square(x) x * x;` is entered, its module is immediately compiled and added to the JIT.  A new module is then opened for subsequent commands.
+Why can a new module not simply hold onto an `llvm::Function *` pointer from an older module?  Because in LLVM IR, every `llvm::Function` is owned by a single `llvm::Module`, and a `call` instruction inside Module 2 is only legal if its callee is declared (or defined) inside **Module 2** itself!
 
-When a later command calls `square(5.0);`, the new module does not contain the declaration of `square`.  Without a prototype, LLVM cannot verify the call signature.
+We solve both cross-module lookup and live function redefinition with two maps:
 
-To solve this, we maintain an AST symbol cache of known prototypes:
+```text
+  1. Cross-Module Calls via FunctionProtos
+  ----------------------------------------
+  Module 1 (JIT-compiled):   define double @foo(double %x) { ... }
+                                  |
+                                  +---> saves PrototypeAST in FunctionProtos["foo"]
+                                                                    |
+  Module 2 (new expression): getFunction("foo") -------------------+
+                                  |  re-emits: declare double @foo(double)
+                                  v
+                             call double @foo(double 4.0)  --> linked by ORC JIT!
 
-```mermaid
-flowchart TD
-    subgraph Mod1 ["Module 1 (JIT Compiled)"]
-        FnDef["define double @square(double %x)"]
-    end
-    subgraph ProtTable ["Symbol Cache: FunctionProtos"]
-        Proto["PrototypeAST: square(x)"]
-    end
-    subgraph Mod2 ["Module 2 (Current Expression)"]
-        Lookup["getFunction('square')"] --> Decl["declare double @square(double)"]
-        Call["call double @square(double 5.0)"]
-    end
-    FnDef -.->|saves prototype| Proto
-    Proto -.->|re-emits declaration| Lookup
-    Call -.->|resolved at runtime by JIT| FnDef
+  2. Live Redefinition via FunctionRTs
+  ------------------------------------
+  First  "def foo(x) x + 1;"  --> compiled under RT_1, saved in FunctionRTs["foo"]
+  Second "def foo(x) x * 10;" --> FunctionRTs["foo"]->remove() frees RT_1 first,
+                                  then compiles new @foo under RT_2!
 ```
 
-> [!NOTE]
-> **Module Isolation and SSA Scope**:
-> Why can't the new module reuse the `llvm::Function *` pointer from the previous module?  In LLVM, every `llvm::Function` belongs strictly to a single `llvm::Module`.  LLVM IR is strongly typed and self-contained per module: any symbol referenced by an instruction inside a module must either be defined or declared within that exact same module.  `getFunction()` emits an external declaration into the current module on demand.
-
-> [!TIP]
-> **Re-evaluating or Redefining Functions**:
-> In an interactive session, users often want to redefine functions with new equations.  By keeping `FunctionProtos` up to date, the compiler can re-emit updated declarations and allow the ORC JIT to resolve symbols dynamically.
+* **`FunctionProtos`**: Maps each function name to its `std::unique_ptr<PrototypeAST>`.  Whenever `getFunction("foo")` sees that `"foo"` is not yet declared in the *current* `TheModule`, it looks `"foo"` up in `FunctionProtos` and calls `Proto->codegen()` to emit a fresh `declare double @foo(...)` into the current `TheModule` on demand!
+* **`FunctionRTs`**: Remember back in [Step 4.3](../04-llvm-ir/03-functions-ir.md) when single-module mode had to reject redefining a function (`!TheFunction->empty()`)?  In our JIT, each `def` compiles in its own module tracked by its own `ResourceTrackerSP` stored in `FunctionRTs[FnName]`.  If you type a brand-new `def foo(x)` with the same name, `HandleDefinition()` simply calls `It->second->remove()` to unload the old `@foo` symbol and machine code from `MainJD` before adding the new module!
 
 ---
 
 ## Incremental Code Changes
 
-Open `kaleidoscope.cpp` to add cross-module prototype resolution.
+Open `kaleidoscope.cpp` and apply six clean updates on top of [Step 5.3](03-executing-expressions.md).
 
-### 1. Declare FunctionProtos and getFunction()
+### 1. Tidy Unused Host Header
 
-Add the prototype cache and lookup helper above your AST definitions:
+Now that we verified our host target triple in Steps 5.1 through 5.3, remove `#include "llvm/TargetParser/Host.h"` from the top of `kaleidoscope.cpp` so every `#include` in the file earns its keep.
+
+### 2. Add `FunctionProtos`, `FunctionRTs`, and `getFunction()` (With a Quick Stretch!)
+
+In the `Code Generation` section, add `FunctionProtos` and `FunctionRTs` right below `TheJIT`, and write `getFunction(std::string Name)` right above `InitializeModuleAndManagers()`:
 
 ```cpp
+static std::unique_ptr<llvm::orc::KaleidoscopeJIT> TheJIT;
 static std::map<std::string, std::unique_ptr<PrototypeAST>> FunctionProtos;
+static std::map<std::string, llvm::orc::ResourceTrackerSP> FunctionRTs;
+static llvm::ExitOnError ExitOnErr;
 
-llvm::Function *getFunction(std::string Name) {
-  // First, check if the function is already declared in the current module:
+static llvm::Function *getFunction(std::string Name) {
   if (auto *F = TheModule->getFunction(Name))
     return F;
 
-  // Otherwise, re-declare the prototype from our symbol cache:
+  // Your stretch: look up Name in FunctionProtos; if found, return
+  // FI->second->codegen() to lazily emit its declaration in TheModule!
+
+  return nullptr;
+}
+```
+
+**Your Stretch**: Fill in the three lines inside `getFunction()` using `auto FI = FunctionProtos.find(Name);`: if `FI != FunctionProtos.end()`, `return FI->second->codegen();`!  Check your implementation against the fold below:
+
+<details>
+<summary>Click here to check your getFunction() helper</summary>
+
+```cpp
+static llvm::Function *getFunction(std::string Name) {
+  if (auto *F = TheModule->getFunction(Name))
+    return F;
+
   auto FI = FunctionProtos.find(Name);
   if (FI != FunctionProtos.end())
     return FI->second->codegen();
@@ -63,27 +82,28 @@ llvm::Function *getFunction(std::string Name) {
   return nullptr;
 }
 ```
+</details>
 
-### 2. Update CallExprAST and FunctionAST Codegen
+### 3. Switch `CallExprAST::codegen()` to `getFunction()`
 
-In `CallExprAST::codegen()`, replace `TheModule->getFunction(Callee)` with `getFunction(Callee)`:
+In `CallExprAST::codegen()`, change the single lookup line from `TheModule->getFunction(Callee)` to `getFunction(Callee)`:
 
 ```cpp
-    llvm::Function *CalleeF = getFunction(Callee);
-    if (!CalleeF) {
-      fprintf(stderr, "Error: unknown function referenced: %s\n",
-              Callee.c_str());
-      return nullptr;
-    }
+llvm::Value *CallExprAST::codegen() {
+  llvm::Function *CalleeF = getFunction(Callee);
+  if (!CalleeF)
+    return LogErrorV("unknown function referenced");
 ```
 
-In `FunctionAST::codegen()`, register the prototype in `FunctionProtos` before generating the function body:
+### 4. Simplify `FunctionAST::codegen()` Using `FunctionProtos`
+
+Because every `def` now starts in a fresh empty `TheModule`, we no longer need `CreatedNew`, `deleteBody()`, or the single-module `!TheFunction->empty()` guard from [Step 4.3](../04-llvm-ir/03-functions-ir.md)!  Replace `FunctionAST::codegen()` with this streamlined version that caches `Proto` in `FunctionProtos` and calls `getFunction(P.getName())`:
 
 ```cpp
 llvm::Function *FunctionAST::codegen() {
   auto &P = *Proto;
   FunctionProtos[Proto->getName()] = std::move(Proto);
-  auto *TheFunction = getFunction(P.getName());
+  llvm::Function *TheFunction = getFunction(P.getName());
   if (!TheFunction)
     return nullptr;
 
@@ -94,9 +114,12 @@ llvm::Function *FunctionAST::codegen() {
   for (auto &Arg : TheFunction->args())
     NamedValues[std::string(Arg.getName())] = &Arg;
 
-  if (auto *RetVal = Body->codegen()) {
+  if (llvm::Value *RetVal = Body->codegen()) {
     Builder->CreateRet(RetVal);
-    llvm::verifyFunction(*TheFunction);
+    if (llvm::verifyFunction(*TheFunction, &llvm::errs())) {
+      TheFunction->eraseFromParent();
+      return nullptr;
+    }
     return TheFunction;
   }
 
@@ -105,45 +128,85 @@ llvm::Function *FunctionAST::codegen() {
 }
 ```
 
-### 3. Update Function and Extern Handlers
+Notice why `auto &P = *Proto;` grabs a reference *before* `FunctionProtos[Proto->getName()] = std::move(Proto);`: moving `Proto` into the map empties the local `unique_ptr`, while the underlying `PrototypeAST` object now lives safely on the heap inside `FunctionProtos`, so `P.getName()` remains completely valid!
 
-In `HandleDefinition()`, compile the function and transfer the module to `TheJIT`:
+### 5. Ship `def` Modules to `TheJIT` (With `FunctionRTs`) and Cache `extern` Prototypes
+
+Update `HandleDefinition()` and `HandleExtern()` in the `Interactive Driver Loop` section:
+* In `HandleDefinition()`, remove any previous `ResourceTracker` for `FnName` before registering the new module under a fresh `RT`, then open a fresh `TheModule` with `InitializeModuleAndManagers()`.
+* In `HandleExtern()`, save `ProtoAST` into `FunctionProtos` so future modules can re-declare the external function whenever needed!
 
 ```cpp
 static void HandleDefinition() {
   if (auto FnAST = ParseDefinition()) {
     if (auto *FnIR = FnAST->codegen()) {
-      fprintf(stderr, "Compiled function definition:\n");
+      std::string FnName = std::string(FnIR->getName());
+      fprintf(stderr, "Read function definition:\n");
       FnIR->print(llvm::errs());
       fprintf(stderr, "\n");
-      ExitOnErr(TheJIT->addModule(
-          llvm::orc::ThreadSafeModule(std::move(TheModule), std::move(TheContext))));
+
+      // If redefining an existing JIT function, remove its previous code first.
+      if (auto It = FunctionRTs.find(FnName); It != FunctionRTs.end()) {
+        ExitOnErr(It->second->remove());
+        FunctionRTs.erase(It);
+      }
+
+      auto RT = TheJIT->getMainJITDylib().createResourceTracker();
+      ExitOnErr(
+          TheJIT->addModule(llvm::orc::ThreadSafeModule(std::move(TheModule),
+                                                        std::move(TheContext)),
+                            RT));
+      FunctionRTs[FnName] = std::move(RT);
       InitializeModuleAndManagers();
     }
   } else {
-    // Skip token for error recovery.
+    while (CurTok != ';' && CurTok != tok_eof)
+      getNextToken();
+  }
+}
+
+static void HandleExtern() {
+  if (auto ProtoAST = ParseExtern()) {
+    if (auto *FnIR = ProtoAST->codegen()) {
+      fprintf(stderr, "Read extern:\n");
+      FnIR->print(llvm::errs());
+      fprintf(stderr, "\n");
+      FunctionProtos[ProtoAST->getName()] = std::move(ProtoAST);
+    }
+  } else {
     while (CurTok != ';' && CurTok != tok_eof)
       getNextToken();
   }
 }
 ```
 
-In `HandleExtern()`, register the prototype in `FunctionProtos`:
+### 6. Tidy Startup Logs in `main()`
+
+In `main()`, remove the two temporary startup `fprintf(stderr, ...)` lines (`Initialised native target:` and `JIT DataLayout:`) from Steps 5.1 and 5.2, and update the banner to `Step 5.4: Complete JIT`:
 
 ```cpp
-static void HandleExtern() {
-  if (auto ProtoAST = ParseExtern()) {
-    if (auto *FnIR = ProtoAST->codegen()) {
-      fprintf(stderr, "Registered extern:\n");
-      FnIR->print(llvm::errs());
-      fprintf(stderr, "\n");
-      FunctionProtos[ProtoAST->getName()] = std::move(ProtoAST);
-    }
-  } else {
-    // Skip token for error recovery.
-    while (CurTok != ';' && CurTok != tok_eof)
-      getNextToken();
-  }
+int main() {
+  llvm::InitializeNativeTarget();
+  llvm::InitializeNativeTargetAsmPrinter();
+  llvm::InitializeNativeTargetAsmParser();
+
+  BinopPrecedence['<'] = 10;
+  BinopPrecedence['+'] = 20;
+  BinopPrecedence['-'] = 20;
+  BinopPrecedence['*'] = 40;
+  BinopPrecedence['/'] = 40;
+
+  TheJIT = ExitOnErr(llvm::orc::KaleidoscopeJIT::Create());
+  InitializeModuleAndManagers();
+
+  printf("Kaleidoscope JIT REPL (Step 5.4: Complete JIT)\n");
+  printf("Type definitions, externs, or expressions followed by ';' (Ctrl+D to "
+         "exit):\n\n");
+
+  Prompt();
+  getNextToken();
+  MainLoop();
+  return 0;
 }
 ```
 
@@ -151,7 +214,7 @@ static void HandleExtern() {
 
 ## Verifying Your Code
 
-Before compiling, compare your `kaleidoscope.cpp` with the complete reference file.
+Compare your `kaleidoscope.cpp` against the complete Milestone 2 reference file:
 
 <details>
 <summary>Click here to compare against the reference kaleidoscope.cpp</summary>
@@ -159,6 +222,7 @@ Before compiling, compare your `kaleidoscope.cpp` with the complete reference fi
 ```cpp
 #include "KaleidoscopeJIT.h"
 #include "llvm/ADT/APFloat.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DerivedTypes.h"
@@ -169,10 +233,11 @@ Before compiling, compare your `kaleidoscope.cpp` with the complete reference fi
 #include "llvm/IR/Type.h"
 #include "llvm/IR/Verifier.h"
 #include "llvm/Support/TargetSelect.h"
+#include "llvm/Support/raw_ostream.h"
+
 #include <cctype>
 #include <cstdio>
 #include <cstdlib>
-#include <iostream>
 #include <map>
 #include <memory>
 #include <string>
@@ -195,8 +260,8 @@ enum Token {
   tok_number = -201,
 };
 
-static std::string IdentifierStr;
-static double NumVal;
+static std::string IdentifierStr; // Filled in if tok_identifier
+static double NumVal;             // Filled in if tok_number
 
 static int gettok() {
   static int LastChar = ' ';
@@ -204,6 +269,7 @@ static int gettok() {
   while (isspace(LastChar))
     LastChar = getchar();
 
+  // Recognise identifiers and keywords: [a-zA-Z_][a-zA-Z0-9_]*
   if (isalpha(LastChar) || LastChar == '_') {
     IdentifierStr = LastChar;
     while (isalnum((LastChar = getchar())) || LastChar == '_')
@@ -216,6 +282,7 @@ static int gettok() {
     return tok_identifier;
   }
 
+  // Recognise numeric literals: [0-9.]+
   if (isdigit(LastChar) || LastChar == '.') {
     std::string NumStr;
     do {
@@ -227,6 +294,7 @@ static int gettok() {
     return tok_number;
   }
 
+  // Recognise comments: '#' through end of line.
   if (LastChar == '#') {
     do
       LastChar = getchar();
@@ -245,36 +313,7 @@ static int gettok() {
 }
 
 //===----------------------------------------------------------------------===//
-// AST Forward Declarations
-//===----------------------------------------------------------------------===//
-
-class ExprAST;
-class PrototypeAST;
-class FunctionAST;
-
-//===----------------------------------------------------------------------===//
-// LLVM and JIT State
-//===----------------------------------------------------------------------===//
-
-static std::unique_ptr<llvm::LLVMContext> TheContext;
-static std::unique_ptr<llvm::Module> TheModule;
-static std::unique_ptr<llvm::IRBuilder<>> Builder;
-static std::map<std::string, llvm::Value *> NamedValues;
-static std::map<std::string, std::unique_ptr<PrototypeAST>> FunctionProtos;
-static std::unique_ptr<llvm::orc::KaleidoscopeJIT> TheJIT;
-static llvm::ExitOnError ExitOnErr;
-
-static void InitializeModuleAndManagers() {
-  TheContext = std::make_unique<llvm::LLVMContext>();
-  TheModule = std::make_unique<llvm::Module>("KaleidoscopeJIT", *TheContext);
-  TheModule->setDataLayout(TheJIT->getDataLayout());
-  Builder = std::make_unique<llvm::IRBuilder<>>(*TheContext);
-}
-
-llvm::Function *getFunction(std::string Name);
-
-//===----------------------------------------------------------------------===//
-// AST
+// Abstract Syntax Tree (AST)
 //===----------------------------------------------------------------------===//
 
 class ExprAST {
@@ -288,10 +327,7 @@ class NumberExprAST : public ExprAST {
 
 public:
   explicit NumberExprAST(double Val) : Val(Val) {}
-
-  llvm::Value *codegen() override {
-    return llvm::ConstantFP::get(*TheContext, llvm::APFloat(Val));
-  }
+  llvm::Value *codegen() override;
 };
 
 class VariableExprAST : public ExprAST {
@@ -299,15 +335,8 @@ class VariableExprAST : public ExprAST {
 
 public:
   explicit VariableExprAST(std::string Name) : Name(std::move(Name)) {}
-
-  llvm::Value *codegen() override {
-    llvm::Value *V = NamedValues[Name];
-    if (!V) {
-      fprintf(stderr, "Error: unknown variable name: %s\n", Name.c_str());
-      return nullptr;
-    }
-    return V;
-  }
+  const std::string &getName() const { return Name; }
+  llvm::Value *codegen() override;
 };
 
 class BinaryExprAST : public ExprAST {
@@ -318,31 +347,7 @@ public:
   BinaryExprAST(char Op, std::unique_ptr<ExprAST> LHS,
                 std::unique_ptr<ExprAST> RHS)
       : Op(Op), LHS(std::move(LHS)), RHS(std::move(RHS)) {}
-
-  llvm::Value *codegen() override {
-    llvm::Value *L = LHS->codegen();
-    llvm::Value *R = RHS->codegen();
-    if (!L || !R)
-      return nullptr;
-
-    switch (Op) {
-    case '+':
-      return Builder->CreateFAdd(L, R, "addtmp");
-    case '-':
-      return Builder->CreateFSub(L, R, "subtmp");
-    case '*':
-      return Builder->CreateFMul(L, R, "multmp");
-    case '/':
-      return Builder->CreateFDiv(L, R, "divtmp");
-    case '<':
-      L = Builder->CreateFCmpULT(L, R, "cmptmp");
-      return Builder->CreateUIToFP(L, llvm::Type::getDoubleTy(*TheContext),
-                                   "booltmp");
-    default:
-      fprintf(stderr, "invalid binary operator: %c\n", Op);
-      return nullptr;
-    }
-  }
+  llvm::Value *codegen() override;
 };
 
 class CallExprAST : public ExprAST {
@@ -352,29 +357,7 @@ class CallExprAST : public ExprAST {
 public:
   CallExprAST(std::string Callee, std::vector<std::unique_ptr<ExprAST>> Args)
       : Callee(std::move(Callee)), Args(std::move(Args)) {}
-
-  llvm::Value *codegen() override {
-    llvm::Function *CalleeF = getFunction(Callee);
-    if (!CalleeF) {
-      fprintf(stderr, "Error: unknown function referenced: %s\n",
-              Callee.c_str());
-      return nullptr;
-    }
-
-    if (CalleeF->arg_size() != Args.size()) {
-      fprintf(stderr, "Error: incorrect # arguments passed\n");
-      return nullptr;
-    }
-
-    std::vector<llvm::Value *> ArgsV;
-    for (unsigned i = 0, e = Args.size(); i != e; ++i) {
-      ArgsV.push_back(Args[i]->codegen());
-      if (!ArgsV.back())
-        return nullptr;
-    }
-
-    return Builder->CreateCall(CalleeF, ArgsV, "calltmp");
-  }
+  llvm::Value *codegen() override;
 };
 
 class PrototypeAST {
@@ -401,56 +384,6 @@ public:
   llvm::Function *codegen();
 };
 
-llvm::Function *PrototypeAST::codegen() {
-  std::vector<llvm::Type *> Doubles(Args.size(),
-                                    llvm::Type::getDoubleTy(*TheContext));
-  auto *FT = llvm::FunctionType::get(llvm::Type::getDoubleTy(*TheContext),
-                                     Doubles, false);
-  auto *F = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, Name,
-                                   TheModule.get());
-
-  unsigned Idx = 0;
-  for (auto &Arg : F->args())
-    Arg.setName(Args[Idx++]);
-
-  return F;
-}
-
-llvm::Function *getFunction(std::string Name) {
-  if (auto *F = TheModule->getFunction(Name))
-    return F;
-
-  auto FI = FunctionProtos.find(Name);
-  if (FI != FunctionProtos.end())
-    return FI->second->codegen();
-
-  return nullptr;
-}
-
-llvm::Function *FunctionAST::codegen() {
-  auto &P = *Proto;
-  FunctionProtos[Proto->getName()] = std::move(Proto);
-  auto *TheFunction = getFunction(P.getName());
-  if (!TheFunction)
-    return nullptr;
-
-  auto *BB = llvm::BasicBlock::Create(*TheContext, "entry", TheFunction);
-  Builder->SetInsertPoint(BB);
-
-  NamedValues.clear();
-  for (auto &Arg : TheFunction->args())
-    NamedValues[std::string(Arg.getName())] = &Arg;
-
-  if (auto *RetVal = Body->codegen()) {
-    Builder->CreateRet(RetVal);
-    llvm::verifyFunction(*TheFunction);
-    return TheFunction;
-  }
-
-  TheFunction->eraseFromParent();
-  return nullptr;
-}
-
 //===----------------------------------------------------------------------===//
 // Parser
 //===----------------------------------------------------------------------===//
@@ -470,11 +403,21 @@ static int GetTokPrecedence() {
   return TokPrec;
 }
 
+static std::unique_ptr<ExprAST> LogError(const char *Str) {
+  fprintf(stderr, "Error: %s\n", Str);
+  return nullptr;
+}
+
+static llvm::Value *LogErrorV(const char *Str) {
+  LogError(Str);
+  return nullptr;
+}
+
 static std::unique_ptr<ExprAST> ParseExpression();
 
 static std::unique_ptr<ExprAST> ParseNumberExpr() {
   auto Result = std::make_unique<NumberExprAST>(NumVal);
-  getNextToken();
+  getNextToken(); // consume the number
   return Result;
 }
 
@@ -484,10 +427,8 @@ static std::unique_ptr<ExprAST> ParseParenExpr() {
   if (!V)
     return nullptr;
 
-  if (CurTok != ')') {
-    fprintf(stderr, "Error: expected ')'\n");
-    return nullptr;
-  }
+  if (CurTok != ')')
+    return LogError("expected ')'");
   getNextToken(); // eat ')'
   return V;
 }
@@ -496,9 +437,11 @@ static std::unique_ptr<ExprAST> ParseIdentifierExpr() {
   std::string IdName = IdentifierStr;
   getNextToken(); // eat identifier
 
+  // Simple variable reference.
   if (CurTok != '(')
-    return std::make_unique<VariableExprAST>(IdName);
+    return std::make_unique<VariableExprAST>(std::move(IdName));
 
+  // Function call.
   getNextToken(); // eat '('
   std::vector<std::unique_ptr<ExprAST>> Args;
   if (CurTok != ')') {
@@ -511,16 +454,14 @@ static std::unique_ptr<ExprAST> ParseIdentifierExpr() {
       if (CurTok == ')')
         break;
 
-      if (CurTok != ',') {
-        fprintf(stderr, "Error: expected ')' or ',' in argument list\n");
-        return nullptr;
-      }
-      getNextToken();
+      if (CurTok != ',')
+        return LogError("expected ')' or ',' in argument list");
+      getNextToken(); // eat ','
     }
   }
 
   getNextToken(); // eat ')'
-  return std::make_unique<CallExprAST>(IdName, std::move(Args));
+  return std::make_unique<CallExprAST>(std::move(IdName), std::move(Args));
 }
 
 static std::unique_ptr<ExprAST> ParsePrimary() {
@@ -532,11 +473,11 @@ static std::unique_ptr<ExprAST> ParsePrimary() {
   case '(':
     return ParseParenExpr();
   default:
-    fprintf(stderr, "Error: unknown token when expecting an expression\n");
-    return nullptr;
+    return LogError("unknown token when expecting an expression");
   }
 }
 
+/// binoprhs ::= (binop primary)*
 static std::unique_ptr<ExprAST> ParseBinOpRHS(int ExprPrec,
                                               std::unique_ptr<ExprAST> LHS) {
   while (true) {
@@ -546,7 +487,7 @@ static std::unique_ptr<ExprAST> ParseBinOpRHS(int ExprPrec,
       return LHS;
 
     int BinOp = CurTok;
-    getNextToken();
+    getNextToken(); // eat binary operator
 
     auto RHS = ParsePrimary();
     if (!RHS)
@@ -572,31 +513,30 @@ static std::unique_ptr<ExprAST> ParseExpression() {
   return ParseBinOpRHS(0, std::move(LHS));
 }
 
+static std::unique_ptr<PrototypeAST> LogErrorP(const char *Str) {
+  LogError(Str);
+  return nullptr;
+}
+
 static std::unique_ptr<PrototypeAST> ParsePrototype() {
-  if (CurTok != tok_identifier) {
-    fprintf(stderr, "Error: expected function name in prototype\n");
-    return nullptr;
-  }
+  if (CurTok != tok_identifier)
+    return LogErrorP("expected function name in prototype");
 
   std::string FnName = IdentifierStr;
   getNextToken();
 
-  if (CurTok != '(') {
-    fprintf(stderr, "Error: expected '(' in prototype\n");
-    return nullptr;
-  }
+  if (CurTok != '(')
+    return LogErrorP("expected '(' in prototype");
 
   std::vector<std::string> ArgNames;
   while (getNextToken() == tok_identifier)
     ArgNames.push_back(IdentifierStr);
 
-  if (CurTok != ')') {
-    fprintf(stderr, "Error: expected ')' in prototype\n");
-    return nullptr;
-  }
+  if (CurTok != ')')
+    return LogErrorP("expected ')' in prototype");
 
   getNextToken(); // eat ')'
-  return std::make_unique<PrototypeAST>(FnName, std::move(ArgNames));
+  return std::make_unique<PrototypeAST>(std::move(FnName), std::move(ArgNames));
 }
 
 static std::unique_ptr<FunctionAST> ParseDefinition() {
@@ -610,11 +550,6 @@ static std::unique_ptr<FunctionAST> ParseDefinition() {
   return nullptr;
 }
 
-static std::unique_ptr<PrototypeAST> ParseExtern() {
-  getNextToken(); // eat 'extern'
-  return ParsePrototype();
-}
-
 static std::unique_ptr<FunctionAST> ParseTopLevelExpr() {
   if (auto E = ParseExpression()) {
     auto Proto = std::make_unique<PrototypeAST>("__anon_expr",
@@ -624,22 +559,164 @@ static std::unique_ptr<FunctionAST> ParseTopLevelExpr() {
   return nullptr;
 }
 
+static std::unique_ptr<PrototypeAST> ParseExtern() {
+  getNextToken(); // eat 'extern'
+  return ParsePrototype();
+}
+
 //===----------------------------------------------------------------------===//
-// JIT Execution Drivers
+// Code Generation
+//===----------------------------------------------------------------------===//
+
+static std::unique_ptr<llvm::LLVMContext> TheContext;
+static std::unique_ptr<llvm::Module> TheModule;
+static std::unique_ptr<llvm::IRBuilder<>> Builder;
+static std::map<std::string, llvm::Value *> NamedValues;
+static std::unique_ptr<llvm::orc::KaleidoscopeJIT> TheJIT;
+static std::map<std::string, std::unique_ptr<PrototypeAST>> FunctionProtos;
+static std::map<std::string, llvm::orc::ResourceTrackerSP> FunctionRTs;
+static llvm::ExitOnError ExitOnErr;
+
+static llvm::Function *getFunction(std::string Name) {
+  if (auto *F = TheModule->getFunction(Name))
+    return F;
+
+  auto FI = FunctionProtos.find(Name);
+  if (FI != FunctionProtos.end())
+    return FI->second->codegen();
+
+  return nullptr;
+}
+
+static void InitializeModuleAndManagers() {
+  TheContext = std::make_unique<llvm::LLVMContext>();
+  TheModule = std::make_unique<llvm::Module>("KaleidoscopeJIT", *TheContext);
+  TheModule->setDataLayout(TheJIT->getDataLayout());
+  Builder = std::make_unique<llvm::IRBuilder<>>(*TheContext);
+}
+
+llvm::Value *NumberExprAST::codegen() {
+  return llvm::ConstantFP::get(*TheContext, llvm::APFloat(Val));
+}
+
+llvm::Value *VariableExprAST::codegen() {
+  llvm::Value *V = NamedValues[Name];
+  if (!V)
+    return LogErrorV("unknown variable name");
+  return V;
+}
+
+llvm::Value *BinaryExprAST::codegen() {
+  llvm::Value *L = LHS->codegen();
+  llvm::Value *R = RHS->codegen();
+  if (!L || !R)
+    return nullptr;
+
+  switch (Op) {
+  case '+':
+    return Builder->CreateFAdd(L, R, "addtmp");
+  case '-':
+    return Builder->CreateFSub(L, R, "subtmp");
+  case '*':
+    return Builder->CreateFMul(L, R, "multmp");
+  case '/':
+    return Builder->CreateFDiv(L, R, "divtmp");
+  case '<':
+    L = Builder->CreateFCmpULT(L, R, "cmptmp");
+    return Builder->CreateUIToFP(L, llvm::Type::getDoubleTy(*TheContext),
+                                 "booltmp");
+  default:
+    return LogErrorV("invalid binary operator");
+  }
+}
+
+llvm::Value *CallExprAST::codegen() {
+  llvm::Function *CalleeF = getFunction(Callee);
+  if (!CalleeF)
+    return LogErrorV("unknown function referenced");
+
+  if (CalleeF->arg_size() != Args.size())
+    return LogErrorV("incorrect # arguments passed");
+
+  std::vector<llvm::Value *> ArgsV;
+  for (unsigned i = 0, e = Args.size(); i != e; ++i) {
+    ArgsV.push_back(Args[i]->codegen());
+    if (!ArgsV.back())
+      return nullptr;
+  }
+
+  return Builder->CreateCall(CalleeF, ArgsV, "calltmp");
+}
+
+llvm::Function *PrototypeAST::codegen() {
+  std::vector<llvm::Type *> Doubles(Args.size(),
+                                    llvm::Type::getDoubleTy(*TheContext));
+  auto *FT = llvm::FunctionType::get(llvm::Type::getDoubleTy(*TheContext),
+                                     Doubles, false);
+  auto *F = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, Name,
+                                   TheModule.get());
+
+  unsigned Idx = 0;
+  for (auto &Arg : F->args())
+    Arg.setName(Args[Idx++]);
+
+  return F;
+}
+
+llvm::Function *FunctionAST::codegen() {
+  auto &P = *Proto;
+  FunctionProtos[Proto->getName()] = std::move(Proto);
+  llvm::Function *TheFunction = getFunction(P.getName());
+  if (!TheFunction)
+    return nullptr;
+
+  auto *BB = llvm::BasicBlock::Create(*TheContext, "entry", TheFunction);
+  Builder->SetInsertPoint(BB);
+
+  NamedValues.clear();
+  for (auto &Arg : TheFunction->args())
+    NamedValues[std::string(Arg.getName())] = &Arg;
+
+  if (llvm::Value *RetVal = Body->codegen()) {
+    Builder->CreateRet(RetVal);
+    if (llvm::verifyFunction(*TheFunction, &llvm::errs())) {
+      TheFunction->eraseFromParent();
+      return nullptr;
+    }
+    return TheFunction;
+  }
+
+  TheFunction->eraseFromParent();
+  return nullptr;
+}
+
+//===----------------------------------------------------------------------===//
+// Interactive Driver Loop
 //===----------------------------------------------------------------------===//
 
 static void HandleDefinition() {
   if (auto FnAST = ParseDefinition()) {
     if (auto *FnIR = FnAST->codegen()) {
-      fprintf(stderr, "Compiled function definition:\n");
+      std::string FnName = std::string(FnIR->getName());
+      fprintf(stderr, "Read function definition:\n");
       FnIR->print(llvm::errs());
       fprintf(stderr, "\n");
-      ExitOnErr(TheJIT->addModule(llvm::orc::ThreadSafeModule(
-          std::move(TheModule), std::move(TheContext))));
+
+      // If redefining an existing JIT function, remove its previous code first.
+      if (auto It = FunctionRTs.find(FnName); It != FunctionRTs.end()) {
+        ExitOnErr(It->second->remove());
+        FunctionRTs.erase(It);
+      }
+
+      auto RT = TheJIT->getMainJITDylib().createResourceTracker();
+      ExitOnErr(
+          TheJIT->addModule(llvm::orc::ThreadSafeModule(std::move(TheModule),
+                                                        std::move(TheContext)),
+                            RT));
+      FunctionRTs[FnName] = std::move(RT);
       InitializeModuleAndManagers();
     }
   } else {
-    // Skip token for error recovery.
     while (CurTok != ';' && CurTok != tok_eof)
       getNextToken();
   }
@@ -648,13 +725,12 @@ static void HandleDefinition() {
 static void HandleExtern() {
   if (auto ProtoAST = ParseExtern()) {
     if (auto *FnIR = ProtoAST->codegen()) {
-      fprintf(stderr, "Registered extern:\n");
+      fprintf(stderr, "Read extern:\n");
       FnIR->print(llvm::errs());
       fprintf(stderr, "\n");
       FunctionProtos[ProtoAST->getName()] = std::move(ProtoAST);
     }
   } else {
-    // Skip token for error recovery.
     while (CurTok != ';' && CurTok != tok_eof)
       getNextToken();
   }
@@ -670,15 +746,17 @@ static void HandleTopLevelExpression() {
       ExitOnErr(TheJIT->addModule(std::move(TSM), RT));
       InitializeModuleAndManagers();
 
-      auto ExprSymbol = ExitOnErr(TheJIT->lookup("__anon_expr"));
-
-      double (*FP)() = ExprSymbol.toPtr<double (*)()>();
-      fprintf(stderr, "Evaluated to %f\n", FP());
+      if (auto ExprSymbol = TheJIT->lookup("__anon_expr")) {
+        double (*FP)() = ExprSymbol->getAddress().toPtr<double (*)()>();
+        fprintf(stderr, "Evaluated to %f\n", FP());
+      } else {
+        llvm::logAllUnhandledErrors(ExprSymbol.takeError(), llvm::errs(),
+                                    "JIT Error: ");
+      }
 
       ExitOnErr(RT->remove());
     }
   } else {
-    // Skip token for error recovery.
     while (CurTok != ';' && CurTok != tok_eof)
       getNextToken();
   }
@@ -723,14 +801,12 @@ int main() {
   InitializeModuleAndManagers();
 
   printf("Kaleidoscope JIT REPL (Step 5.4: Complete JIT)\n");
-  printf("Type math, definitions, or externs followed by ';' and press Enter "
-         "(Ctrl+D to exit):\n\n");
+  printf("Type definitions, externs, or expressions followed by ';' (Ctrl+D to "
+         "exit):\n\n");
 
-  // Prime the first token.
   Prompt();
   getNextToken();
   MainLoop();
-
   return 0;
 }
 ```
@@ -738,96 +814,117 @@ int main() {
 
 ---
 
-## Compiling and Running
+## Compiling and Testing Live Function Redefinition!
 
-Compile your updated compiler:
+Recompile:
 
 ```bash
-clang++ -rdynamic -Iinclude -Wall -Wextra kaleidoscope.cpp $(llvm-config --cxxflags --ldflags --system-libs --libs core orcjit native) -o kaleidoscope
+clang++ -std=c++17 -fno-rtti -Wall -Wextra -Iinclude kaleidoscope.cpp $(llvm-config --cxxflags --ldflags --system-libs --libs core orcjit native) -isystem $(llvm-config --includedir) -o kaleidoscope
 ```
 
-Run the binary:
+Run `./kaleidoscope`, define `foo(x)`, evaluate `foo(4);`, **redefine `foo(x)` live**, and call `foo(4);` again:
 
 ```bash
 ./kaleidoscope
 ```
 
-Define a function, call it, and call a standard C math function:
-
 ```text
 Kaleidoscope JIT REPL (Step 5.4: Complete JIT)
-Type math, definitions, or externs followed by ';' and press Enter (Ctrl+D to exit):
+Type definitions, externs, or expressions followed by ';' (Ctrl+D to exit):
 
-ready> def square(x) x * x;
-Compiled function definition:
-define double @square(double %x) {
+ready> def foo(x) x + 1;
+Read function definition:
+define double @foo(double %x) {
 entry:
-  %multmp = fmul double %x, %x
+  %addtmp = fadd double %x, 1.000000e+00
+  ret double %addtmp
+}
+
+ready> foo(4);
+Evaluated to 5.000000
+ready> def foo(x) x * 10;
+Read function definition:
+define double @foo(double %x) {
+entry:
+  %multmp = fmul double %x, 10.000000e+00
   ret double %multmp
 }
 
-ready> square(5.0);
-Evaluated to 25.000000
-
-ready> extern sin(x);
-Registered extern:
-declare double @sin(double)
-
-ready> sin(1.0);
-Evaluated to 0.841471
+ready> foo(4);
+Evaluated to 40.000000
+ready>
 ```
+
+Look at that: `foo(4);` returned `5.000000`, then we replaced `def foo(x)` on the fly so `FunctionRTs["foo"]->remove()` unloaded the first implementation, and `foo(4);` immediately evaluated to `40.000000`!
+
+:::{note}
+**Direct Calls vs Already-Materialised Callers During Redefinition**:
+Notice that each top-level call `foo(4);` compiles a fresh `@__anon_expr`, which looks up the *latest* `@foo` address in `MainJD`.  What if an older function `def bar(y) foo(y);` had *already* been materialised into machine code before we removed the old `foo`?  Because `KaleidoscopeJIT` links eagerly through `RTDyldObjectLinkingLayer`, `bar`'s machine-code `call` instruction was already patched directly to the old `foo` memory page!  Hot-swapping callees underneath already-compiled callers requires routing calls through an indirect stub table or lazy call-through manager, which LLVM's dedicated *Building a JIT* tutorial explores in detail.
+:::
 
 ---
 
-## Active Learning Challenge: Dynamic Math in the JIT
+## Active Learning Challenge: Verifying a Trigonometric Identity in Native Code
 
-Now test composing your own functions with external C math routines.
+Put external C math calls and user-defined JIT functions together to verify the classic trigonometric identity `sin(x) * sin(x) + cos(x) * cos(x) = 1` across several inputs!
 
 ### The Challenge
 
-Declare `extern cos(x);`, and then define a function that calculates the trigonometric identity:
+In your running `./kaleidoscope` REPL:
+1.  Declare `extern sin(x);` and `extern cos(x);`.
+2.  Define `def trig_id(x) sin(x) * sin(x) + cos(x) * cos(x);`.
+3.  Evaluate `trig_id(0.5);` and `trig_id(3.14159);` and verify that native `libm` calls plus your JIT-compiled `fmul`/`fadd` instructions return `1.000000` every time!
 
-$$\sin^2(x) + \cos^2(x)$$
-
-Evaluate the function for several values (such as `0.5` and `3.14159`) to verify that the result is always `1.0`.
+Try it in your terminal before opening the transcript fold below.
 
 <details>
-<summary>Click here to reveal the solution</summary>
+<summary>Click here to compare your trigonometric JIT session</summary>
 
 ```text
 ready> extern sin(x);
-Registered extern:
+Read extern:
 declare double @sin(double)
 
 ready> extern cos(x);
-Registered extern:
+Read extern:
 declare double @cos(double)
 
-ready> def trig_identity(x) sin(x) * sin(x) + cos(x) * cos(x);
-Compiled function definition:
-define double @trig_identity(double %x) {
+ready> def trig_id(x) sin(x) * sin(x) + cos(x) * cos(x);
+Read function definition:
+define double @trig_id(double %x) {
 entry:
-  ...
+  %calltmp = call double @sin(double %x)
+  %calltmp1 = call double @sin(double %x)
+  %multmp = fmul double %calltmp, %calltmp1
+  %calltmp2 = call double @cos(double %x)
+  %calltmp3 = call double @cos(double %x)
+  %multmp4 = fmul double %calltmp2, %calltmp3
+  %addtmp = fadd double %multmp, %multmp4
+  ret double %addtmp
 }
 
-ready> trig_identity(0.5);
+ready> trig_id(0.5);
 Evaluated to 1.000000
-
-ready> trig_identity(3.14159);
+ready> trig_id(3.14159);
 Evaluated to 1.000000
+ready>
 ```
+
+(Look at `@trig_id`'s IR too: right now it calls `@sin(double %x)` twice and `@cos(double %x)` twice!  Keep that mental snapshot handy for later chapters when LLVM optimisation passes enter the picture.)
 </details>
 
 ---
 
-## What You Have Accomplished
+## Milestone 2 Complete!
 
-You have built a complete, interactive programming language from scratch:
-- A custom, hand-written lexer with whitespace and comment handling.
-- An Abstract Syntax Tree and recursive-descent parser.
-- Operator precedence climbing for mathematical expressions.
-- Direct AST evaluation in pure C++.
-- An LLVM IR code generator in Static Single Assignment (SSA) form.
-- An On-Request Compilation (ORCv2) JIT that executes user functions and C library routines natively on your CPU.
+Take a step back and look at what your ~580-line `kaleidoscope.cpp` can now do from scratch:
+* Scan source text into tokens while skipping whitespace and `#` comments ([Section 1](../01-lexer/index.md)).
+* Parse primary expressions, function calls, prototypes, and precedence-climbed binary expressions into an AST ([Section 2](../02-parser-ast/index.md) and [Section 3](../03-operators-eval/index.md)).
+* Emit verified SSA LLVM IR for constants, arithmetic, comparisons, functions, and external C declarations ([Section 4](../04-llvm-ir/index.md)).
+* Compile IR on demand into native host machine code via ORCv2, resolve C library symbols dynamically, execute functions at hardware speed, and redefine functions live ([Section 5](index.md)).
 
-In [Section 6: Control Flow (If / Then / Else)](../06-control-flow/README.md), we will introduce conditional branches, basic blocks, and SSA $\phi$ (PHI) nodes.
+Right now, every function in Kaleidoscope executes a single straight-line `entry` basic block from top to bottom.  In [Section 6: Control Flow (If / Then / Else)](../06-control-flow/index.md), we will bring back those `if`, `then`, and `else` keywords from your Step 1.5 challenge, split functions across multiple basic blocks, and learn how SSA merges control-flow paths using `PHI` nodes!
+
+---
+
+[Previous: Step 5.3 - Executing Expressions](03-executing-expressions.md) | [Section 5 Overview](index.md) | [Next: Section 6 - Control Flow](../06-control-flow/index.md)

@@ -1,64 +1,65 @@
 # Step 6.4: Recursive Fibonacci in the JIT
 
-Now that your compiler handles conditional control flow and merges branches with PHI nodes, Kaleidoscope is computationally complete.  You can write arbitrary recursive algorithms.
+Pause for a moment and look at what you have built across the first six sections.  You have:
 
-In this step, you will verify the comparison operator, compile the classic recursive Fibonacci algorithm, and execute it interactively in your native JIT.
+- Function definitions and cross-module symbol lookup in ORCv2 ([Step 5.4](../05-jit/04-functions-and-externs.md)).
+- Arithmetic and the `<` comparison operator ([Step 3.3](../03-operators-eval/03-precedence-climbing.md) and [Step 4.2](../04-llvm-ir/02-binary-ir.md)).
+- Conditional branching with SSA PHI nodes ([Step 6.3](03-phi-nodes.md)).
+
+Together, functions + comparisons + conditionals make Kaleidoscope **Turing-complete**!  Any computable algorithm can now be expressed through recursion.
 
 ---
 
-## Recursive Control Flow in LLVM
+## How Recursive Calls Work in LLVM and ORCv2
 
-When Kaleidoscope compiles a recursive function like Fibonacci, it generates real recursive machine instructions that execute on your bare metal:
+When `FunctionAST::codegen()` compiles `def fib(x) ...`, notice the order in which things happen:
 
-```mermaid
-flowchart TD
-    Fib["fib(x)"] --> Cond{"x < 3"}
-    Cond -- true --> Base["Base Case: returns 1.0"]
-    Cond -- false --> Recurse["Recursive Step:<br>fib(x - 1) + fib(x - 2)"]
-    Recurse --> Fib1["fib(x - 1)"]
-    Recurse --> Fib2["fib(x - 2)"]
+1.  `Proto->codegen()` (via `getFunction(P.getName())`) creates the `llvm::Function *` header `@fib(double %x)` inside `TheModule` *before* `Body->codegen()` runs.
+2.  When `Body->codegen()` encounters `fib(x - 1)` inside the `else` branch, `CallExprAST::codegen()` calls `getFunction("fib")`, finds `@fib` already in `TheModule`, and emits a direct recursive `call double @fib(double %subtmp)` instruction!
+
+```text
+                        +------------------+
+                        |      fib(x)      |
+                        +--------+---------+
+                                 |
+                                 v
+                        +------------------+
+                        |     x < 3 ?      |
+                        +---+----------+---+
+                            |          |
+                   true (1) |          | false (0)
+                            v          v
+               +--------------+      +---------------------------+
+               |  return 1.0  |      |  fib(x - 1) + fib(x - 2)  |
+               +--------------+      +------+-------------+------+
+                                            |             |
+                                            v             v
+                                     +------------+ +------------+
+                                     | fib(x - 1) | | fib(x - 2) |
+                                     +------------+ +------------+
 ```
 
-> [!TIP]
-> **Native Execution Speed and Recursion**:
-> Even without optimisation passes, recursive calls in Kaleidoscope compile directly to native machine code on your host CPU, obeying the platform's standard C calling convention.  In later sections, LLVM's optimisation pipeline can even transform recursive calls into efficient iterative loops using tail-call elimination.
+:::{note}
+**How `<` Feeds `if` in Kaleidoscope**
 
-> [!NOTE]
-> **Boolean Semantics in Kaleidoscope**:
-> In Kaleidoscope, every expression produces a 64-bit float.  Comparison operators like `<` and `>` return `1.0` for true and `0.0` for false by converting the 1-bit integer result (`i1`) of `fcmp` back into a `double` using `CreateUIToFP`.
+Recall from [Step 4.2](../04-llvm-ir/02-binary-ir.md) that `BinaryExprAST::codegen()` lowers `x < 3` into two instructions: `fcmp ult` (producing an `i1`) followed by `uitofp i1 ... to double` (`1.0` for true, `0.0` for false).  Then `IfExprAST::codegen()` tests that `double` against `0.0` with `fcmp one`.  Even without an optimisation pass yet (which we will add in [Step 9.3](../09-local-variables/03-mem2reg-optimisation.md)), LLVM's native instruction selector lowers those comparisons into fast hardware floating-point instructions!
+:::
 
 ---
 
 ## Incremental Code Changes
 
-Open `kaleidoscope.cpp` to verify your comparison operator implementation.
-
-### 1. Verifying Operator Precedence and Codegen
-
-Ensure your `BinopPrecedence` map initialises the `<` operator:
+No compiler logic needs to change for recursion, because your AST, IR generator, and JIT already handle self-calls!  Simply update the startup banner in `main()` so your binary identifies itself as Step 6.4:
 
 ```cpp
-  BinopPrecedence['<'] = 10;
-  BinopPrecedence['+'] = 20;
-  BinopPrecedence['-'] = 20;
-  BinopPrecedence['*'] = 40;
-  BinopPrecedence['/'] = 40;
-```
-
-In `BinaryExprAST::codegen()`, make sure `<` performs a floating-point comparison and casts the 1-bit boolean result (`i1`) back to a `double`:
-
-```cpp
-  case '<':
-    L = Builder->CreateFCmpULT(L, R, "cmptmp");
-    return Builder->CreateUIToFP(L, llvm::Type::getDoubleTy(*TheContext),
-                                 "booltmp");
+  printf("Kaleidoscope JIT REPL (Step 6.4: Recursive Control Flow)\n");
 ```
 
 ---
 
 ## Verifying Your Code
 
-Before compiling, compare your `kaleidoscope.cpp` with the reference implementation.
+Compare your `kaleidoscope.cpp` against the complete Section 6 reference implementation:
 
 <details>
 <summary>Click here to compare against the reference kaleidoscope.cpp</summary>
@@ -75,18 +76,11 @@ Before compiling, compare your `kaleidoscope.cpp` with the reference implementat
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
-#include "llvm/IR/PassManager.h"
 #include "llvm/IR/Type.h"
 #include "llvm/IR/Verifier.h"
-#include "llvm/Passes/PassBuilder.h"
-#include "llvm/Passes/StandardInstrumentations.h"
 #include "llvm/Support/TargetSelect.h"
-#include "llvm/Target/TargetMachine.h"
-#include "llvm/Transforms/InstCombine/InstCombine.h"
-#include "llvm/Transforms/Scalar.h"
-#include "llvm/Transforms/Scalar/GVN.h"
-#include "llvm/Transforms/Scalar/Reassociate.h"
-#include "llvm/Transforms/Scalar/SimplifyCFG.h"
+#include "llvm/Support/raw_ostream.h"
+
 #include <cctype>
 #include <cstdio>
 #include <cstdlib>
@@ -95,6 +89,10 @@ Before compiling, compare your `kaleidoscope.cpp` with the reference implementat
 #include <string>
 #include <utility>
 #include <vector>
+
+//===----------------------------------------------------------------------===//
+// Lexer
+//===----------------------------------------------------------------------===//
 
 enum Token {
   tok_eof = -1,
@@ -111,8 +109,8 @@ enum Token {
   tok_number = -201,
 };
 
-static std::string IdentifierStr;
-static double NumVal;
+static std::string IdentifierStr; // Filled in if tok_identifier
+static double NumVal;             // Filled in if tok_number
 
 static int gettok() {
   static int LastChar = ' ';
@@ -120,6 +118,7 @@ static int gettok() {
   while (isspace(LastChar))
     LastChar = getchar();
 
+  // Recognise identifiers and keywords: [a-zA-Z_][a-zA-Z0-9_]*
   if (isalpha(LastChar) || LastChar == '_') {
     IdentifierStr = LastChar;
     while (isalnum((LastChar = getchar())) || LastChar == '_')
@@ -138,6 +137,7 @@ static int gettok() {
     return tok_identifier;
   }
 
+  // Recognise numeric literals: [0-9.]+
   if (isdigit(LastChar) || LastChar == '.') {
     std::string NumStr;
     do {
@@ -149,6 +149,7 @@ static int gettok() {
     return tok_number;
   }
 
+  // Recognise comments: '#' through end of line.
   if (LastChar == '#') {
     do
       LastChar = getchar();
@@ -165,6 +166,10 @@ static int gettok() {
   LastChar = getchar();
   return ThisChar;
 }
+
+//===----------------------------------------------------------------------===//
+// Abstract Syntax Tree (AST)
+//===----------------------------------------------------------------------===//
 
 class ExprAST {
 public:
@@ -185,6 +190,7 @@ class VariableExprAST : public ExprAST {
 
 public:
   explicit VariableExprAST(std::string Name) : Name(std::move(Name)) {}
+  const std::string &getName() const { return Name; }
   llvm::Value *codegen() override;
 };
 
@@ -216,7 +222,6 @@ public:
   IfExprAST(std::unique_ptr<ExprAST> Cond, std::unique_ptr<ExprAST> Then,
             std::unique_ptr<ExprAST> Else)
       : Cond(std::move(Cond)), Then(std::move(Then)), Else(std::move(Else)) {}
-
   llvm::Value *codegen() override;
 };
 
@@ -225,10 +230,11 @@ class PrototypeAST {
   std::vector<std::string> Args;
 
 public:
-  PrototypeAST(const std::string &Name, std::vector<std::string> Args)
-      : Name(Name), Args(std::move(Args)) {}
-  llvm::Function *codegen();
+  PrototypeAST(std::string Name, std::vector<std::string> Args)
+      : Name(std::move(Name)), Args(std::move(Args)) {}
+
   const std::string &getName() const { return Name; }
+  llvm::Function *codegen();
 };
 
 class FunctionAST {
@@ -239,8 +245,13 @@ public:
   FunctionAST(std::unique_ptr<PrototypeAST> Proto,
               std::unique_ptr<ExprAST> Body)
       : Proto(std::move(Proto)), Body(std::move(Body)) {}
+
   llvm::Function *codegen();
 };
+
+//===----------------------------------------------------------------------===//
+// Parser
+//===----------------------------------------------------------------------===//
 
 static int CurTok;
 static int getNextToken() { return CurTok = gettok(); }
@@ -251,7 +262,7 @@ static int GetTokPrecedence() {
   if (!isascii(CurTok))
     return -1;
 
-  int TokPrec = BinopPrecedence[CurTok];
+  int TokPrec = BinopPrecedence[static_cast<char>(CurTok)];
   if (TokPrec <= 0)
     return -1;
   return TokPrec;
@@ -267,39 +278,36 @@ static llvm::Value *LogErrorV(const char *Str) {
   return nullptr;
 }
 
-static std::unique_ptr<PrototypeAST> LogErrorP(const char *Str) {
-  LogError(Str);
-  return nullptr;
-}
-
 static std::unique_ptr<ExprAST> ParseExpression();
 
 static std::unique_ptr<ExprAST> ParseNumberExpr() {
   auto Result = std::make_unique<NumberExprAST>(NumVal);
-  getNextToken();
+  getNextToken(); // consume the number
   return Result;
 }
 
 static std::unique_ptr<ExprAST> ParseParenExpr() {
-  getNextToken();
+  getNextToken(); // eat '('
   auto V = ParseExpression();
   if (!V)
     return nullptr;
 
   if (CurTok != ')')
     return LogError("expected ')'");
-  getNextToken();
+  getNextToken(); // eat ')'
   return V;
 }
 
 static std::unique_ptr<ExprAST> ParseIdentifierExpr() {
   std::string IdName = IdentifierStr;
-  getNextToken();
+  getNextToken(); // eat identifier
 
+  // Simple variable reference.
   if (CurTok != '(')
-    return std::make_unique<VariableExprAST>(IdName);
+    return std::make_unique<VariableExprAST>(std::move(IdName));
 
-  getNextToken();
+  // Function call.
+  getNextToken(); // eat '('
   std::vector<std::unique_ptr<ExprAST>> Args;
   if (CurTok != ')') {
     while (true) {
@@ -313,16 +321,16 @@ static std::unique_ptr<ExprAST> ParseIdentifierExpr() {
 
       if (CurTok != ',')
         return LogError("expected ')' or ',' in argument list");
-      getNextToken();
+      getNextToken(); // eat ','
     }
   }
 
-  getNextToken();
-  return std::make_unique<CallExprAST>(IdName, std::move(Args));
+  getNextToken(); // eat ')'
+  return std::make_unique<CallExprAST>(std::move(IdName), std::move(Args));
 }
 
 static std::unique_ptr<ExprAST> ParseIfExpr() {
-  getNextToken();
+  getNextToken(); // eat 'if'
 
   auto Cond = ParseExpression();
   if (!Cond)
@@ -330,7 +338,7 @@ static std::unique_ptr<ExprAST> ParseIfExpr() {
 
   if (CurTok != tok_then)
     return LogError("expected 'then'");
-  getNextToken();
+  getNextToken(); // eat 'then'
 
   auto Then = ParseExpression();
   if (!Then)
@@ -338,7 +346,7 @@ static std::unique_ptr<ExprAST> ParseIfExpr() {
 
   if (CurTok != tok_else)
     return LogError("expected 'else'");
-  getNextToken();
+  getNextToken(); // eat 'else'
 
   auto Else = ParseExpression();
   if (!Else)
@@ -363,6 +371,7 @@ static std::unique_ptr<ExprAST> ParsePrimary() {
   }
 }
 
+/// binoprhs ::= (binop primary)*
 static std::unique_ptr<ExprAST> ParseBinOpRHS(int ExprPrec,
                                               std::unique_ptr<ExprAST> LHS) {
   while (true) {
@@ -372,7 +381,7 @@ static std::unique_ptr<ExprAST> ParseBinOpRHS(int ExprPrec,
       return LHS;
 
     int BinOp = CurTok;
-    getNextToken();
+    getNextToken(); // eat binary operator
 
     auto RHS = ParsePrimary();
     if (!RHS)
@@ -385,8 +394,8 @@ static std::unique_ptr<ExprAST> ParseBinOpRHS(int ExprPrec,
         return nullptr;
     }
 
-    LHS = std::make_unique<BinaryExprAST>(BinOp, std::move(LHS),
-                                          std::move(RHS));
+    LHS = std::make_unique<BinaryExprAST>(static_cast<char>(BinOp),
+                                          std::move(LHS), std::move(RHS));
   }
 }
 
@@ -396,6 +405,11 @@ static std::unique_ptr<ExprAST> ParseExpression() {
     return nullptr;
 
   return ParseBinOpRHS(0, std::move(LHS));
+}
+
+static std::unique_ptr<PrototypeAST> LogErrorP(const char *Str) {
+  LogError(Str);
+  return nullptr;
 }
 
 static std::unique_ptr<PrototypeAST> ParsePrototype() {
@@ -411,15 +425,16 @@ static std::unique_ptr<PrototypeAST> ParsePrototype() {
   std::vector<std::string> ArgNames;
   while (getNextToken() == tok_identifier)
     ArgNames.push_back(IdentifierStr);
+
   if (CurTok != ')')
     return LogErrorP("expected ')' in prototype");
 
-  getNextToken();
-  return std::make_unique<PrototypeAST>(FnName, std::move(ArgNames));
+  getNextToken(); // eat ')'
+  return std::make_unique<PrototypeAST>(std::move(FnName), std::move(ArgNames));
 }
 
 static std::unique_ptr<FunctionAST> ParseDefinition() {
-  getNextToken();
+  getNextToken(); // eat 'def'
   auto Proto = ParsePrototype();
   if (!Proto)
     return nullptr;
@@ -439,9 +454,13 @@ static std::unique_ptr<FunctionAST> ParseTopLevelExpr() {
 }
 
 static std::unique_ptr<PrototypeAST> ParseExtern() {
-  getNextToken();
+  getNextToken(); // eat 'extern'
   return ParsePrototype();
 }
+
+//===----------------------------------------------------------------------===//
+// Code Generation
+//===----------------------------------------------------------------------===//
 
 static std::unique_ptr<llvm::LLVMContext> TheContext;
 static std::unique_ptr<llvm::Module> TheModule;
@@ -449,14 +468,8 @@ static std::unique_ptr<llvm::IRBuilder<>> Builder;
 static std::map<std::string, llvm::Value *> NamedValues;
 static std::unique_ptr<llvm::orc::KaleidoscopeJIT> TheJIT;
 static std::map<std::string, std::unique_ptr<PrototypeAST>> FunctionProtos;
+static std::map<std::string, llvm::orc::ResourceTrackerSP> FunctionRTs;
 static llvm::ExitOnError ExitOnErr;
-
-static void InitializeModuleAndManagers() {
-  TheContext = std::make_unique<llvm::LLVMContext>();
-  TheModule = std::make_unique<llvm::Module>("KaleidoscopeJIT", *TheContext);
-  TheModule->setDataLayout(TheJIT->getDataLayout());
-  Builder = std::make_unique<llvm::IRBuilder<>>(*TheContext);
-}
 
 static llvm::Function *getFunction(std::string Name) {
   if (auto *F = TheModule->getFunction(Name))
@@ -467,6 +480,13 @@ static llvm::Function *getFunction(std::string Name) {
     return FI->second->codegen();
 
   return nullptr;
+}
+
+static void InitializeModuleAndManagers() {
+  TheContext = std::make_unique<llvm::LLVMContext>();
+  TheModule = std::make_unique<llvm::Module>("KaleidoscopeJIT", *TheContext);
+  TheModule->setDataLayout(TheJIT->getDataLayout());
+  Builder = std::make_unique<llvm::IRBuilder<>>(*TheContext);
 }
 
 llvm::Value *NumberExprAST::codegen() {
@@ -510,7 +530,7 @@ llvm::Value *CallExprAST::codegen() {
     return LogErrorV("unknown function referenced");
 
   if (CalleeF->arg_size() != Args.size())
-    return LogErrorV("incorrect number of arguments passed");
+    return LogErrorV("incorrect # arguments passed");
 
   std::vector<llvm::Value *> ArgsV;
   for (unsigned i = 0, e = Args.size(); i != e; ++i) {
@@ -539,30 +559,28 @@ llvm::Value *IfExprAST::codegen() {
 
   Builder->CreateCondBr(CondV, ThenBB, ElseBB);
 
+  // Emit 'then' block.
   Builder->SetInsertPoint(ThenBB);
   llvm::Value *ThenV = Then->codegen();
   if (!ThenV)
     return nullptr;
-
   Builder->CreateBr(MergeBB);
   ThenBB = Builder->GetInsertBlock();
 
+  // Emit 'else' block.
   TheFunction->insert(TheFunction->end(), ElseBB);
   Builder->SetInsertPoint(ElseBB);
-
   llvm::Value *ElseV = Else->codegen();
   if (!ElseV)
     return nullptr;
-
   Builder->CreateBr(MergeBB);
   ElseBB = Builder->GetInsertBlock();
 
+  // Emit 'ifcont' merge block with SSA PHI node.
   TheFunction->insert(TheFunction->end(), MergeBB);
   Builder->SetInsertPoint(MergeBB);
-
   llvm::PHINode *PN =
       Builder->CreatePHI(llvm::Type::getDoubleTy(*TheContext), 2, "iftmp");
-
   PN->addIncoming(ThenV, ThenBB);
   PN->addIncoming(ElseV, ElseBB);
   return PN;
@@ -571,11 +589,10 @@ llvm::Value *IfExprAST::codegen() {
 llvm::Function *PrototypeAST::codegen() {
   std::vector<llvm::Type *> Doubles(Args.size(),
                                     llvm::Type::getDoubleTy(*TheContext));
-  llvm::FunctionType *FT = llvm::FunctionType::get(
-      llvm::Type::getDoubleTy(*TheContext), Doubles, false);
-
-  llvm::Function *F = llvm::Function::Create(
-      FT, llvm::Function::ExternalLinkage, Name, TheModule.get());
+  auto *FT = llvm::FunctionType::get(llvm::Type::getDoubleTy(*TheContext),
+                                     Doubles, false);
+  auto *F = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, Name,
+                                   TheModule.get());
 
   unsigned Idx = 0;
   for (auto &Arg : F->args())
@@ -591,8 +608,7 @@ llvm::Function *FunctionAST::codegen() {
   if (!TheFunction)
     return nullptr;
 
-  llvm::BasicBlock *BB =
-      llvm::BasicBlock::Create(*TheContext, "entry", TheFunction);
+  auto *BB = llvm::BasicBlock::Create(*TheContext, "entry", TheFunction);
   Builder->SetInsertPoint(BB);
 
   NamedValues.clear();
@@ -601,7 +617,10 @@ llvm::Function *FunctionAST::codegen() {
 
   if (llvm::Value *RetVal = Body->codegen()) {
     Builder->CreateRet(RetVal);
-    llvm::verifyFunction(*TheFunction);
+    if (llvm::verifyFunction(*TheFunction, &llvm::errs())) {
+      TheFunction->eraseFromParent();
+      return nullptr;
+    }
     return TheFunction;
   }
 
@@ -609,18 +628,33 @@ llvm::Function *FunctionAST::codegen() {
   return nullptr;
 }
 
+//===----------------------------------------------------------------------===//
+// Interactive Driver Loop
+//===----------------------------------------------------------------------===//
+
 static void HandleDefinition() {
   if (auto FnAST = ParseDefinition()) {
     if (auto *FnIR = FnAST->codegen()) {
+      std::string FnName = std::string(FnIR->getName());
       fprintf(stderr, "Read function definition:\n");
       FnIR->print(llvm::errs());
       fprintf(stderr, "\n");
-      ExitOnErr(TheJIT->addModule(llvm::orc::ThreadSafeModule(
-          std::move(TheModule), std::move(TheContext))));
+
+      // If redefining an existing JIT function, remove its previous code first.
+      if (auto It = FunctionRTs.find(FnName); It != FunctionRTs.end()) {
+        ExitOnErr(It->second->remove());
+        FunctionRTs.erase(It);
+      }
+
+      auto RT = TheJIT->getMainJITDylib().createResourceTracker();
+      ExitOnErr(
+          TheJIT->addModule(llvm::orc::ThreadSafeModule(std::move(TheModule),
+                                                        std::move(TheContext)),
+                            RT));
+      FunctionRTs[FnName] = std::move(RT);
       InitializeModuleAndManagers();
     }
   } else {
-    // Skip token for error recovery.
     while (CurTok != ';' && CurTok != tok_eof)
       getNextToken();
   }
@@ -635,7 +669,6 @@ static void HandleExtern() {
       FunctionProtos[ProtoAST->getName()] = std::move(ProtoAST);
     }
   } else {
-    // Skip token for error recovery.
     while (CurTok != ';' && CurTok != tok_eof)
       getNextToken();
   }
@@ -651,15 +684,17 @@ static void HandleTopLevelExpression() {
       ExitOnErr(TheJIT->addModule(std::move(TSM), RT));
       InitializeModuleAndManagers();
 
-      auto ExprSymbol = ExitOnErr(TheJIT->lookup("__anon_expr"));
-
-      double (*FP)() = ExprSymbol.toPtr<double (*)()>();
-      fprintf(stderr, "Evaluated to %f\n", FP());
+      if (auto ExprSymbol = TheJIT->lookup("__anon_expr")) {
+        double (*FP)() = ExprSymbol->getAddress().toPtr<double (*)()>();
+        fprintf(stderr, "Evaluated to %f\n", FP());
+      } else {
+        llvm::logAllUnhandledErrors(ExprSymbol.takeError(), llvm::errs(),
+                                    "JIT Error: ");
+      }
 
       ExitOnErr(RT->remove());
     }
   } else {
-    // Skip token for error recovery.
     while (CurTok != ';' && CurTok != tok_eof)
       getNextToken();
   }
@@ -703,11 +738,13 @@ int main() {
   TheJIT = ExitOnErr(llvm::orc::KaleidoscopeJIT::Create());
   InitializeModuleAndManagers();
 
-  // Prime the first token.
+  printf("Kaleidoscope JIT REPL (Step 6.4: Recursive Control Flow)\n");
+  printf("Type definitions, externs, or expressions followed by ';' (Ctrl+D to "
+         "exit):\n\n");
+
   Prompt();
   getNextToken();
   MainLoop();
-
   return 0;
 }
 ```
@@ -715,22 +752,25 @@ int main() {
 
 ---
 
-## Compiling and Running
+## Compiling and Running Fibonacci
 
-Compile your updated compiler:
+Compile `kaleidoscope.cpp`:
 
 ```bash
-clang++ -rdynamic -Iinclude -Wall -Wextra kaleidoscope.cpp $(llvm-config --cxxflags --ldflags --system-libs --libs core orcjit native) -o kaleidoscope
+clang++ -std=c++17 -fno-rtti -Wall -Wextra -Iinclude kaleidoscope.cpp $(llvm-config --cxxflags --ldflags --system-libs --libs core orcjit native) -isystem $(llvm-config --includedir) -o kaleidoscope
 ```
 
-Launch `./kaleidoscope` and define the recursive Fibonacci function:
+Launch `./kaleidoscope`, define recursive `fib(x)`, and run both `fib(10)` and `fib(40)`:
 
 ```text
+Kaleidoscope JIT REPL (Step 6.4: Recursive Control Flow)
+Type definitions, externs, or expressions followed by ';' (Ctrl+D to exit):
+
 ready> def fib(x)
-         if x < 3 then
-           1
-         else
-           fib(x - 1) + fib(x - 2);
+  if x < 3 then
+    1
+  else
+    fib(x - 1) + fib(x - 2);
 Read function definition:
 define double @fib(double %x) {
 entry:
@@ -754,47 +794,45 @@ ifcont:                                           ; preds = %else, %then
   %iftmp = phi double [ 1.000000e+00, %then ], [ %addtmp, %else ]
   ret double %iftmp
 }
-```
 
-Now evaluate Fibonacci numbers in the JIT:
-
-```text
 ready> fib(10);
 Evaluated to 55.000000
-
-ready> fib(20);
-Evaluated to 6765.000000
+ready> fib(40);
+Evaluated to 102334155.000000
 ```
 
-Your code was parsed into an AST, emitted as LLVM basic blocks with SSA PHI nodes, compiled down to native host machine instructions, and executed natively on your CPU in real time.
+Pause and admire that result: `fib(40)` makes **204,668,309** recursive function calls!  In a tree-walking interpreter like the one you built in [Step 3.4](../03-operators-eval/04-immediate-eval.md), two hundred million AST traversals would take ages.  Because ORCv2 compiled `@fib` directly into native host machine code obeying your CPU's calling convention, `fib(40)` finishes in roughly a second!
 
 ---
 
-## Active Learning Challenge: Adding Greater-Than ('&gt;')
+## Try It Yourself: Tail-Recursive `fib_acc`
 
-Extend your compiler to support the `>` operator.
+Computing `fib(40)` with naive two-branch recursion does two hundred million calls, and `fib(50)` would take well over a minute.  Can you write a **tail-recursive** helper function right inside the Kaleidoscope REPL using only `<`, `-`, and `+` (no C++ edits needed, and no `>` operator yet since user-defined operators arrive in [Section 8](../08-user-defined-ops/index.md)!) that computes the 40th Fibonacci number in just **39** calls?
 
-### The Challenge
-
-1. Add `BinopPrecedence['>'] = 10;` in `main()`.
-2. Add a `case '>':` in `BinaryExprAST::codegen()` using LLVM's `CreateFCmpUGT` instruction.
-
-Test it in your REPL with `10 > 5;` and `5 > 10;`.
+**Challenge**: Define `def fib_acc(n a b)` where `a` and `b` are consecutive Fibonacci numbers (starting at `1` and `1`), returning `a` when `n < 2` and otherwise recursing with `n - 1`, `b`, and `a + b`.  Verify that `fib_acc(40, 1, 1);` prints `102334155.000000` instantaneously!
 
 <details>
-<summary>Click here to reveal the solution</summary>
+<summary>Click here to reveal a sample solution</summary>
 
-```cpp
-// In BinaryExprAST::codegen():
-case '>':
-  L = Builder->CreateFCmpUGT(L, R, "cmptmp");
-  return Builder->CreateUIToFP(L, llvm::Type::getDoubleTy(*TheContext),
-                               "booltmp");
+```text
+ready> def fib_acc(n a b)
+  if n < 2 then
+    a
+  else
+    fib_acc(n - 1, b, a + b);
+ready> fib_acc(40, 1, 1);
+Evaluated to 102334155.000000
 ```
+
+Even `fib_acc(70, 1, 1);` evaluates instantaneously in a few dozen stack frames!
 </details>
 
 ---
 
 ## Next Steps
 
-In [Section 7: Loops and Iteration](../07-loops/README.md), we will introduce `for` loops, loop basic blocks, and loop induction variables in SSA form.
+Recursion can express any loop, but writing loops explicitly is far more ergonomic for tasks like rendering graphics in the terminal.  In [Section 7: Loops and Iteration](../07-loops/index.md), you will add `for ... in` loops, construct cyclic basic blocks with SSA loop induction variables, and link external C I/O functions to draw ASCII graphics from Kaleidoscope!
+
+---
+
+[Previous: SSA PHI Nodes](03-phi-nodes.md) | [Section Overview](index.md) | [Next: Section 7 - Loops and Iteration](../07-loops/index.md)

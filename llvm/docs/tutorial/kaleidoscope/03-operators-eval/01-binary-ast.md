@@ -1,53 +1,46 @@
 # Step 3.1: The Binary AST Node
 
-Welcome to Step 3.1.  In this step, we create an AST node to represent binary expressions like `a + b` or `x * 2.0`.
+Welcome to Section 3!  In this step, you will create `BinaryExprAST` to represent binary infix expressions like `1 + 2` or `x * 2.0`, and wire up a deliberately naive left-to-right loop so you can see *why* operator precedence matters.
 
 ---
 
 ## Representing Binary Expressions
 
-A binary expression consists of three components:
+Every binary expression has three parts:
 1.  An operator character (`Op`), such as `'+'` or `'*'`.
 2.  A left-hand side expression (`LHS`).
 3.  A right-hand side expression (`RHS`).
 
-```mermaid
-flowchart TD
-    Plus["BinaryExprAST: '+'"]
-    Plus --> Left["NumberExprAST: 1.0"]
-    Plus --> Right["NumberExprAST: 2.0"]
+Because `LHS` and `RHS` are both `std::unique_ptr<ExprAST>`, either child can itself be another `BinaryExprAST`.  That recursive structure lets our AST represent expression trees of arbitrary depth.  Compare the two ways a parser might group `1 + 2 * 3`:
+
+```text
+  Naive Left-to-Right (WRONG: 9)         Arithmetic Precedence (RIGHT: 7)
+
+            (*)                                        (+)
+           /   \                                      /   \
+         (+)   (3)                                  (1)   (*)
+        /   \                                            /   \
+      (1)   (2)                                        (2)   (3)
 ```
 
-Because `LHS` and `RHS` are themselves `std::unique_ptr<ExprAST>`, they can hold any expression, including nested binary expressions.  This recursive definition allows the compiler to represent trees of arbitrary depth:
-
-```mermaid
-flowchart TD
-    Plus["BinaryExprAST: '+'"]
-    Plus --> One["NumberExprAST: 1.0"]
-    Plus --> Mult["BinaryExprAST: '*'"]
-    Mult --> Two["NumberExprAST: 2.0"]
-    Mult --> Three["NumberExprAST: 3.0"]
-```
+Let us build `BinaryExprAST` first, then run the naive loop so we can catch the left-hand tree red-handed in our terminal!
 
 ---
 
-## Active Authoring: Writing BinaryExprAST
+## Stretch: Authoring `BinaryExprAST` Yourself
 
-You have already written three AST classes (`NumberExprAST`, `VariableExprAST`, and `CallExprAST`).  Using the same pattern, write `BinaryExprAST` yourself in `kaleidoscope.cpp`.
+You have already built `NumberExprAST`, `VariableExprAST` ([Step 2.3](../02-parser-ast/03-variables.md)), and `CallExprAST` ([Step 2.4](../02-parser-ast/04-function-calls.md)).  Use that exact same pattern to write `BinaryExprAST` directly below `VariableExprAST` (and above `CallExprAST`) in `kaleidoscope.cpp`:
+* Inherit publicly from `ExprAST`.
+* Store private members `char Op;` and `std::unique_ptr<ExprAST> LHS, RHS;`.
+* Write a constructor `BinaryExprAST(char Op, std::unique_ptr<ExprAST> LHS, std::unique_ptr<ExprAST> RHS)` that moves `LHS` and `RHS` into place.
+* Override `print(std::ostream &OS) const override` to stream `"(" << Op << " "`, call `LHS->print(OS)`, stream `" "`, call `RHS->print(OS)`, and close with `")"`.
 
-Place it directly below `VariableExprAST`:
-* Inherit from `ExprAST`.
-* Store three private members: `char Op;` and `std::unique_ptr<ExprAST> LHS, RHS;`.
-* Write a constructor taking `(char Op, std::unique_ptr<ExprAST> LHS, std::unique_ptr<ExprAST> RHS)`.
-* Implement `print(std::ostream &OS)` to format the node as `(Op LHS RHS)`.
-
-Type it out in your editor before expanding the reference fold below.
+Try writing `BinaryExprAST` in your editor before opening the fold below!
 
 <details>
-<summary>Click here to reveal the BinaryExprAST class</summary>
+<summary>Click here to check your BinaryExprAST class</summary>
 
 ```cpp
-/// BinaryExprAST - Expression class for binary operators like "a + b".
 class BinaryExprAST : public ExprAST {
   char Op;
   std::unique_ptr<ExprAST> LHS, RHS;
@@ -70,9 +63,42 @@ public:
 
 ---
 
+## Incremental Code Changes: A Naive Left-to-Right Loop
+
+To test `BinaryExprAST` right away, replace the one-line `ParseExpression()` from [Step 2.1](../02-parser-ast/01-first-ast-node.md) with a flat `while` loop that folds `+`, `-`, `*`, and `/` strictly from left to right:
+
+```cpp
+// Temporary flat left-to-right scan (ignoring operator precedence for now!).
+static std::unique_ptr<ExprAST> ParseExpression() {
+  auto LHS = ParsePrimary();
+  if (!LHS)
+    return nullptr;
+
+  while (CurTok == '+' || CurTok == '-' || CurTok == '*' || CurTok == '/') {
+    char Op = static_cast<char>(CurTok);
+    getNextToken(); // eat operator
+    auto RHS = ParsePrimary();
+    if (!RHS)
+      return nullptr;
+    LHS = std::make_unique<BinaryExprAST>(Op, std::move(LHS), std::move(RHS));
+  }
+  return LHS;
+}
+```
+
+Also update the two `printf` lines in `main()` so the banner reflects Step 3.1:
+
+```cpp
+  printf("Kaleidoscope AST Inspector (Step 3.1: Binary AST Nodes)\n");
+  printf("Type math expressions followed by ';' and press Enter (Ctrl+D to "
+         "exit):\n\n");
+```
+
+---
+
 ## Verifying Your Code
 
-Before compiling, check that your `kaleidoscope.cpp` has `BinaryExprAST` in place.
+Compare your `kaleidoscope.cpp` against the complete reference file:
 
 <details>
 <summary>Click here to compare against the reference kaleidoscope.cpp</summary>
@@ -103,8 +129,8 @@ enum Token {
   tok_number = -201,
 };
 
-static std::string IdentifierStr;
-static double NumVal;
+static std::string IdentifierStr; // Filled in if tok_identifier
+static double NumVal;             // Filled in if tok_number
 
 static int gettok() {
   static int LastChar = ' ';
@@ -112,6 +138,7 @@ static int gettok() {
   while (isspace(LastChar))
     LastChar = getchar();
 
+  // Recognise identifiers and keywords: [a-zA-Z_][a-zA-Z0-9_]*
   if (isalpha(LastChar) || LastChar == '_') {
     IdentifierStr = LastChar;
     while (isalnum((LastChar = getchar())) || LastChar == '_')
@@ -124,6 +151,7 @@ static int gettok() {
     return tok_identifier;
   }
 
+  // Recognise numeric literals: [0-9.]+
   if (isdigit(LastChar) || LastChar == '.') {
     std::string NumStr;
     do {
@@ -135,6 +163,7 @@ static int gettok() {
     return tok_number;
   }
 
+  // Recognise comments: '#' through end of line.
   if (LastChar == '#') {
     do
       LastChar = getchar();
@@ -234,7 +263,7 @@ static std::unique_ptr<ExprAST> ParseExpression();
 
 static std::unique_ptr<ExprAST> ParseNumberExpr() {
   auto Result = std::make_unique<NumberExprAST>(NumVal);
-  getNextToken();
+  getNextToken(); // consume the number
   return Result;
 }
 
@@ -254,9 +283,11 @@ static std::unique_ptr<ExprAST> ParseIdentifierExpr() {
   std::string IdName = IdentifierStr;
   getNextToken(); // eat identifier
 
+  // Simple variable reference.
   if (CurTok != '(')
-    return std::make_unique<VariableExprAST>(IdName);
+    return std::make_unique<VariableExprAST>(std::move(IdName));
 
+  // Function call.
   getNextToken(); // eat '('
   std::vector<std::unique_ptr<ExprAST>> Args;
   if (CurTok != ')') {
@@ -276,7 +307,7 @@ static std::unique_ptr<ExprAST> ParseIdentifierExpr() {
   }
 
   getNextToken(); // eat ')'
-  return std::make_unique<CallExprAST>(IdName, std::move(Args));
+  return std::make_unique<CallExprAST>(std::move(IdName), std::move(Args));
 }
 
 static std::unique_ptr<ExprAST> ParsePrimary() {
@@ -292,7 +323,22 @@ static std::unique_ptr<ExprAST> ParsePrimary() {
   }
 }
 
-static std::unique_ptr<ExprAST> ParseExpression() { return ParsePrimary(); }
+// Temporary flat left-to-right scan (ignoring operator precedence for now!).
+static std::unique_ptr<ExprAST> ParseExpression() {
+  auto LHS = ParsePrimary();
+  if (!LHS)
+    return nullptr;
+
+  while (CurTok == '+' || CurTok == '-' || CurTok == '*' || CurTok == '/') {
+    char Op = static_cast<char>(CurTok);
+    getNextToken(); // eat operator
+    auto RHS = ParsePrimary();
+    if (!RHS)
+      return nullptr;
+    LHS = std::make_unique<BinaryExprAST>(Op, std::move(LHS), std::move(RHS));
+  }
+  return LHS;
+}
 
 //===----------------------------------------------------------------------===//
 // Interactive Driver Loop
@@ -325,14 +371,13 @@ static void MainLoop() {
 }
 
 int main() {
-  printf("Kaleidoscope AST Inspector (Step 2.4: Function Calls)\n");
-  printf("Type expressions and press Enter (Ctrl+D to exit):\n\n");
+  printf("Kaleidoscope AST Inspector (Step 3.1: Binary AST Nodes)\n");
+  printf("Type math expressions followed by ';' and press Enter (Ctrl+D to "
+         "exit):\n\n");
 
-  // Prime the first token.
   Prompt();
   getNextToken();
   MainLoop();
-
   return 0;
 }
 ```
@@ -340,12 +385,37 @@ int main() {
 
 ---
 
-## Compiling and Running
+## Compiling and Watching the Precedence Bug!
 
-Compile your code:
+Recompile:
 
 ```bash
-clang++ -Wall -Wextra kaleidoscope.cpp -o kaleidoscope
+clang++ -std=c++17 -fno-rtti -Wall -Wextra kaleidoscope.cpp -o kaleidoscope
 ```
 
-In [Step 3.2](02-precedence-table.md), we will set up an operator precedence table to determine which operators bind first.
+Run `./kaleidoscope` and type `1 + 2;` followed by `1 + 2 * 3;`:
+
+```bash
+./kaleidoscope
+```
+
+```text
+Kaleidoscope AST Inspector (Step 3.1: Binary AST Nodes)
+Type math expressions followed by ';' and press Enter (Ctrl+D to exit):
+
+ready> 1 + 2;
+Parsed AST: (+ (Number 1) (Number 2))
+ready> 1 + 2 * 3;
+Parsed AST: (* (+ (Number 1) (Number 2)) (Number 3))
+ready>
+```
+
+Look closely at that second line:
+* We typed `1 + 2 * 3;`, which in mathematics means `1 + (2 * 3) = 7`.
+* Our flat `while` loop eagerly wrapped `1 + 2` into `(+ (Number 1) (Number 2))` before it ever looked at `*`, producing `(* (+ (Number 1) (Number 2)) (Number 3))` (`(1 + 2) * 3 = 9`)!
+
+To know whether `2` belongs to `+` on its left or `*` on its right, the parser needs to compare the **binding strength** (precedence) of both operators.  In [Step 3.2](02-precedence-table.md), we will build a data-driven operator precedence table, and in [Step 3.3](03-precedence-climbing.md), we will fix this tree for good!
+
+---
+
+[Previous: Step 2.4 - Function Calls](../02-parser-ast/04-function-calls.md) | [Section 3 Overview](index.md) | [Next: Step 3.2 - The Precedence Table](02-precedence-table.md)

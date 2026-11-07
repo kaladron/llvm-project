@@ -1,0 +1,16 @@
+# RUN: Kaleidoscope-Sec12 < %s 2>&1 | FileCheck %s
+# REQUIRES: default_triple
+
+# Test cross-module globals, string literals, and variadic C calls.
+def binary : 1 (x y) y;
+global counter: int = 10;
+def bump() -> int (counter = counter + 5) : counter;
+bump();
+bump();
+
+extern puts(s: ptr) -> int;
+puts("hello from kaleidoscope");
+
+# CHECK: Evaluated to 15
+# CHECK: Evaluated to 20
+# CHECK: hello from kaleidoscope

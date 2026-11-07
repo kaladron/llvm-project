@@ -12,7 +12,7 @@ Welcome to Chapter 1 of the "Building an ORC-based JIT in LLVM" tutorial. This
 tutorial runs through the implementation of a JIT compiler using LLVM's
 On-Request-Compilation (ORC) APIs. It begins with a simplified version of the
 KaleidoscopeJIT class used in the
-[Implementing a language with LLVM](LangImpl01.md) tutorials and then
+[Kaleidoscope: Building a Compiler with LLVM](kaleidoscope/index.md) tutorials and then
 introduces new features like concurrent compilation, optimization, lazy
 compilation and remote execution.
 
@@ -37,7 +37,7 @@ The structure of the tutorial is:
   a remote process with reduced privileges using the JIT Remote APIs.
 
 To provide input for our JIT we will use a lightly modified version of the
-Kaleidoscope REPL from [Chapter 7](LangImpl07.md) of the "Implementing a
+Kaleidoscope REPL from [Section 9](kaleidoscope/09-local-variables/index.md) of the "Implementing a
 language in LLVM tutorial".
 
 Finally, a word on API generations: ORC is the 3rd generation of LLVM JIT API.
@@ -79,8 +79,8 @@ representations (e.g. ASTs) to be added to the JIT.
 
 In the previous section we described our API, now we examine a simple
 implementation of it: The KaleidoscopeJIT class [^footnote-1] that was used in the
-[Implementing a language with LLVM](LangImpl01.md) tutorials. We will use
-the REPL code from [Chapter 7](LangImpl07.md) of that tutorial to supply the
+[Kaleidoscope: Building a Compiler with LLVM](kaleidoscope/index.md) tutorials. We will use
+the REPL code from [Section 9](kaleidoscope/09-local-variables/index.md) of that tutorial to supply the
 input for our JIT: Each time the user enters an expression the REPL will add a
 new IR module containing the code for that expression to the JIT. If the
 expression is a top-level expression like '1+1' or 'sin(x)', the REPL will also

@@ -1,52 +1,48 @@
 # Step 3.2: The Precedence Table
 
-In this step, we configure an operator precedence table to define the binding strength of mathematical operators.
+In [Step 3.1](01-binary-ast.md), we hardcoded `CurTok == '+' || CurTok == '-' || ...` directly inside `ParseExpression()`, and every operator bound with the exact same left-to-right priority.
+
+In classic recursive-descent compilers, people sometimes write a separate function per precedence tier (`ParseComparison()` calls `ParseAdditive()`, which calls `ParseMultiplicative()`, which calls `ParsePrimary()`).  That works for fixed grammars, but Kaleidoscope has an exciting surprise waiting in Section 8: **user-defined binary operators** whose precedence is chosen at runtime!
+
+Instead of hardcoding grammar tiers, we store operator binding strengths in a `std::map<char, int>` lookup table.
 
 ---
 
-## Defining Precedence Values
+## Choosing Precedence Numbers
 
-To parse arithmetic expressions without writing separate hardcoded grammar rules for every single operator, we use a lookup table.  Higher numeric values represent tighter binding:
+In our table, larger positive integers mean **tighter binding**:
 
-| Operator | Precedence | Associativity | Description |
+| Operator | Precedence | Associativity | Meaning |
 | :--- | :--- | :--- | :--- |
-| `<` | 10 | Left-to-right | Less-than comparison |
-| `+`, `-` | 20 | Left-to-right | Addition, Subtraction |
-| `*`, `/` | 40 | Left-to-right | Multiplication, Division |
+| `<` | `10` | Left-to-right | Less-than comparison |
+| `+`, `-` | `20` | Left-to-right | Addition and subtraction |
+| `*`, `/` | `40` | Left-to-right | Multiplication and division |
 
-Because `*` and `/` have precedence 40 while `+` and `-` have precedence 20, multiplication and division will bind twice as tightly as addition and subtraction.  An expression like `a + b * c` will group `b * c` first.
+Why leave gaps (`10`, `20`, `40`) instead of numbering them `1`, `2`, `3`?  For the exact same reason we left gaps in `enum Token` back in [Step 1.3](../01-lexer/03-numeric-literals.md)!  Leaving numeric room between tiers lets us (or a Kaleidoscope user in Section 8!) slot new operators like `=` (precedence `2`) or `^` (precedence `50`) in between existing operators without touching anything else.
 
 ---
 
 ## Incremental Code Changes
 
-Open `kaleidoscope.cpp`.  You will make three targeted additions.
+Open `kaleidoscope.cpp` and apply four small updates on top of [Step 3.1](01-binary-ast.md).
 
-### 1. Include the Map Header
+### 1. Include `<map>`
 
-At the very top of `kaleidoscope.cpp`, include `<map>`:
+At the top of `kaleidoscope.cpp`, add `#include <map>` right after `#include <iostream>`:
 
 ```cpp
-#include <cctype>
-#include <cstdio>
-#include <cstdlib>
 #include <iostream>
 #include <map>
 #include <memory>
-#include <string>
-#include <utility>
-#include <vector>
 ```
 
-### 2. Precedence Lookup Table and Helper
+### 2. Add `BinopPrecedence` and `GetTokPrecedence()`
 
-In the parser section, directly above `LogError()`, define the precedence map and the query helper:
+In the `Parser` section, right below `getNextToken()` and above `LogError()`, define the precedence table and a helper that queries the precedence of `CurTok`:
 
 ```cpp
-/// BinopPrecedence - Maps operator characters to numeric precedence.
 static std::map<char, int> BinopPrecedence;
 
-/// GetTokPrecedence - Get the precedence of the pending binary operator token.
 static int GetTokPrecedence() {
   if (!isascii(CurTok))
     return -1;
@@ -58,18 +54,42 @@ static int GetTokPrecedence() {
 }
 ```
 
-Notice what `GetTokPrecedence()` does:
-* If `CurTok` is an operator in the map, it returns its positive precedence value.
-* If `CurTok` is any other character (such as `;`, `)`, or an identifier), it returns `-1`.  This signals to the parser that the binary expression has ended.
+Check how `GetTokPrecedence()` handles every possible `CurTok` value:
+* Multi-character tokens like `tok_eof` (`-1`), `tok_def` (`-100`), or `tok_number` (`-201`) fail `isascii(CurTok)` and immediately return `-1`.
+* Punctuation that is *not* a registered binary operator (such as `';'`, `')'`, or `','`) looks up `0` in `BinopPrecedence`, triggers `TokPrec <= 0`, and returns `-1`.
+* Registered binary operators (`<`, `+`, `-`, `*`, `/`) return their positive precedence (`10`, `20`, or `40`).
 
-### 3. Registering Operators in `main()`
+### 3. Drive `ParseExpression()` from `GetTokPrecedence()`
 
-In `main()`, populate `BinopPrecedence` before entering the main loop:
+Update the `while` loop in `ParseExpression()` to use `GetTokPrecedence() > 0` instead of the hardcoded `CurTok == '+' || ...` list, and log each operator's precedence to `stderr` so we can inspect our table at work:
+
+```cpp
+// Recognises operators via GetTokPrecedence(), still grouping left-to-right.
+static std::unique_ptr<ExprAST> ParseExpression() {
+  auto LHS = ParsePrimary();
+  if (!LHS)
+    return nullptr;
+
+  while (GetTokPrecedence() > 0) {
+    char Op = static_cast<char>(CurTok);
+    int Prec = GetTokPrecedence();
+    fprintf(stderr, "  [Operator '%c' has precedence %d]\n", Op, Prec);
+    getNextToken(); // eat operator
+    auto RHS = ParsePrimary();
+    if (!RHS)
+      return nullptr;
+    LHS = std::make_unique<BinaryExprAST>(Op, std::move(LHS), std::move(RHS));
+  }
+  return LHS;
+}
+```
+
+### 4. Register the Initial Operators in `main()`
+
+At the very start of `main()`, populate `BinopPrecedence` (including `<` at precedence `10`!) and update the banner to Step 3.2:
 
 ```cpp
 int main() {
-  // Install standard binary operators.
-  // 1 is lowest precedence.
   BinopPrecedence['<'] = 10;
   BinopPrecedence['+'] = 20;
   BinopPrecedence['-'] = 20;
@@ -77,13 +97,12 @@ int main() {
   BinopPrecedence['/'] = 40;
 
   printf("Kaleidoscope AST Inspector (Step 3.2: Precedence Table)\n");
-  printf("Type expressions and press Enter (Ctrl+D to exit):\n\n");
+  printf("Type math expressions followed by ';' and press Enter (Ctrl+D to "
+         "exit):\n\n");
 
-  // Prime the first token.
   Prompt();
   getNextToken();
   MainLoop();
-
   return 0;
 }
 ```
@@ -92,7 +111,7 @@ int main() {
 
 ## Verifying Your Code
 
-Before compiling, check that your `kaleidoscope.cpp` has all additions in place.
+Compare your `kaleidoscope.cpp` against the complete reference file:
 
 <details>
 <summary>Click here to compare against the reference kaleidoscope.cpp</summary>
@@ -124,8 +143,8 @@ enum Token {
   tok_number = -201,
 };
 
-static std::string IdentifierStr;
-static double NumVal;
+static std::string IdentifierStr; // Filled in if tok_identifier
+static double NumVal;             // Filled in if tok_number
 
 static int gettok() {
   static int LastChar = ' ';
@@ -133,6 +152,7 @@ static int gettok() {
   while (isspace(LastChar))
     LastChar = getchar();
 
+  // Recognise identifiers and keywords: [a-zA-Z_][a-zA-Z0-9_]*
   if (isalpha(LastChar) || LastChar == '_') {
     IdentifierStr = LastChar;
     while (isalnum((LastChar = getchar())) || LastChar == '_')
@@ -145,6 +165,7 @@ static int gettok() {
     return tok_identifier;
   }
 
+  // Recognise numeric literals: [0-9.]+
   if (isdigit(LastChar) || LastChar == '.') {
     std::string NumStr;
     do {
@@ -156,6 +177,7 @@ static int gettok() {
     return tok_number;
   }
 
+  // Recognise comments: '#' through end of line.
   if (LastChar == '#') {
     do
       LastChar = getchar();
@@ -267,7 +289,7 @@ static std::unique_ptr<ExprAST> ParseExpression();
 
 static std::unique_ptr<ExprAST> ParseNumberExpr() {
   auto Result = std::make_unique<NumberExprAST>(NumVal);
-  getNextToken();
+  getNextToken(); // consume the number
   return Result;
 }
 
@@ -287,9 +309,11 @@ static std::unique_ptr<ExprAST> ParseIdentifierExpr() {
   std::string IdName = IdentifierStr;
   getNextToken(); // eat identifier
 
+  // Simple variable reference.
   if (CurTok != '(')
-    return std::make_unique<VariableExprAST>(IdName);
+    return std::make_unique<VariableExprAST>(std::move(IdName));
 
+  // Function call.
   getNextToken(); // eat '('
   std::vector<std::unique_ptr<ExprAST>> Args;
   if (CurTok != ')') {
@@ -309,7 +333,7 @@ static std::unique_ptr<ExprAST> ParseIdentifierExpr() {
   }
 
   getNextToken(); // eat ')'
-  return std::make_unique<CallExprAST>(IdName, std::move(Args));
+  return std::make_unique<CallExprAST>(std::move(IdName), std::move(Args));
 }
 
 static std::unique_ptr<ExprAST> ParsePrimary() {
@@ -325,7 +349,24 @@ static std::unique_ptr<ExprAST> ParsePrimary() {
   }
 }
 
-static std::unique_ptr<ExprAST> ParseExpression() { return ParsePrimary(); }
+// Recognises operators via GetTokPrecedence(), still grouping left-to-right.
+static std::unique_ptr<ExprAST> ParseExpression() {
+  auto LHS = ParsePrimary();
+  if (!LHS)
+    return nullptr;
+
+  while (GetTokPrecedence() > 0) {
+    char Op = static_cast<char>(CurTok);
+    int Prec = GetTokPrecedence();
+    fprintf(stderr, "  [Operator '%c' has precedence %d]\n", Op, Prec);
+    getNextToken(); // eat operator
+    auto RHS = ParsePrimary();
+    if (!RHS)
+      return nullptr;
+    LHS = std::make_unique<BinaryExprAST>(Op, std::move(LHS), std::move(RHS));
+  }
+  return LHS;
+}
 
 //===----------------------------------------------------------------------===//
 // Interactive Driver Loop
@@ -358,8 +399,6 @@ static void MainLoop() {
 }
 
 int main() {
-  // Install standard binary operators.
-  // 1 is lowest precedence.
   BinopPrecedence['<'] = 10;
   BinopPrecedence['+'] = 20;
   BinopPrecedence['-'] = 20;
@@ -367,13 +406,12 @@ int main() {
   BinopPrecedence['/'] = 40;
 
   printf("Kaleidoscope AST Inspector (Step 3.2: Precedence Table)\n");
-  printf("Type expressions and press Enter (Ctrl+D to exit):\n\n");
+  printf("Type math expressions followed by ';' and press Enter (Ctrl+D to "
+         "exit):\n\n");
 
-  // Prime the first token.
   Prompt();
   getNextToken();
   MainLoop();
-
   return 0;
 }
 ```
@@ -383,10 +421,36 @@ int main() {
 
 ## Compiling and Running
 
-Recompile your binary:
+Recompile:
 
 ```bash
-clang++ -Wall -Wextra kaleidoscope.cpp -o kaleidoscope
+clang++ -std=c++17 -fno-rtti -Wall -Wextra kaleidoscope.cpp -o kaleidoscope
 ```
 
-In [Step 3.3](03-precedence-climbing.md), we will implement the precedence climbing algorithm that uses this table to assemble binary trees.
+Run `./kaleidoscope` and test `1 + 2 * 3;` and `3 < 5;`:
+
+```bash
+./kaleidoscope
+```
+
+```text
+Kaleidoscope AST Inspector (Step 3.2: Precedence Table)
+Type math expressions followed by ';' and press Enter (Ctrl+D to exit):
+
+ready> 1 + 2 * 3;
+  [Operator '+' has precedence 20]
+  [Operator '*' has precedence 40]
+Parsed AST: (* (+ (Number 1) (Number 2)) (Number 3))
+ready> 3 < 5;
+  [Operator '<' has precedence 10]
+Parsed AST: (< (Number 3) (Number 5))
+ready>
+```
+
+Look at those diagnostic lines: the parser *knows* `'+'` has precedence `20` and `'*'` has precedence `40` (and `<` works automatically simply because we added `BinopPrecedence['<'] = 10`!), yet the flat loop still built `(* (+ (Number 1) (Number 2)) (Number 3))`.
+
+Now we have everything in place for the magic moment: in [Step 3.3](03-precedence-climbing.md), we will let `ParseBinOpRHS()` compare `20 < 40` and climb!
+
+---
+
+[Previous: Step 3.1 - The Binary AST Node](01-binary-ast.md) | [Section 3 Overview](index.md) | [Next: Step 3.3 - Precedence Climbing](03-precedence-climbing.md)
