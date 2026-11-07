@@ -22,7 +22,7 @@ You will continue extending `kaleidoscope.cpp` in four bite-sized steps.  By the
 In this section, our compiler links against both the LLVM core libraries and the ORC JIT and native target components:
 
 ```bash
-clang++ -Iinclude -Wall -Wextra kaleidoscope.cpp $(llvm-config --cxxflags --ldflags --system-libs --libs core orcjit native) -o kaleidoscope
+clang++ -rdynamic -Iinclude -Wall -Wextra kaleidoscope.cpp $(llvm-config --cxxflags --ldflags --system-libs --libs core orcjit native) -o kaleidoscope
 ```
 
 Full reference implementations for each step are stored in the [code/](../code/) directory.

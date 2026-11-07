@@ -377,13 +377,15 @@ static std::unique_ptr<ExprAST> ParseExpression() {
 // Interactive Driver Loop
 //===----------------------------------------------------------------------===//
 
+static void Prompt() { fprintf(stderr, "ready> "); }
+
 static void MainLoop() {
   while (true) {
-    fprintf(stderr, "ready> ");
     switch (CurTok) {
     case tok_eof:
       return;
     case ';':
+      Prompt();
       getNextToken();
       break;
     default:
@@ -392,7 +394,9 @@ static void MainLoop() {
         AST->print(std::cout);
         std::cout << "\n";
       } else {
-        getNextToken();
+        // Skip tokens for error recovery until the next semicolon.
+        while (CurTok != ';' && CurTok != tok_eof)
+          getNextToken();
       }
       break;
     }
@@ -409,6 +413,8 @@ int main() {
   printf("Kaleidoscope AST Inspector (Step 3.3: Precedence Climbing)\n");
   printf("Type math expressions followed by ';' and press Enter (Ctrl+D to exit):\n\n");
 
+  // Prime the first token.
+  Prompt();
   getNextToken();
   MainLoop();
 

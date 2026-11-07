@@ -868,17 +868,51 @@ llvm::Function *PrototypeAST::codegen() {
   return F;
 }
 
+llvm::Function *FunctionAST::codegen() {
+  auto &P = *Proto;
+  FunctionProtos[Proto->getName()] = std::move(Proto);
+  auto *TheFunction = getFunction(P.getName());
+  if (!TheFunction)
+    return nullptr;
+
+  if (P.isBinaryOp())
+    BinopPrecedence[P.getOperatorName()] = P.getBinaryPrecedence();
+
+  llvm::BasicBlock *BB =
+      llvm::BasicBlock::Create(*TheContext, "entry", TheFunction);
+  Builder->SetInsertPoint(BB);
+
+  NamedValues.clear();
+  for (auto &Arg : TheFunction->args())
+    NamedValues[std::string(Arg.getName())] = &Arg;
+
+  if (llvm::Value *RetVal = Body->codegen()) {
+    Builder->CreateRet(RetVal);
+    llvm::verifyFunction(*TheFunction);
+    return TheFunction;
+  }
+
+  TheFunction->eraseFromParent();
+
+  if (P.isBinaryOp())
+    BinopPrecedence.erase(P.getOperatorName());
+
+  return nullptr;
+}
+
 static void HandleDefinition();
 static void HandleExtern();
 static void HandleTopLevelExpression();
 
+static void Prompt() { fprintf(stderr, "ready> "); }
+
 static void MainLoop() {
   while (true) {
-    fprintf(stderr, "ready> ");
     switch (CurTok) {
     case tok_eof:
       return;
     case ';':
+      Prompt();
       getNextToken();
       break;
     case tok_def:
@@ -905,7 +939,9 @@ static void HandleDefinition() {
       InitializeModuleAndManagers();
     }
   } else {
-    getNextToken();
+    // Skip token for error recovery.
+    while (CurTok != ';' && CurTok != tok_eof)
+      getNextToken();
   }
 }
 
@@ -918,7 +954,9 @@ static void HandleExtern() {
       FunctionProtos[ProtoAST->getName()] = std::move(ProtoAST);
     }
   } else {
-    getNextToken();
+    // Skip token for error recovery.
+    while (CurTok != ';' && CurTok != tok_eof)
+      getNextToken();
   }
 }
 
@@ -940,7 +978,9 @@ static void HandleTopLevelExpression() {
       ExitOnErr(RT->remove());
     }
   } else {
-    getNextToken();
+    // Skip token for error recovery.
+    while (CurTok != ';' && CurTok != tok_eof)
+      getNextToken();
   }
 }
 
@@ -958,6 +998,8 @@ int main() {
   TheJIT = ExitOnErr(llvm::orc::KaleidoscopeJIT::Create());
   InitializeModuleAndManagers();
 
+  // Prime the first token.
+  Prompt();
   getNextToken();
   MainLoop();
 

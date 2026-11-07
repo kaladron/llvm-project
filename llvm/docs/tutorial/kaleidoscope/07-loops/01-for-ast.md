@@ -352,10 +352,7 @@ public:
       : VarName(VarName), Start(std::move(Start)), End(std::move(End)),
         Step(std::move(Step)), Body(std::move(Body)) {}
 
-  llvm::Value *codegen() override {
-    fprintf(stderr, "Parsed a for-loop AST node!\n");
-    return llvm::ConstantFP::get(*TheContext, llvm::APFloat(0.0));
-  }
+  llvm::Value *codegen() override;
 };
 
 class PrototypeAST {
@@ -401,6 +398,11 @@ static std::unique_ptr<ExprAST> LogError(const char *Str) {
 }
 
 static llvm::Value *LogErrorV(const char *Str) {
+  LogError(Str);
+  return nullptr;
+}
+
+static std::unique_ptr<PrototypeAST> LogErrorP(const char *Str) {
   LogError(Str);
   return nullptr;
 }
@@ -747,6 +749,11 @@ llvm::Value *IfExprAST::codegen() {
   return PN;
 }
 
+llvm::Value *ForExprAST::codegen() {
+  fprintf(stderr, "Parsed a for-loop AST node!\n");
+  return llvm::ConstantFP::get(*TheContext, llvm::APFloat(0.0));
+}
+
 llvm::Function *PrototypeAST::codegen() {
   std::vector<llvm::Type *> Doubles(Args.size(),
                                     llvm::Type::getDoubleTy(*TheContext));
@@ -799,7 +806,9 @@ static void HandleDefinition() {
       InitializeModuleAndManagers();
     }
   } else {
-    getNextToken();
+    // Skip token for error recovery.
+    while (CurTok != ';' && CurTok != tok_eof)
+      getNextToken();
   }
 }
 
@@ -812,7 +821,9 @@ static void HandleExtern() {
       FunctionProtos[ProtoAST->getName()] = std::move(ProtoAST);
     }
   } else {
-    getNextToken();
+    // Skip token for error recovery.
+    while (CurTok != ';' && CurTok != tok_eof)
+      getNextToken();
   }
 }
 
@@ -834,17 +845,21 @@ static void HandleTopLevelExpression() {
       ExitOnErr(RT->remove());
     }
   } else {
-    getNextToken();
+    // Skip token for error recovery.
+    while (CurTok != ';' && CurTok != tok_eof)
+      getNextToken();
   }
 }
 
+static void Prompt() { fprintf(stderr, "ready> "); }
+
 static void MainLoop() {
   while (true) {
-    fprintf(stderr, "ready> ");
     switch (CurTok) {
     case tok_eof:
       return;
     case ';':
+      Prompt();
       getNextToken();
       break;
     case tok_def:
@@ -874,6 +889,8 @@ int main() {
   TheJIT = ExitOnErr(llvm::orc::KaleidoscopeJIT::Create());
   InitializeModuleAndManagers();
 
+  // Prime the first token.
+  Prompt();
   getNextToken();
   MainLoop();
 

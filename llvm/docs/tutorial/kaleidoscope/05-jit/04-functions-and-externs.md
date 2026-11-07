@@ -121,7 +121,9 @@ static void HandleDefinition() {
       InitializeModuleAndManagers();
     }
   } else {
-    getNextToken();
+    // Skip token for error recovery.
+    while (CurTok != ';' && CurTok != tok_eof)
+      getNextToken();
   }
 }
 ```
@@ -138,7 +140,9 @@ static void HandleExtern() {
       FunctionProtos[ProtoAST->getName()] = std::move(ProtoAST);
     }
   } else {
-    getNextToken();
+    // Skip token for error recovery.
+    while (CurTok != ';' && CurTok != tok_eof)
+      getNextToken();
   }
 }
 ```
@@ -412,6 +416,17 @@ llvm::Function *PrototypeAST::codegen() {
   return F;
 }
 
+llvm::Function *getFunction(std::string Name) {
+  if (auto *F = TheModule->getFunction(Name))
+    return F;
+
+  auto FI = FunctionProtos.find(Name);
+  if (FI != FunctionProtos.end())
+    return FI->second->codegen();
+
+  return nullptr;
+}
+
 llvm::Function *FunctionAST::codegen() {
   auto &P = *Proto;
   FunctionProtos[Proto->getName()] = std::move(Proto);
@@ -624,7 +639,9 @@ static void HandleDefinition() {
       InitializeModuleAndManagers();
     }
   } else {
-    getNextToken();
+    // Skip token for error recovery.
+    while (CurTok != ';' && CurTok != tok_eof)
+      getNextToken();
   }
 }
 
@@ -637,7 +654,9 @@ static void HandleExtern() {
       FunctionProtos[ProtoAST->getName()] = std::move(ProtoAST);
     }
   } else {
-    getNextToken();
+    // Skip token for error recovery.
+    while (CurTok != ';' && CurTok != tok_eof)
+      getNextToken();
   }
 }
 
@@ -659,17 +678,21 @@ static void HandleTopLevelExpression() {
       ExitOnErr(RT->remove());
     }
   } else {
-    getNextToken();
+    // Skip token for error recovery.
+    while (CurTok != ';' && CurTok != tok_eof)
+      getNextToken();
   }
 }
 
+static void Prompt() { fprintf(stderr, "ready> "); }
+
 static void MainLoop() {
   while (true) {
-    fprintf(stderr, "ready> ");
     switch (CurTok) {
     case tok_eof:
       return;
     case ';':
+      Prompt();
       getNextToken();
       break;
     case tok_def:
@@ -703,6 +726,8 @@ int main() {
   printf("Type math, definitions, or externs followed by ';' and press Enter "
          "(Ctrl+D to exit):\n\n");
 
+  // Prime the first token.
+  Prompt();
   getNextToken();
   MainLoop();
 
@@ -718,7 +743,7 @@ int main() {
 Compile your updated compiler:
 
 ```bash
-clang++ -Iinclude -Wall -Wextra kaleidoscope.cpp $(llvm-config --cxxflags --ldflags --system-libs --libs core orcjit native) -o kaleidoscope
+clang++ -rdynamic -Iinclude -Wall -Wextra kaleidoscope.cpp $(llvm-config --cxxflags --ldflags --system-libs --libs core orcjit native) -o kaleidoscope
 ```
 
 Run the binary:

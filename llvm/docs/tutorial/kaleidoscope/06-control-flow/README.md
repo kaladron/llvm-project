@@ -22,7 +22,7 @@ By the end of this section, your JIT will compile and execute recursive algorith
 As in Section 5, compile your living `kaleidoscope.cpp` against the LLVM core, ORC JIT, and native target libraries:
 
 ```bash
-clang++ -Iinclude -Wall -Wextra kaleidoscope.cpp $(llvm-config --cxxflags --ldflags --system-libs --libs core orcjit native) -o kaleidoscope
+clang++ -rdynamic -Iinclude -Wall -Wextra kaleidoscope.cpp $(llvm-config --cxxflags --ldflags --system-libs --libs core orcjit native) -o kaleidoscope
 ```
 
 Reference code implementations for each step are stored in the [code/](../code/) directory.

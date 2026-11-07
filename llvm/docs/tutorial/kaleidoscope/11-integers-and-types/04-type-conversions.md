@@ -465,6 +465,37 @@ int main() {
 
 ---
 
+## Compiling and Running
+
+Compile the integer type demonstration:
+
+```bash
+clang++ -Wall -Wextra kaleidoscope.cpp $(llvm-config --cxxflags --ldflags --system-libs --libs core) -o kaleidoscope
+```
+
+Run the binary:
+
+```bash
+./kaleidoscope
+```
+
+The program builds the `@compute` function with mixed integer and division operations, verifies the module, and prints the generated LLVM IR:
+
+```text
+; ModuleID = 'kaleidoscope_types'
+source_filename = "kaleidoscope_types"
+
+define i32 @compute(i32 %a, i32 %b) {
+entry:
+  %addtmp = add i32 %a, %b
+  %sdivtmp = sdiv i32 %a, %b
+  %multmp = mul i32 %addtmp, %sdivtmp
+  ret i32 %multmp
+}
+```
+
+---
+
 ## Active Learning Challenge
 
 <details>

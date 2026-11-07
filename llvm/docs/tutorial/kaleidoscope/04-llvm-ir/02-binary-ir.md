@@ -115,7 +115,9 @@ static void HandleTopLevelExpression() {
 
     Fn->eraseFromParent();
   } else {
-    getNextToken();
+    // Skip token for error recovery.
+    while (CurTok != ';' && CurTok != tok_eof)
+      getNextToken();
   }
 }
 ```
@@ -345,17 +347,21 @@ static void HandleTopLevelExpression() {
 
     Fn->eraseFromParent();
   } else {
-    getNextToken();
+    // Skip token for error recovery.
+    while (CurTok != ';' && CurTok != tok_eof)
+      getNextToken();
   }
 }
 
+static void Prompt() { fprintf(stderr, "ready> "); }
+
 static void MainLoop() {
   while (true) {
-    fprintf(stderr, "ready> ");
     switch (CurTok) {
     case tok_eof:
       return;
     case ';':
+      Prompt();
       getNextToken();
       break;
     default:
@@ -377,6 +383,8 @@ int main() {
   printf("Kaleidoscope LLVM IR Generator (Step 4.2: Binary Math)\n");
   printf("Type math expressions followed by ';' and press Enter (Ctrl+D to exit):\n\n");
 
+  // Prime the first token.
+  Prompt();
   getNextToken();
   MainLoop();
 

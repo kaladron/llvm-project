@@ -412,24 +412,28 @@ llvm::Function *FunctionAST::codegen() {
 static void HandleDefinition() {
   if (auto FnAST = ParseDefinition()) {
     if (auto *FnIR = FnAST->codegen()) {
-      fprintf(stderr, "Parsed a function definition.\n");
+      fprintf(stderr, "Read function definition:\n");
       FnIR->print(llvm::errs());
       fprintf(stderr, "\n");
     }
   } else {
-    getNextToken();
+    // Skip token for error recovery.
+    while (CurTok != ';' && CurTok != tok_eof)
+      getNextToken();
   }
 }
 
 static void HandleExtern() {
   if (auto ProtoAST = ParseExtern()) {
     if (auto *FnIR = ProtoAST->codegen()) {
-      fprintf(stderr, "Parsed an extern\n");
+      fprintf(stderr, "Read extern:\n");
       FnIR->print(llvm::errs());
       fprintf(stderr, "\n");
     }
   } else {
-    getNextToken();
+    // Skip token for error recovery.
+    while (CurTok != ';' && CurTok != tok_eof)
+      getNextToken();
   }
 }
 
@@ -437,9 +441,13 @@ static void HandleTopLevelExpression() {
   if (auto FnAST = ParseTopLevelExpr()) {
     FnAST->codegen();
   } else {
-    getNextToken();
+    // Skip token for error recovery.
+    while (CurTok != ';' && CurTok != tok_eof)
+      getNextToken();
   }
 }
+
+static void Prompt() { fprintf(stderr, "ready> "); }
 
 static void MainLoop() {
   while (true) {
@@ -447,6 +455,7 @@ static void MainLoop() {
     case tok_eof:
       return;
     case ';':
+      Prompt();
       getNextToken();
       break;
     case tok_def:
@@ -470,6 +479,8 @@ int main() {
 
   InitializeModule();
 
+  // Prime the first token.
+  Prompt();
   getNextToken();
   MainLoop();
 

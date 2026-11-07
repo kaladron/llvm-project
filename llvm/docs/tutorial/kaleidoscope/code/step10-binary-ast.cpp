@@ -201,13 +201,15 @@ static std::unique_ptr<ExprAST> ParsePrimary() {
 
 static std::unique_ptr<ExprAST> ParseExpression() { return ParsePrimary(); }
 
+static void Prompt() { fprintf(stderr, "ready> "); }
+
 static void MainLoop() {
   while (true) {
-    fprintf(stderr, "ready> ");
     switch (CurTok) {
     case tok_eof:
       return;
     case ';':
+      Prompt();
       getNextToken();
       break;
     default:
@@ -216,7 +218,9 @@ static void MainLoop() {
         AST->print(std::cout);
         std::cout << "\n";
       } else {
-        getNextToken();
+        // Skip tokens for error recovery until the next semicolon.
+        while (CurTok != ';' && CurTok != tok_eof)
+          getNextToken();
       }
       break;
     }
@@ -227,6 +231,8 @@ int main() {
   printf("Kaleidoscope AST Inspector (Step 3.1: Binary AST Node)\n");
   printf("Type expressions and press Enter (Ctrl+D to exit):\n\n");
 
+  // Prime the first token.
+  Prompt();
   getNextToken();
   MainLoop();
 

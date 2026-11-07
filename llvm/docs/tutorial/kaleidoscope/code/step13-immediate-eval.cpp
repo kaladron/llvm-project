@@ -288,13 +288,15 @@ static std::unique_ptr<ExprAST> ParseExpression() {
   return ParseBinOpRHS(0, std::move(LHS));
 }
 
+static void Prompt() { fprintf(stderr, "ready> "); }
+
 static void MainLoop() {
   while (true) {
-    fprintf(stderr, "ready> ");
     switch (CurTok) {
     case tok_eof:
       return;
     case ';':
+      Prompt();
       getNextToken();
       break;
     default:
@@ -304,7 +306,9 @@ static void MainLoop() {
         std::cout << "\n";
         std::cout << "Evaluated:  " << AST->eval() << "\n";
       } else {
-        getNextToken();
+        // Skip tokens for error recovery until the next semicolon.
+        while (CurTok != ';' && CurTok != tok_eof)
+          getNextToken();
       }
       break;
     }
@@ -322,6 +326,8 @@ int main() {
   printf("Type math expressions followed by ';' and press Enter (Ctrl+D to "
          "exit):\n\n");
 
+  // Prime the first token.
+  Prompt();
   getNextToken();
   MainLoop();
 

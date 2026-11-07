@@ -257,20 +257,24 @@ static void HandleNumber() {
   }
 }
 
+static void Prompt() { fprintf(stderr, "ready> "); }
+
 static void MainLoop() {
   while (true) {
-    fprintf(stderr, "ready> ");
     switch (CurTok) {
     case tok_eof:
       return;
     case ';':
+      Prompt();
       getNextToken();
       break;
     case tok_number:
       HandleNumber();
       break;
     default:
-      getNextToken();
+      // Skip tokens for error recovery until the next semicolon.
+      while (CurTok != ';' && CurTok != tok_eof)
+        getNextToken();
       break;
     }
   }
@@ -282,6 +286,8 @@ int main() {
   printf("Kaleidoscope LLVM IR Generator (Step 4.1: Numbers)\n");
   printf("Type a number followed by ';' and press Enter (Ctrl+D to exit):\n\n");
 
+  // Prime the first token.
+  Prompt();
   getNextToken();
   MainLoop();
 

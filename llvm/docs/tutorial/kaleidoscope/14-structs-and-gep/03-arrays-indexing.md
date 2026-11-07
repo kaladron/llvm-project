@@ -156,6 +156,39 @@ int main() {
 
 ---
 
+## Compiling and Running
+
+Compile the struct and GEP demonstration:
+
+```bash
+clang++ -Wall -Wextra kaleidoscope.cpp $(llvm-config --cxxflags --ldflags --system-libs --libs core) -o kaleidoscope
+```
+
+Run the binary:
+
+```bash
+./kaleidoscope
+```
+
+The program calculates data layout statistics for `struct Point`, constructs `@get_point_y` using `CreateStructGEP`, verifies the module, and prints the generated LLVM IR:
+
+```text
+Struct Point size: 16 bytes, align: 8 bytes
+; ModuleID = 'struct_gep_demo'
+source_filename = "struct_gep_demo"
+
+%Point = type { i32, double }
+
+define double @get_point_y(ptr %p) {
+entry:
+  %y_ptr = getelementptr inbounds nuw %Point, ptr %p, i32 0, i32 1
+  %y_val = load double, ptr %y_ptr, align 8
+  ret double %y_val
+}
+```
+
+---
+
 ## Active Learning Challenge
 
 <details>

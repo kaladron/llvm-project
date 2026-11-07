@@ -877,7 +877,7 @@ llvm::Function *FunctionAST::codegen() {
 static void HandleDefinition() {
   if (auto FnAST = ParseDefinition()) {
     if (auto *FnIR = FnAST->codegen()) {
-      fprintf(stderr, "Parsed a function definition.\n");
+      fprintf(stderr, "Read function definition:\n");
       FnIR->print(llvm::errs());
       fprintf(stderr, "\n");
       llvm::cantFail(TheJIT->addModule(llvm::orc::ThreadSafeModule(
@@ -885,26 +885,30 @@ static void HandleDefinition() {
       InitializeModuleAndManagers();
     }
   } else {
-    getNextToken();
+    // Skip token for error recovery.
+    while (CurTok != ';' && CurTok != tok_eof)
+      getNextToken();
   }
 }
 
 static void HandleExtern() {
   if (auto ProtoAST = ParseExtern()) {
     if (auto *FnIR = ProtoAST->codegen()) {
-      fprintf(stderr, "Parsed an extern\n");
+      fprintf(stderr, "Read extern:\n");
       FnIR->print(llvm::errs());
       fprintf(stderr, "\n");
       FunctionProtos[ProtoAST->getName()] = std::move(ProtoAST);
     }
   } else {
-    getNextToken();
+    // Skip token for error recovery.
+    while (CurTok != ';' && CurTok != tok_eof)
+      getNextToken();
   }
 }
 
 static void HandleTopLevelExpression() {
   if (auto FnAST = ParseTopLevelExpr()) {
-    if (auto *FnIR = FnAST->codegen()) {
+    if (FnAST->codegen()) {
       auto RT = TheJIT->getMainJITDylib().createResourceTracker();
       auto TSM = llvm::orc::ThreadSafeModule(std::move(TheModule),
                                              std::move(TheContext));
@@ -917,17 +921,21 @@ static void HandleTopLevelExpression() {
       llvm::cantFail(RT->remove());
     }
   } else {
-    getNextToken();
+    // Skip token for error recovery.
+    while (CurTok != ';' && CurTok != tok_eof)
+      getNextToken();
   }
 }
 
+static void Prompt() { fprintf(stderr, "ready> "); }
+
 static void MainLoop() {
   while (true) {
-    fprintf(stderr, "ready> ");
     switch (CurTok) {
     case tok_eof:
       return;
     case ';':
+      Prompt();
       getNextToken();
       break;
     case tok_def:
@@ -958,6 +966,8 @@ int main() {
   TheJIT = llvm::cantFail(llvm::orc::KaleidoscopeJIT::Create());
   InitializeModuleAndManagers();
 
+  // Prime the first token.
+  Prompt();
   getNextToken();
   MainLoop();
 
