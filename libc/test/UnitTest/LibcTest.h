@@ -383,31 +383,25 @@ CString libc_make_test_file_path_func(const char *file_name);
   SuiteClass##_##TestName SuiteClass##_##TestName##_Instance;                  \
   void SuiteClass##_##TestName::Run()
 
-// Helper to trick the compiler into ignoring lack of braces on the else
-// branch.  We cannot introduce braces at this point, since it would prevent
-// using `<< ...` after the test macro for additional failure output.
-#define LIBC_TEST_DISABLE_DANGLING_ELSE                                        \
-  switch (0)                                                                   \
-  case 0:                                                                      \
-  default: // NOLINT
+#define LIBC_TEST_CONCAT_INNER_(a, b) a##b
+#define LIBC_TEST_CONCAT_(a, b) LIBC_TEST_CONCAT_INNER_(a, b)
 
 // If RET_OR_EMPTY is the 'return' keyword we perform an early return which
 // corresponds to an assert. If it is empty the execution continues, this
 // corresponds to an expect.
 //
-// The 'else' clause must not be enclosed into braces so that the << operator
-// can be used to fill the Message.
-//
-// TEST is usually implemented as a function performing checking logic and
-// returning a boolean. This expression is responsible for logging the
-// diagnostic in case of failure.
+// A single-iteration 'for' loop avoids an inner 'if/else' statement so outer
+// braceless 'if' statements never trigger GCC's -Wdangling-else warning, while
+// still allowing trailing '<<' operators to stream into Message. Suffixing
+// __LINE__ avoids -Wshadow when TEST contains a lambda with nested assertions.
+#define LIBC_TEST_SCAFFOLDING_IMPL_(TEST, RET_OR_EMPTY, FAIL_VAR)              \
+  for (bool FAIL_VAR = !(TEST); FAIL_VAR; FAIL_VAR = false)                    \
+  RET_OR_EMPTY LIBC_NAMESPACE::testing::internal::Failure() =                  \
+      LIBC_NAMESPACE::testing::internal::Message()
+
 #define LIBC_TEST_SCAFFOLDING_(TEST, RET_OR_EMPTY)                             \
-  LIBC_TEST_DISABLE_DANGLING_ELSE                                              \
-  if (TEST)                                                                    \
-    ;                                                                          \
-  else                                                                         \
-    RET_OR_EMPTY LIBC_NAMESPACE::testing::internal::Failure() =                \
-        LIBC_NAMESPACE::testing::internal::Message()
+  LIBC_TEST_SCAFFOLDING_IMPL_(TEST, RET_OR_EMPTY,                              \
+                              LIBC_TEST_CONCAT_(libc_test_fail_, __LINE__))
 
 #define LIBC_TEST_BINOP_(COND, LHS, RHS, RET_OR_EMPTY)                         \
   LIBC_TEST_SCAFFOLDING_(LIBC_NAMESPACE::testing::internal::test(              \

@@ -39,14 +39,17 @@ int preinitval = 0;
 __attribute__((constructor)) void set_initval() {
   initval = INITVAL_INITIALIZER;
 }
-__attribute__((destructor(1))) void reset_initval() {
+// Priorities 0..100 are reserved for the implementation (-Wprio-ctor-dtor).
+// Destructors run after unprioritized global destructors in descending numeric
+// priority order (102 before 101).
+__attribute__((destructor(101))) void reset_initval() {
   ASSERT_TRUE(global_destroyed);
   ASSERT_EQ(preinitval, 0);
   initval = 0;
 }
 
 void set_preinitval() { preinitval = INITVAL_INITIALIZER; }
-__attribute__((destructor(2))) void reset_preinitval() {
+__attribute__((destructor(102))) void reset_preinitval() {
   ASSERT_TRUE(global_destroyed);
   ASSERT_EQ(initval, INITVAL_INITIALIZER);
   preinitval = 0;

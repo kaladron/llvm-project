@@ -83,9 +83,11 @@ protected:
     }
 
     FILE *existing = LIBC_NAMESPACE::fopen(TEST_FILE, mode);
-    EXPECT_THAT(existing, Fails(EEXIST, static_cast<void *>(nullptr)));
-    if (existing != nullptr)
-      EXPECT_THAT(LIBC_NAMESPACE::fclose(existing), Succeeds(0));
+    scope_exit close_existing([&] {
+      if (existing != nullptr)
+        EXPECT_THAT(LIBC_NAMESPACE::fclose(existing), Succeeds(0));
+    });
+    EXPECT_THAT(static_cast<void *>(existing), Fails<void *>(EEXIST, nullptr));
 
     file = LIBC_NAMESPACE::fopen(TEST_FILE, "r");
     ASSERT_NE(file, nullptr);

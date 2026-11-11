@@ -33,7 +33,11 @@ add_libc_test(
   SRCS
     waitid_test.cpp
   DEPENDS
-    libc.include.sys_wait
+    libc.hdr.errno_macros
+    libc.hdr.sys_wait_macros
+    libc.hdr.types.id_t
+    libc.hdr.types.idtype_t
+    libc.hdr.types.siginfo_t
     libc.src.sys.wait.waitid
     libc.test.UnitTest.ErrnoCheckingTest
     libc.test.UnitTest.ErrnoSetterMatcher

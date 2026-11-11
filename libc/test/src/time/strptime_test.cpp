@@ -16,7 +16,7 @@
 #include "test/UnitTest/Test.h"
 
 TEST(LlvmLibcStrptimeTest, StubReturnsNull) {
-  struct tm time;
+  struct tm time{};
   char *result;
 
   result = LIBC_NAMESPACE::strptime("13:23:45", "%T", &time);

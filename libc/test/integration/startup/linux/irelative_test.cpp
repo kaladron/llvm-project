@@ -18,15 +18,18 @@
 static int impl_a() { return 42; }
 static int impl_b() { return 84; }
 
-// The resolver function. On x86_64 this takes no arguments; on AArch64 it
-// receives (hwcap, hwcap2). We use extern "C" to ensure C linkage for the
-// ifunc attribute.
+// The resolver function. On x86_64 and RISC-V this takes no arguments; on
+// AArch64 it receives (hwcap, hwcap2). We use extern "C" to ensure C linkage
+// for the ifunc attribute.
 extern "C" {
-// Declare the resolver to return a generic function pointer.
 // For testing, unconditionally select impl_a.
-void *my_ifunc_resolver() {
+#ifdef LIBC_TARGET_ARCH_IS_AARCH64
+int (*my_ifunc_resolver(unsigned long, unsigned long))() {
+#else
+int (*my_ifunc_resolver())() {
+#endif
   (void)impl_b; // Suppress unused warning.
-  return reinterpret_cast<void *>(impl_a);
+  return impl_a;
 }
 }
 
