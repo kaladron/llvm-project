@@ -131,51 +131,51 @@ class TestRule6_MultilineArgumentLayout(unittest.TestCase):
         self.assertEqual(cmake_format.format_cmake_content(code), expected)
 
     def test_6_3b_multivalue_header_line(self):
-        """Rule 6.3b: Header-line keywords indent +4 when sibling keywords exist, else +2."""
+        """Rule 6.3b: Splits trailing header-line keywords and indents items +4."""
         code = "add_entrypoint_object(target SRCS s1.cpp s2.cpp)\n"
         expected = "add_entrypoint_object(target SRCS s1.cpp s2.cpp)\n"
         self.assertEqual(cmake_format.format_cmake_content(code), expected)
 
-        builtin_code = "add_library(target STATIC\n  s1.c\n  PRIVATE\n  dep1\n)\n"
-        builtin_expected = (
-            "add_library(target STATIC\n    s1.c\n  PRIVATE\n    dep1\n)\n"
-        )
-        self.assertEqual(
-            cmake_format.format_cmake_content(builtin_code), builtin_expected
-        )
-
-        ctx = cmake_format.FormatterContext()
-        cmake_format.scan_dynamic_schemas(
-            "function(add_entrypoint_object name)\n"
-            '  cmake_parse_arguments("ARG" "ALIAS" "" "SRCS;DEPENDS" ${ARGN})\n'
-            "endfunction()\n",
-            ctx=ctx,
-        )
-        sibling_code = (
-            "add_entrypoint_object(target SRCS\n  s1.cpp\n  DEPENDS\n  dep1\n)\n"
-        )
-        sibling_expected = (
-            "add_entrypoint_object(target SRCS\n    s1.cpp\n  DEPENDS\n    dep1\n)\n"
-        )
-        self.assertEqual(
-            cmake_format.format_cmake_content(sibling_code, ctx=ctx), sibling_expected
-        )
-
-        # Single-keyword command with header-line keyword stays at +2.
-        single_kw_code = "set_target_properties(tgt PROPERTIES\n    PROP val\n)\n"
-        single_kw_expected = "set_target_properties(tgt PROPERTIES\n  PROP val\n)\n"
-        self.assertEqual(
-            cmake_format.format_cmake_content(single_kw_code), single_kw_expected
-        )
-
-        # Standalone PROPERTIES line still indents child items +4 (+2 under PROPERTIES).
-        separate_kw_code = "set_target_properties(tgt\n  PROPERTIES\n  PROP val\n)\n"
-        separate_kw_expected = (
-            "set_target_properties(tgt\n  PROPERTIES\n    PROP val\n)\n"
-        )
-        self.assertEqual(
-            cmake_format.format_cmake_content(separate_kw_code), separate_kw_expected
-        )
+        for src, want in [
+            (
+                "add_library(target STATIC\n  s1.c\n  PRIVATE\n  dep1\n)\n",
+                "add_library(target\n  STATIC\n    s1.c\n  PRIVATE\n    dep1\n)\n",
+            ),
+            (
+                "set_target_properties(tgt PROPERTIES\n  PROP val\n)\n",
+                "set_target_properties(tgt\n  PROPERTIES\n    PROP val\n)\n",
+            ),
+            (
+                "set_directory_properties(PROPERTIES\n  PROP val\n)\n",
+                "set_directory_properties(\n  PROPERTIES\n    PROP val\n)\n",
+            ),
+            (
+                "add_entrypoint_object(target SRCS\n  s1.cpp\n  DEPENDS\n  dep1\n)\n",
+                "add_entrypoint_object(target\n  SRCS\n    s1.cpp\n  DEPENDS\n"
+                "    dep1\n)\n",
+            ),
+            (
+                "add_library(foo STATIC # header note\n  a.c\n)\n",
+                "add_library(foo # header note\n  STATIC\n    a.c\n)\n",
+            ),
+            (
+                "add_library(foo STATIC\n  # note\n)\n",
+                "add_library(foo\n  STATIC\n    # note\n)\n",
+            ),
+            (
+                "add_library(foo\n  STATIC\n    # note\n)\n",
+                "add_library(foo\n  STATIC\n    # note\n)\n",
+            ),
+            (
+                "execute_process(COMMAND prog\n  --arg\n  OUTPUT_VARIABLE out\n)\n",
+                "execute_process(COMMAND prog\n    --arg\n  OUTPUT_VARIABLE out\n)\n",
+            ),
+            (
+                "set_target_properties(tgt\n  PROPERTIES\n  PROP val\n)\n",
+                "set_target_properties(tgt\n  PROPERTIES\n    PROP val\n)\n",
+            ),
+        ]:
+            self.assertEqual(cmake_format.format_cmake_content(src), want)
 
     def test_6_4_argument_forwarding_vars(self):
         """Rule 6.4: Argument forwarding variables (${ARGN}, ${ARGV}) align at +2 spaces and reset active keyword."""

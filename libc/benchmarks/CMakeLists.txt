@@ -106,18 +106,20 @@ file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/google-benchmark-libc/include")
 
 if(NOT TARGET benchmark::benchmark)
   add_library(benchmark::benchmark STATIC IMPORTED)
-  set_target_properties(benchmark::benchmark PROPERTIES
-    IMPORTED_LOCATION "${CMAKE_CURRENT_BINARY_DIR}/google-benchmark-libc/lib/libbenchmark.a"
-    INTERFACE_INCLUDE_DIRECTORIES "${CMAKE_CURRENT_BINARY_DIR}/google-benchmark-libc/include"
+  set_target_properties(benchmark::benchmark
+    PROPERTIES
+      IMPORTED_LOCATION "${CMAKE_CURRENT_BINARY_DIR}/google-benchmark-libc/lib/libbenchmark.a"
+      INTERFACE_INCLUDE_DIRECTORIES "${CMAKE_CURRENT_BINARY_DIR}/google-benchmark-libc/include"
   )
   add_dependencies(benchmark::benchmark google-benchmark-libc)
 endif()
 
 if(NOT TARGET benchmark_main)
   add_library(benchmark_main STATIC IMPORTED)
-  set_target_properties(benchmark_main PROPERTIES
-    IMPORTED_LOCATION "${CMAKE_CURRENT_BINARY_DIR}/google-benchmark-libc/lib/libbenchmark_main.a"
-    INTERFACE_INCLUDE_DIRECTORIES "${CMAKE_CURRENT_BINARY_DIR}/google-benchmark-libc/include"
+  set_target_properties(benchmark_main
+    PROPERTIES
+      IMPORTED_LOCATION "${CMAKE_CURRENT_BINARY_DIR}/google-benchmark-libc/lib/libbenchmark_main.a"
+      INTERFACE_INCLUDE_DIRECTORIES "${CMAKE_CURRENT_BINARY_DIR}/google-benchmark-libc/include"
   )
   add_dependencies(benchmark_main google-benchmark-libc)
 endif()

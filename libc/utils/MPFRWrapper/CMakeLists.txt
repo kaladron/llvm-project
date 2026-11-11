@@ -1,5 +1,6 @@
 if(LIBC_TESTS_CAN_USE_MPFR OR LIBC_TESTS_CAN_USE_MPC)
-  add_library(libc.utils.MPCommon STATIC
+  add_library(libc.utils.MPCommon
+    STATIC
       MPCommon.cpp
       MPCommon.h
       mpfr_inc.h
@@ -34,7 +35,8 @@ elseif(NOT LIBC_TARGET_OS_IS_GPU AND NOT LLVM_LIBC_FULL_BUILD)
 endif()
 
 if(LIBC_TESTS_CAN_USE_MPFR)
-  add_library(libc.utils.MPFRWrapper STATIC
+  add_library(libc.utils.MPFRWrapper
+    STATIC
       MPFRUtils.cpp
       MPFRUtils.h
   )

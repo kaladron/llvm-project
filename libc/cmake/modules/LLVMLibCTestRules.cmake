@@ -320,10 +320,11 @@ function(get_object_files_for_test result skipped_entrypoints_list)
         endif()
       endif()
 
-      set_target_properties(${dep} PROPERTIES
-        OBJECT_FILES_FOR_TESTS "${dep_obj}"
-        SKIPPED_LIST_FOR_TESTS "${dep_skip}"
-        CHECK_OBJ_FOR_TESTS "YES"
+      set_target_properties(${dep}
+        PROPERTIES
+          OBJECT_FILES_FOR_TESTS "${dep_obj}"
+          SKIPPED_LIST_FOR_TESTS "${dep_skip}"
+          CHECK_OBJ_FOR_TESTS "YES"
       )
 
     endif()
@@ -941,7 +942,8 @@ function(add_libc_fuzzer target_name)
   target_include_directories(${fq_target_name} SYSTEM PRIVATE ${LIBC_INCLUDE_DIR})
   target_include_directories(${fq_target_name} PRIVATE ${LIBC_SOURCE_DIR})
 
-  target_link_libraries(${fq_target_name} PRIVATE
+  target_link_libraries(${fq_target_name}
+    PRIVATE
       ${link_object_files}
       ${link_libraries}
   )

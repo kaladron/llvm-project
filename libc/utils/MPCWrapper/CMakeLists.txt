@@ -1,5 +1,6 @@
 if(LIBC_TESTS_CAN_USE_MPC)
-  add_library(libc.utils.MPCWrapper STATIC
+  add_library(libc.utils.MPCWrapper
+    STATIC
       MPCUtils.cpp
       MPCUtils.h
       mpc_inc.h
