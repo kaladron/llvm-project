@@ -135,6 +135,11 @@ struct LineScan {
   bool matched = false;
 };
 
+struct ProtoQuery {
+  cpp::optional<cpp::string_view> name;
+  int proto = 0;
+};
+
 } // namespace
 
 static cpp::optional<int>
@@ -221,18 +226,16 @@ static int pack_protoent(const cpp::StringStream &out, cpp::span<char> buffer,
   return 0;
 }
 
-static ErrorOr<cpp::optional<int>> parse_line(LineReader &reader,
-                                              cpp::string_view target_name,
-                                              cpp::span<char> buffer,
-                                              struct protoent *result_buf,
-                                              struct protoent **result) {
+static ErrorOr<cpp::optional<int>>
+parse_line(LineReader &reader, ProtoQuery query, cpp::span<char> buffer,
+           struct protoent *result_buf, struct protoent **result) {
   constexpr size_t NUM_BUF_SIZE = 32;
   char num_buf[NUM_BUF_SIZE];
   cpp::StringStream out(buffer);
   cpp::StringStream num_out(num_buf);
 
-  ErrorOr<LineScan> scan_or =
-      scan_line_tokens(reader, target_name, out, num_out);
+  ErrorOr<LineScan> scan_or = scan_line_tokens(
+      reader, query.name.value_or(cpp::string_view{}), out, num_out);
   if (!scan_or.has_value())
     return Error(scan_or.error());
 
@@ -241,25 +244,29 @@ static ErrorOr<cpp::optional<int>> parse_line(LineReader &reader,
       return cpp::optional<int>(0);
     return cpp::optional<int>(cpp::nullopt);
   }
-  if (!scan_or->matched || reader.is_invalid())
+  if (reader.is_invalid())
+    return cpp::optional<int>(cpp::nullopt);
+  if (query.name.has_value() && !scan_or->matched)
     return cpp::optional<int>(cpp::nullopt);
 
   const cpp::optional<int> PROTO_NUM = parse_protocol_number(num_out);
   if (!PROTO_NUM.has_value())
+    return cpp::optional<int>(cpp::nullopt);
+  if (!query.name.has_value() && *PROTO_NUM != query.proto)
     return cpp::optional<int>(cpp::nullopt);
 
   return cpp::optional<int>(pack_protoent(
       out, buffer, *PROTO_NUM, scan_or->token_count - 2, result_buf, result));
 }
 
-static int search_protocols(File *file, cpp::string_view target_name,
+static int search_protocols(File *file, ProtoQuery query,
                             cpp::span<char> buffer, struct protoent *result_buf,
                             struct protoent **result) {
   LineReader reader(file);
 
   while (true) {
     ErrorOr<cpp::optional<int>> line_or =
-        parse_line(reader, target_name, buffer, result_buf, result);
+        parse_line(reader, query, buffer, result_buf, result);
     if (!line_or.has_value())
       return line_or.error();
     if (line_or->has_value())
@@ -267,10 +274,9 @@ static int search_protocols(File *file, cpp::string_view target_name,
   }
 }
 
-int netdb::lookup_proto_by_name(cpp::string_view name,
-                                struct protoent *result_buf,
-                                cpp::span<char> buffer,
-                                struct protoent **result, const char *path) {
+static int lookup_proto(ProtoQuery query, struct protoent *result_buf,
+                        cpp::span<char> buffer, struct protoent **result,
+                        const char *path) {
   *result = nullptr;
 
   const char *db_path = path != nullptr ? path : DEFAULT_PROTOCOLS_PATH;
@@ -282,7 +288,20 @@ int netdb::lookup_proto_by_name(cpp::string_view name,
   cpp::scope_exit close_file([file]() { file->close(); });
   File::FileLock lock(file);
 
-  return search_protocols(file, name, buffer, result_buf, result);
+  return search_protocols(file, query, buffer, result_buf, result);
+}
+
+int netdb::lookup_proto_by_name(cpp::string_view name,
+                                struct protoent *result_buf,
+                                cpp::span<char> buffer,
+                                struct protoent **result, const char *path) {
+  return lookup_proto({name, 0}, result_buf, buffer, result, path);
+}
+
+int netdb::lookup_proto_by_num(int proto, struct protoent *result_buf,
+                               cpp::span<char> buffer, struct protoent **result,
+                               const char *path) {
+  return lookup_proto({cpp::nullopt, proto}, result_buf, buffer, result, path);
 }
 
 } // namespace LIBC_NAMESPACE_DECL

@@ -39,6 +39,10 @@ int lookup_proto_by_name(cpp::string_view name, struct protoent *result_buf,
                          cpp::span<char> buffer, struct protoent **result,
                          const char *path = nullptr);
 
+int lookup_proto_by_num(int proto, struct protoent *result_buf,
+                        cpp::span<char> buffer, struct protoent **result,
+                        const char *path = nullptr);
+
 } // namespace netdb
 } // namespace LIBC_NAMESPACE_DECL
 

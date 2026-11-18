@@ -77,3 +77,13 @@ functions:
       - type: char *__restrict
       - type: size_t
       - type: struct protoent **__restrict
+  - name: getprotobynumber_r
+    standards:
+      - gnu
+    return_type: int
+    arguments:
+      - type: int
+      - type: struct protoent *__restrict
+      - type: char *__restrict
+      - type: size_t
+      - type: struct protoent **__restrict

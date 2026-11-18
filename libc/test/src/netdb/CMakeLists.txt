@@ -52,3 +52,24 @@ add_libc_test(
     libc.src.string.string_utils
     libc.test.UnitTest.ErrnoCheckingTest
 )
+
+add_libc_test(
+  getprotobynumber_r_test
+  SUITE
+    libc-netdb-tests
+  SRCS
+    getprotobynumber_r_test.cpp
+  DEPENDS
+    libc.hdr.errno_macros
+    libc.hdr.signal_macros
+    libc.hdr.types.size_t
+    libc.hdr.types.struct_protoent
+    libc.src.__support.CPP.string_view
+    libc.src.__support.File.file
+    libc.src.__support.File.platform_file
+    libc.src.netdb.getproto_internal
+    libc.src.netdb.getprotobynumber_r
+    libc.src.stdio.remove
+    libc.src.string.string_utils
+    libc.test.UnitTest.ErrnoCheckingTest
+)
