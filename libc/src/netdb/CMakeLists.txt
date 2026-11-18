@@ -225,3 +225,17 @@ add_entrypoint_object(
     libc.src.__support.CPP.span
     libc.src.__support.macros.null_check
 )
+
+add_entrypoint_object(
+  getservbyport_r
+  SRCS
+    getservbyport_r.cpp
+  HDRS
+    getservbyport_r.h
+  DEPENDS
+    libc.hdr.types.size_t
+    libc.hdr.types.struct_servent
+    libc.src.__support.CPP.span
+    libc.src.__support.macros.null_check
+    libc.src.__support.netdb.services
+)

@@ -671,6 +671,14 @@ add_proxy_header_library(
 )
 
 add_proxy_header_library(
+  in_port_t
+  HDRS
+    in_port_t.h
+  FULL_BUILD_DEPENDS
+    libc.include.llvm-libc-types.in_port_t
+)
+
+add_proxy_header_library(
   struct_ifreq
   HDRS
     struct_ifreq.h
@@ -726,6 +734,14 @@ add_proxy_header_library(
     struct_protoent.h
   FULL_BUILD_DEPENDS
     libc.include.llvm-libc-types.struct_protoent
+)
+
+add_proxy_header_library(
+  struct_servent
+  HDRS
+    struct_servent.h
+  FULL_BUILD_DEPENDS
+    libc.include.llvm-libc-types.struct_servent
 )
 
 add_proxy_header_library(

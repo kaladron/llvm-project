@@ -54,10 +54,12 @@ macros:
   - macro_name: h_errno
     macro_header: netdb-macros.h
 types:
+  - type_name: in_port_t
   - type_name: size_t
   - type_name: struct_addrinfo
   - type_name: struct_netent
   - type_name: struct_protoent
+  - type_name: struct_servent
   - type_name: uint32_t
 enums: []
 objects: []
@@ -157,3 +159,14 @@ functions:
       - type: char *__restrict
       - type: size_t
       - type: struct protoent **__restrict
+  - name: getservbyport_r
+    standards:
+      - gnu
+    return_type: int
+    arguments:
+      - type: int
+      - type: const char *__restrict
+      - type: struct servent *__restrict
+      - type: char *__restrict
+      - type: size_t
+      - type: struct servent **__restrict

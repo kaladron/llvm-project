@@ -173,3 +173,23 @@ add_libc_test(
     libc.src.string.string_utils
     libc.test.UnitTest.ErrnoCheckingTest
 )
+
+add_libc_test(
+  getservbyport_r_test
+  SUITE
+    libc-netdb-tests
+  SRCS
+    getservbyport_r_test.cpp
+  DEPENDS
+    .test_db_file
+    libc.hdr.errno_macros
+    libc.hdr.signal_macros
+    libc.hdr.types.in_port_t
+    libc.hdr.types.size_t
+    libc.hdr.types.struct_servent
+    libc.src.__support.CPP.string_view
+    libc.src.__support.net.byte_order
+    libc.src.__support.netdb.services
+    libc.src.netdb.getservbyport_r
+    libc.test.UnitTest.ErrnoCheckingTest
+)

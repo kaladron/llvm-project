@@ -1855,6 +1855,7 @@ if(LLVM_LIBC_ENABLE_EXPERIMENTAL_ENTRYPOINTS)
       libc.src.netdb.getprotobyname_r
       libc.src.netdb.getprotobynumber
       libc.src.netdb.getprotobynumber_r
+      libc.src.netdb.getservbyport_r
 
       # regex.h entrypoints
       libc.src.regex.regcomp
