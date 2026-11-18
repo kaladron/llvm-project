@@ -7,8 +7,10 @@
 //===----------------------------------------------------------------------===//
 
 #include "src/stdlib/bsearch.h"
+#include "src/__support/CPP/span.h"
 #include "src/__support/common.h"
 #include "src/__support/macros/config.h"
+#include "src/__support/math_extras.h"
 
 #include "hdr/stdint_proxy.h"
 
@@ -21,21 +23,21 @@ LLVM_LIBC_FUNCTION(void *, bsearch,
   if (key == nullptr || array == nullptr || array_size == 0 || elem_size == 0)
     return nullptr;
 
-  while (array_size > 0) {
-    size_t mid = array_size / 2;
-    const void *elem =
-        reinterpret_cast<const uint8_t *>(array) + mid * elem_size;
+  size_t byte_len = 0;
+  if (mul_overflow(array_size, elem_size, byte_len))
+    return nullptr;
+
+  cpp::span<const uint8_t> bytes(reinterpret_cast<const uint8_t *>(array),
+                                 byte_len);
+  while (!bytes.empty()) {
+    size_t mid = (bytes.size() / elem_size) / 2;
+    size_t mid_offset = mid * elem_size;
+    const void *elem = bytes.subspan(mid_offset, elem_size).data();
     int compare_result = compare(key, elem);
     if (compare_result < 0) {
-      // This means that key is less than the element at |mid|.
-      // So, in the next iteration, we only compare elements less
-      // than mid.
-      array_size = mid;
+      bytes = bytes.first(mid_offset);
     } else if (compare_result > 0) {
-      // |mid| is strictly less than |array_size|. So, the below
-      // decrement in |array_size| will not lead to a wrap around.
-      array_size -= (mid + 1);
-      array = reinterpret_cast<const uint8_t *>(elem) + elem_size;
+      bytes = bytes.subspan(mid_offset + elem_size);
     } else {
       return const_cast<void *>(elem);
     }

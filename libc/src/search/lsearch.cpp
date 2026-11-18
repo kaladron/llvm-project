@@ -8,6 +8,7 @@
 
 #include "src/search/lsearch.h"
 #include "src/__support/CPP/cstddef.h" // cpp::byte
+#include "src/__support/CPP/span.h"
 #include "src/__support/common.h"
 #include "src/__support/macros/config.h"
 #include "src/__support/math_extras.h"
@@ -25,15 +26,26 @@ LLVM_LIBC_FUNCTION(void *, lsearch,
   if (mul_overflow(*nmemb, size, byte_len))
     return nullptr;
 
-  const cpp::byte *next = reinterpret_cast<const cpp::byte *>(base);
-  const cpp::byte *end = next + byte_len;
-  for (; next < end; next += size)
-    if (compar(key, next) == 0)
-      return const_cast<cpp::byte *>(next);
+  cpp::span<const cpp::byte> remaining(
+      reinterpret_cast<const cpp::byte *>(base), byte_len);
+  while (!remaining.empty()) {
+    if (compar(key, remaining.data()) == 0)
+      return const_cast<cpp::byte *>(remaining.data());
+    remaining = remaining.subspan(size);
+  }
 
-  *nmemb += 1;
-  inline_memcpy(const_cast<cpp::byte *>(end), key, size);
-  return const_cast<cpp::byte *>(end);
+  size_t new_nmemb = 0;
+  size_t total_bytes = 0;
+  if (add_overflow(*nmemb, static_cast<size_t>(1), new_nmemb) ||
+      add_overflow(byte_len, size, total_bytes))
+    return nullptr;
+
+  cpp::span<cpp::byte> appended =
+      cpp::span<cpp::byte>(reinterpret_cast<cpp::byte *>(base), total_bytes)
+          .last(size);
+  *nmemb = new_nmemb;
+  inline_memcpy(appended.data(), key, appended.size());
+  return appended.data();
 }
 
 } // namespace LIBC_NAMESPACE_DECL

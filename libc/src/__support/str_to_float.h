@@ -20,6 +20,7 @@
 #include "src/__support/CPP/bit.h"
 #include "src/__support/CPP/limits.h"
 #include "src/__support/CPP/optional.h"
+#include "src/__support/CPP/span.h"
 #include "src/__support/CPP/string_view.h"
 #include "src/__support/FPUtil/FPBits.h"
 #include "src/__support/FPUtil/rounding_mode.h"
@@ -1111,23 +1112,29 @@ hexadecimal_string_to_float(const CharType *__restrict src,
 
 template <typename T, typename CharType>
 LIBC_INLINE constexpr typename fputil::FPBits<T>::StorageType
-nan_mantissa_from_ncharseq(const CharType *str, size_t len) {
+nan_mantissa_from_ncharseq(cpp::span<const CharType> ncharseq) {
   using FPBits = typename fputil::FPBits<T>;
   using StorageType = typename FPBits::StorageType;
 
   StorageType nan_mantissa = 0;
 
-  if (len > 0 && isdigit(str[0])) {
+  if (!ncharseq.empty() && isdigit(ncharseq.front())) {
     StrToNumResult<StorageType> strtoint_result =
-        strtointeger<StorageType>(str, 0, len);
+        strtointeger<StorageType>(ncharseq.data(), 0, ncharseq.size());
     if (!strtoint_result.has_error())
       nan_mantissa = strtoint_result.value;
 
-    if (strtoint_result.parsed_len != static_cast<ptrdiff_t>(len))
+    if (strtoint_result.parsed_len != static_cast<ptrdiff_t>(ncharseq.size()))
       nan_mantissa = 0;
   }
 
   return nan_mantissa;
+}
+
+template <typename T, typename CharType>
+LIBC_INLINE constexpr typename fputil::FPBits<T>::StorageType
+nan_mantissa_from_ncharseq(const CharType *str, size_t len) {
+  return nan_mantissa_from_ncharseq<T>(cpp::span<const CharType>(str, len));
 }
 
 // Takes a pointer to a string and a pointer to a string pointer. This function
@@ -1210,8 +1217,8 @@ strtofloatingpoint(const CharType *__restrict src) {
         ++index;
       if (is_char_or_wchar(src[index], ')', L')')) {
         ++index;
-        nan_mantissa = nan_mantissa_from_ncharseq<T>(src + (left_paren + 1),
-                                                     index - left_paren - 2);
+        nan_mantissa = nan_mantissa_from_ncharseq<T>(cpp::span<const CharType>(
+            src + (left_paren + 1), index - left_paren - 2));
       } else {
         index = left_paren;
       }
@@ -1253,12 +1260,13 @@ LIBC_INLINE constexpr StrToNumResult<T> strtonan(const char *arg) {
   int error = 0;
   StorageType nan_mantissa = 0;
 
-  ptrdiff_t index = 0;
+  size_t index = 0;
   while (isalnum(arg[index]) || arg[index] == '_')
     ++index;
 
   if (arg[index] == '\0')
-    nan_mantissa = nan_mantissa_from_ncharseq<T>(arg, index);
+    nan_mantissa =
+        nan_mantissa_from_ncharseq<T>(cpp::span<const char>(arg, index));
 
   result = FPBits::quiet_nan(Sign::POS, nan_mantissa);
   return {result.get_val(), 0, error};

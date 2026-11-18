@@ -6,6 +6,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "src/__support/CPP/span.h"
 #include "src/stdlib/a64l.h"
 #include "test/UnitTest/Test.h"
 
@@ -54,10 +55,11 @@ TEST(LlvmLibcA64lTest, FiveSameCharacters) {
 
   // set every 6th bit
   const long BASE_NUM = 0b1000001000001000001000001;
+  LIBC_NAMESPACE::cpp::span<char> example_span(example_str);
 
   for (size_t char_val = 0; char_val < 64; ++char_val) {
-    for (size_t i = 0; i < 5; ++i)
-      example_str[i] = B64_CHARS[char_val];
+    for (char &ch : example_span.first<5>())
+      ch = B64_CHARS[char_val];
 
     const long expected_result = BASE_NUM * char_val;
 
@@ -67,14 +69,15 @@ TEST(LlvmLibcA64lTest, FiveSameCharacters) {
 
 TEST(LlvmLibcA64lTest, OneOfSixCharacters) {
   char example_str[7] = {'\0', '\0', '\0', '\0', '\0', '\0', '\0'};
+  LIBC_NAMESPACE::cpp::span<char> example_span(example_str);
 
   for (size_t cur_char = 0; cur_char < 6; ++cur_char) {
     // clear the string, set all the chars to b64(0)
-    for (size_t i = 0; i < 6; ++i)
-      example_str[i] = B64_CHARS[0];
+    for (char &ch : example_span.first<6>())
+      ch = B64_CHARS[0];
 
     for (size_t char_val = 0; char_val < 64; ++char_val) {
-      example_str[cur_char] = B64_CHARS[char_val];
+      example_span[cur_char] = B64_CHARS[char_val];
 
       // Need to limit to 32 bits, since that's what the standard says the
       // function does.

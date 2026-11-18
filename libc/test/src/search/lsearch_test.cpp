@@ -65,6 +65,8 @@ TEST(LlvmLibcLsearchTest, SearchExceptional) {
             nullptr);
   ASSERT_EQ(LIBC_NAMESPACE::lsearch(&key, list, &max_len, sizeof(int), compar),
             nullptr);
+  ASSERT_EQ(LIBC_NAMESPACE::lsearch(&key, list, &max_len, 0, compar), nullptr);
+  ASSERT_EQ(max_len, ~size_t{0});
   ASSERT_EQ(LIBC_NAMESPACE::lsearch(&key, list, &len, sizeof(int), nullptr),
             nullptr);
 }

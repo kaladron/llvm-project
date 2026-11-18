@@ -202,6 +202,8 @@ TEST_F(LlvmLibcStrfromdTest, InsufficientBufferSize) {
   result = LIBC_NAMESPACE::strfromd(buff, 0, "%g", 1.0);
   EXPECT_EQ(result, 1);
   ASSERT_STREQ(buff, "1.05"); // Make sure that buff has not changed
+
+  EXPECT_EQ(LIBC_NAMESPACE::strfromd(nullptr, 0, "%g", 1.0), 1);
 }
 
 TEST_F(LlvmLibcStrfromdTest, InfNanValues) {

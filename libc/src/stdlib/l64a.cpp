@@ -9,6 +9,7 @@
 #include "src/stdlib/l64a.h"
 #include "hdr/stdint_proxy.h"
 #include "hdr/types/size_t.h"
+#include "src/__support/CPP/span.h"
 #include "src/__support/common.h"
 #include "src/__support/ctype_utils.h"
 #include "src/__support/libc_assert.h"
@@ -48,14 +49,15 @@ LLVM_LIBC_FUNCTION(char *, l64a, (long value)) {
   // The standard says negative values are undefined, so I'm just defining them
   // to be treated as unsigned.
   uint32_t cur_value = static_cast<uint32_t>(value);
-  for (size_t i = 0; i < MAX_BASE64_LENGTH; ++i) {
+  cpp::span<char> buf(BASE64_BUFFER);
+  for (char &ch : buf.first<MAX_BASE64_LENGTH>()) {
     uint32_t cur_char = cur_value % 64;
-    BASE64_BUFFER[i] = b64_int_to_char(cur_char);
+    ch = b64_int_to_char(cur_char);
     cur_value /= 64;
   }
 
-  BASE64_BUFFER[MAX_BASE64_LENGTH] = '\0'; // force null termination.
-  return BASE64_BUFFER;
+  buf[MAX_BASE64_LENGTH] = '\0'; // force null termination.
+  return buf.data();
 }
 
 } // namespace LIBC_NAMESPACE_DECL

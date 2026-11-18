@@ -214,9 +214,10 @@ TEST_FOR_EACH_ALLOCATOR(ReallocShrinkAndAllocateTrailing, SMALL_HEAP_SIZE) {
   EXPECT_EQ(ptr1, ptr2);
 
   // Verify that the data in the shrunk block is preserved.
-  unsigned char *uptr2 = static_cast<unsigned char *>(ptr2);
-  for (size_t i = 0; i < NEW_ALLOC_SIZE; ++i)
-    EXPECT_EQ(uptr2[i], static_cast<unsigned char>(0x5A));
+  span<const unsigned char> uptr2(static_cast<const unsigned char *>(ptr2),
+                                  NEW_ALLOC_SIZE);
+  for (unsigned char b : uptr2)
+    EXPECT_EQ(b, static_cast<unsigned char>(0x5A));
 
   // Allocate another trailing block from the newly split/freed space.
   void *ptr3 = allocator.allocate(TRAILING_ALLOC_SIZE);
@@ -231,8 +232,8 @@ TEST_FOR_EACH_ALLOCATOR(ReallocShrinkAndAllocateTrailing, SMALL_HEAP_SIZE) {
   // shrunk block.
   LIBC_NAMESPACE::inline_memset(ptr3, 0xAA, TRAILING_ALLOC_SIZE);
 
-  for (size_t i = 0; i < NEW_ALLOC_SIZE; ++i)
-    EXPECT_EQ(uptr2[i], static_cast<unsigned char>(0x5A));
+  for (unsigned char b : uptr2)
+    EXPECT_EQ(b, static_cast<unsigned char>(0x5A));
 
   // Free the allocations.
   allocator.free(ptr2);
@@ -254,28 +255,30 @@ TEST_FOR_EACH_ALLOCATOR(ReallocTooLarge, 2048) {
 TEST_FOR_EACH_ALLOCATOR(CanCalloc, 2048) {
   constexpr size_t ALLOC_SIZE = 128;
   constexpr size_t NUM = 4;
-  constexpr int size = NUM * ALLOC_SIZE;
+  constexpr size_t SIZE = NUM * ALLOC_SIZE;
   constexpr byte zero{0};
 
   byte *ptr1 = reinterpret_cast<byte *>(allocator.calloc(NUM, ALLOC_SIZE));
+  ASSERT_NE(ptr1, static_cast<byte *>(nullptr));
 
   // calloc'd content is zero.
-  for (int i = 0; i < size; i++) {
-    EXPECT_EQ(ptr1[i], zero);
+  for (byte b : span<const byte>(ptr1, SIZE)) {
+    EXPECT_EQ(b, zero);
   }
 }
 
 TEST_FOR_EACH_ALLOCATOR(CanCallocWeirdSize, 2048) {
   constexpr size_t ALLOC_SIZE = 143;
   constexpr size_t NUM = 3;
-  constexpr int size = NUM * ALLOC_SIZE;
+  constexpr size_t SIZE = NUM * ALLOC_SIZE;
   constexpr byte zero{0};
 
   byte *ptr1 = reinterpret_cast<byte *>(allocator.calloc(NUM, ALLOC_SIZE));
+  ASSERT_NE(ptr1, static_cast<byte *>(nullptr));
 
   // calloc'd content is zero.
-  for (int i = 0; i < size; i++) {
-    EXPECT_EQ(ptr1[i], zero);
+  for (byte b : span<const byte>(ptr1, SIZE)) {
+    EXPECT_EQ(b, zero);
   }
 }
 

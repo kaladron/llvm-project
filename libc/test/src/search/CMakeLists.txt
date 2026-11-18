@@ -52,6 +52,7 @@ add_libc_test(
   SRCS
     tsearch_test.cpp
   DEPENDS
+    libc.src.__support.CPP.span
     libc.src.search.tsearch
     libc.src.search.tfind
     libc.src.search.tdelete

@@ -69,19 +69,22 @@ LIBC_INLINE ErrorOr<int> mktemp_core(char *tmpl, CreateFn create_fn) {
   cpp::array<uint8_t, BATCH_SIZE> rand_buf;
 
   for (size_t attempt = 0; attempt < MAX_ATTEMPTS; ++attempt) {
-    for (size_t offset = 0; offset < count;) {
+    cpp::span<char> remaining = suffix;
+    while (!remaining.empty()) {
       size_t chunk =
-          (count - offset < BATCH_SIZE) ? (count - offset) : BATCH_SIZE;
+          (remaining.size() < BATCH_SIZE) ? remaining.size() : BATCH_SIZE;
       auto ret = linux_syscalls::getrandom(rand_buf.data(), chunk, 0);
       if (!ret.has_value())
         return Error(ret.error());
-      if (ret.value() == 0)
+      if (ret.value() <= 0)
         return Error(EIO);
-      for (size_t j = 0; j < static_cast<size_t>(ret.value()); ++j) {
-        suffix[offset + j] =
-            MKTEMP_CHARSET[rand_buf[j] % MKTEMP_CHARSET.size()];
+      size_t read_len = static_cast<size_t>(ret.value());
+      cpp::span<const uint8_t> rand_slice =
+          cpp::span<const uint8_t>(rand_buf).first(read_len);
+      for (size_t j = 0; j < rand_slice.size(); ++j) {
+        remaining[j] = MKTEMP_CHARSET[rand_slice[j] % MKTEMP_CHARSET.size()];
       }
-      offset += static_cast<size_t>(ret.value());
+      remaining = remaining.subspan(read_len);
     }
 
     auto result = create_fn(tmpl);

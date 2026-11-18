@@ -111,6 +111,8 @@ add_entrypoint_object(
   DEPENDS
     libc.include.search
     libc.src.__support.CPP.cstddef
+    libc.src.__support.CPP.span
+    libc.src.__support.math_extras
     libc.src.__support.memory_size
 )
 
@@ -123,6 +125,8 @@ add_entrypoint_object(
   DEPENDS
     libc.include.search
     libc.src.__support.CPP.cstddef
+    libc.src.__support.CPP.span
+    libc.src.__support.math_extras
     libc.src.__support.memory_size
     libc.src.string.memory_utils.inline_memcpy
 )

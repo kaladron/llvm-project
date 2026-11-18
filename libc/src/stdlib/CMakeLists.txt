@@ -128,6 +128,7 @@ add_entrypoint_object(
   DEPENDS
     .str_from_util
     libc.hdr.types.size_t
+    libc.src.__support.CPP.span
 )
 
 add_entrypoint_object(
@@ -139,6 +140,7 @@ add_entrypoint_object(
   DEPENDS
     .str_from_util
     libc.hdr.types.size_t
+    libc.src.__support.CPP.span
 )
 
 add_entrypoint_object(
@@ -150,6 +152,7 @@ add_entrypoint_object(
   DEPENDS
     .str_from_util
     libc.hdr.types.size_t
+    libc.src.__support.CPP.span
 )
 
 add_entrypoint_object(
@@ -161,6 +164,7 @@ add_entrypoint_object(
   DEPENDS
     .str_from_util
     libc.hdr.types.size_t
+    libc.src.__support.CPP.span
 )
 
 add_header_library(
@@ -170,6 +174,7 @@ add_header_library(
   DEPENDS
     libc.hdr.types.size_t
     libc.src.__support.CPP.limits
+    libc.src.__support.CPP.span
     libc.src.__support.CPP.type_traits
     libc.src.__support.libc_errno
     libc.src.__support.macros.config
@@ -279,6 +284,7 @@ add_entrypoint_object(
   DEPENDS
     libc.hdr.stdint_proxy
     libc.hdr.types.size_t
+    libc.src.__support.CPP.span
     libc.src.__support.ctype_utils
 )
 
@@ -352,7 +358,10 @@ add_entrypoint_object(
   HDRS
     bsearch.h
   DEPENDS
+    libc.hdr.stdint_proxy
     libc.include.stdlib
+    libc.src.__support.CPP.span
+    libc.src.__support.math_extras
 )
 
 add_header_library(
@@ -366,7 +375,9 @@ add_header_library(
     libc.hdr.stdint_proxy
     libc.include.stdlib
     libc.src.__support.CPP.cstddef
+    libc.src.__support.CPP.span
     libc.src.__support.CPP.utility
+    libc.src.__support.math_extras
     libc.src.string.memory_utils.inline_memcpy
 )
 

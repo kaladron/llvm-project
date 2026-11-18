@@ -12,9 +12,11 @@
 #include "hdr/stdint_proxy.h"                // For uint64_t
 #include "src/__support/CPP/bit.h"           // rotl
 #include "src/__support/CPP/limits.h"        // numeric_limits
+#include "src/__support/CPP/span.h"          // span
 #include "src/__support/macros/attributes.h" // LIBC_INLINE
 #include "src/__support/macros/config.h"
 #include "src/__support/uint128.h" // UInt128
+#include "src/string/memory_utils/inline_memcpy.h"
 
 namespace LIBC_NAMESPACE_DECL {
 namespace internal {
@@ -32,8 +34,9 @@ LIBC_INLINE uint64_t folded_multiply(uint64_t x, uint64_t y) {
 // Read as little endian.
 // Shift-and-or implementation does not give a satisfactory code on aarch64.
 // Therefore, we use a union to read the value.
-template <typename T> LIBC_INLINE T read_little_endian(const void *ptr) {
-  const uint8_t *bytes = static_cast<const uint8_t *>(ptr);
+template <typename T>
+LIBC_INLINE T read_little_endian(cpp::span<const uint8_t> bytes) {
+  cpp::span<const uint8_t> slice = bytes.first<sizeof(T)>();
   uint8_t buffer[sizeof(T)];
 #if __BYTE_ORDER__ != __ORDER_LITTLE_ENDIAN__
   // Compiler should able to optimize this as a load followed by a byte
@@ -43,38 +46,49 @@ template <typename T> LIBC_INLINE T read_little_endian(const void *ptr) {
   //      rev     w0, w0
   //      ret
   for (size_t i = 0; i < sizeof(T); ++i) {
-    buffer[i] = bytes[sizeof(T) - i - 1];
+    buffer[i] = slice[sizeof(T) - i - 1];
   }
 #else
-  for (size_t i = 0; i < sizeof(T); ++i) {
-    buffer[i] = bytes[i];
-  }
+  inline_memcpy(buffer, slice.data(), sizeof(T));
 #endif
   return cpp::bit_cast<T>(buffer);
 }
 
+template <typename T> LIBC_INLINE T read_little_endian(const void *ptr) {
+  return read_little_endian<T>(
+      cpp::span<const uint8_t>(static_cast<const uint8_t *>(ptr), sizeof(T)));
+}
+
 // Specialized read functions for small values. size must be <= 8.
-LIBC_INLINE void read_small_values(const void *ptr, size_t size, uint64_t &low,
-                                   uint64_t &high) {
-  const uint8_t *bytes = static_cast<const uint8_t *>(ptr);
-  if (size >= 2) {
-    if (size >= 4) {
-      low = static_cast<uint64_t>(read_little_endian<uint32_t>(&bytes[0]));
+LIBC_INLINE void read_small_values(cpp::span<const uint8_t> bytes,
+                                   uint64_t &low, uint64_t &high) {
+  if (bytes.size() >= 2) {
+    if (bytes.size() >= 4) {
+      low =
+          static_cast<uint64_t>(read_little_endian<uint32_t>(bytes.first<4>()));
       high =
-          static_cast<uint64_t>(read_little_endian<uint32_t>(&bytes[size - 4]));
+          static_cast<uint64_t>(read_little_endian<uint32_t>(bytes.last<4>()));
     } else {
-      low = static_cast<uint64_t>(read_little_endian<uint16_t>(&bytes[0]));
-      high = static_cast<uint64_t>(bytes[size - 1]);
+      low =
+          static_cast<uint64_t>(read_little_endian<uint16_t>(bytes.first<2>()));
+      high = static_cast<uint64_t>(bytes.back());
     }
   } else {
-    if (size > 0) {
-      low = static_cast<uint64_t>(bytes[0]);
-      high = static_cast<uint64_t>(bytes[0]);
+    if (!bytes.empty()) {
+      low = static_cast<uint64_t>(bytes.front());
+      high = static_cast<uint64_t>(bytes.front());
     } else {
       low = 0;
       high = 0;
     }
   }
+}
+
+LIBC_INLINE void read_small_values(const void *ptr, size_t size, uint64_t &low,
+                                   uint64_t &high) {
+  read_small_values(
+      cpp::span<const uint8_t>(static_cast<const uint8_t *>(ptr), size), low,
+      high);
 }
 
 // This constant comes from Kunth's prng (it empirically works well).
@@ -124,32 +138,34 @@ public:
     extra_keys[0] = RANDOMNESS[1][2] ^ mixed;
     extra_keys[1] = RANDOMNESS[1][3] ^ mixed;
   }
-  LIBC_INLINE void update(const void *ptr, size_t size) {
-    uint8_t const *bytes = static_cast<const uint8_t *>(ptr);
-    buffer = (buffer + size) * MULTIPLE;
+  LIBC_INLINE void update(cpp::span<const uint8_t> bytes) {
+    buffer = (buffer + bytes.size()) * MULTIPLE;
     uint64_t low, high;
-    if (size > 8) {
-      if (size > 16) {
+    if (bytes.size() > 8) {
+      if (bytes.size() > 16) {
         // update tail
-        low = read_little_endian<uint64_t>(&bytes[size - 16]);
-        high = read_little_endian<uint64_t>(&bytes[size - 8]);
+        cpp::span<const uint8_t> tail = bytes.last<16>();
+        low = read_little_endian<uint64_t>(tail.first<8>());
+        high = read_little_endian<uint64_t>(tail.last<8>());
         update(low, high);
-        while (size > 16) {
-          low = read_little_endian<uint64_t>(&bytes[0]);
-          high = read_little_endian<uint64_t>(&bytes[8]);
+        while (bytes.size() > 16) {
+          low = read_little_endian<uint64_t>(bytes.first<8>());
+          high = read_little_endian<uint64_t>(bytes.subspan<8, 8>());
           update(low, high);
-          bytes += 16;
-          size -= 16;
+          bytes = bytes.subspan(16);
         }
       } else {
-        low = read_little_endian<uint64_t>(&bytes[0]);
-        high = read_little_endian<uint64_t>(&bytes[size - 8]);
+        low = read_little_endian<uint64_t>(bytes.first<8>());
+        high = read_little_endian<uint64_t>(bytes.last<8>());
         update(low, high);
       }
     } else {
-      read_small_values(ptr, size, low, high);
+      read_small_values(bytes, low, high);
       update(low, high);
     }
+  }
+  LIBC_INLINE void update(const void *ptr, size_t size) {
+    update(cpp::span<const uint8_t>(static_cast<const uint8_t *>(ptr), size));
   }
   LIBC_INLINE uint64_t finish() {
     int rot = buffer & 63;

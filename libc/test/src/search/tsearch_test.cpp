@@ -7,6 +7,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "hdr/types/posix_tnode.h"
+#include "src/__support/CPP/span.h"
 #include "src/search/tdelete.h"
 #include "src/search/tdestroy.h"
 #include "src/search/tfind.h"
@@ -286,9 +287,9 @@ TEST(LlvmLibcTSearchTest, WalkReportsDepth) {
 static void collect_action(const __llvm_libc_tnode *node, VISIT visit,
                            void *closure) {
   if (visit == leaf || visit == postorder) {
-    int **cursor = static_cast<int **>(closure);
-    **cursor = read_node(node);
-    *cursor += 1;
+    auto *cursor = static_cast<LIBC_NAMESPACE::cpp::span<int> *>(closure);
+    cursor->front() = read_node(node);
+    *cursor = cursor->subspan(1);
   }
 }
 
@@ -300,8 +301,9 @@ TEST(LlvmLibcTSearchTest, WalkRProducesSortedOutput) {
               nullptr);
 
   int sorted[N];
-  int *cursor = sorted;
+  LIBC_NAMESPACE::cpp::span<int> cursor(sorted);
   LIBC_NAMESPACE::twalk_r(root, collect_action, &cursor);
+  ASSERT_TRUE(cursor.empty());
 
   for (int i = 0; i < N; ++i)
     ASSERT_EQ(sorted[i], i);
@@ -345,8 +347,8 @@ TEST(LlvmLibcTSearchTest, DestroyVisitsAllNodes) {
     ASSERT_NE(LIBC_NAMESPACE::tsearch(encode(i), &root, int_compare), nullptr);
 
   LIBC_NAMESPACE::tdestroy(root, flag_free);
-  for (int i = 0; i < N; ++i)
-    ASSERT_TRUE(free_flags[i]);
+  for (bool flag : LIBC_NAMESPACE::cpp::span<const bool>(free_flags).first(N))
+    ASSERT_TRUE(flag);
 }
 
 // ---------------------------------------------------------------------------
@@ -376,10 +378,10 @@ TEST(LlvmLibcTSearchTest, DestroyHeapStrings) {
   constexpr int UNIQUE_WORDS = 5; // number of distinct strings
 
   int duplicates_detected = 0;
-  for (int i = 0; i < NWORDS; ++i) {
-    char *dup = new char[LIBC_NAMESPACE::strlen(words[i]) + 1];
+  for (const char *word : words) {
+    char *dup = new char[LIBC_NAMESPACE::strlen(word) + 1];
     ASSERT_NE(dup, nullptr);
-    LIBC_NAMESPACE::strcpy(dup, words[i]);
+    LIBC_NAMESPACE::strcpy(dup, word);
     void *r = LIBC_NAMESPACE::tsearch(dup, &root, string_compare);
     ASSERT_NE(r, nullptr);
     // tsearch returns a pointer to the node's datum. If the stored key
@@ -395,8 +397,8 @@ TEST(LlvmLibcTSearchTest, DestroyHeapStrings) {
 
   // Every unique word should be findable.
   const char *unique[] = {"cherry", "apple", "banana", "date", "elderberry"};
-  for (int i = 0; i < UNIQUE_WORDS; ++i) {
-    void *r = LIBC_NAMESPACE::tfind(unique[i], &root, string_compare);
+  for (const char *word : unique) {
+    void *r = LIBC_NAMESPACE::tfind(word, &root, string_compare);
     ASSERT_NE(r, nullptr);
   }
 

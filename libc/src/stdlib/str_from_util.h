@@ -19,6 +19,7 @@
 
 #include "hdr/types/size_t.h"
 #include "src/__support/CPP/limits.h"
+#include "src/__support/CPP/span.h"
 #include "src/__support/CPP/type_traits.h"
 #include "src/__support/libc_errno.h"
 #include "src/__support/macros/config.h"
@@ -109,19 +110,19 @@ LIBC_INLINE int strfromfloat_convert(printf_core::Writer<overflow_mode> *writer,
 }
 
 template <typename T>
-LIBC_INLINE int strfromfloat_impl(char *__restrict s, size_t n,
+LIBC_INLINE int strfromfloat_impl(cpp::span<char> buf,
                                   const char *__restrict format, T fp) {
-  LIBC_ASSERT(s != nullptr);
+  LIBC_ASSERT(buf.empty() || buf.data() != nullptr);
 
-  printf_core::Writer writer =
-      printf_core::make_drop_overflow_writer(s, (n > 0 ? n - 1 : 0));
+  printf_core::Writer writer = printf_core::make_drop_overflow_writer(
+      buf.data(), (buf.empty() ? 0 : buf.size() - 1));
   int result = strfromfloat_convert(&writer, format, fp);
   if (result < 0)
     return result;
 
-  if (n > 0) {
+  if (!buf.empty()) {
     printf_core::WriteBuffer<char> &wb = writer.get_write_buffer();
-    wb.buff[wb.buff_cur] = '\0';
+    buf[wb.buff_cur] = '\0';
   }
 
   if (writer.get_chars_written() >
@@ -131,6 +132,12 @@ LIBC_INLINE int strfromfloat_impl(char *__restrict s, size_t n,
     return -1;
   }
   return static_cast<int>(writer.get_chars_written());
+}
+
+template <typename T>
+LIBC_INLINE int strfromfloat_impl(char *__restrict s, size_t n,
+                                  const char *__restrict format, T fp) {
+  return strfromfloat_impl(cpp::span<char>(s, n), format, fp);
 }
 
 } // namespace internal

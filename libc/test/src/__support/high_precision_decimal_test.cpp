@@ -433,4 +433,13 @@ TEST(LlvmLibcHighPrecisionDecimalTest, NumLenDigitsTest) {
 
   // With 10 characters it should see the e, but not actually act on it.
   EXPECT_EQ(longer_hpd.round_to_integer_type<uint64_t>(), uint64_t(123456789));
+
+  const char exact_exp_marker[2] = {'7', 'e'};
+  LIBC_NAMESPACE::internal::HighPrecisionDecimal exact_hpd(exact_exp_marker, 2);
+  EXPECT_EQ(exact_hpd.round_to_integer_type<uint64_t>(), uint64_t(7));
+
+  const char exact_signed_exp[3] = {'7', 'E', '+'};
+  LIBC_NAMESPACE::internal::HighPrecisionDecimal signed_hpd(exact_signed_exp,
+                                                            3);
+  EXPECT_EQ(signed_hpd.round_to_integer_type<uint64_t>(), uint64_t(7));
 }

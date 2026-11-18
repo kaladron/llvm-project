@@ -281,6 +281,7 @@ add_header_library(
   DEPENDS
     .libc_assert
     libc.hdr.stdint_proxy
+    libc.src.__support.CPP.span
     libc.src.__support.CPP.type_traits
     libc.src.__support.FPUtil.fp_bits
     libc.src.__support.common
@@ -295,6 +296,8 @@ add_header_library(
     .str_to_integer
     .wctype_utils
     libc.hdr.stdint_proxy
+    libc.src.__support.CPP.limits
+    libc.src.__support.CPP.span
 )
 
 add_header_library(
@@ -315,6 +318,7 @@ add_header_library(
     libc.src.__support.CPP.bit
     libc.src.__support.CPP.limits
     libc.src.__support.CPP.optional
+    libc.src.__support.CPP.span
     libc.src.__support.FPUtil.fp_bits
     libc.src.__support.FPUtil.rounding_mode
     libc.src.__support.macros.config
@@ -329,7 +333,9 @@ add_header_library(
   DEPENDS
     .uint128
     libc.hdr.stdint_proxy
+    libc.hdr.types.size_t
     libc.src.__support.CPP.limits
+    libc.src.__support.CPP.span
 )
 
 add_header_library(
@@ -387,7 +393,10 @@ add_header_library(
     libc.hdr.func.free
     libc.hdr.func.malloc
     libc.hdr.func.realloc
+    libc.hdr.types.size_t
+    libc.src.__support.CPP.span
     libc.src.__support.common
+    libc.src.string.memory_utils.inline_memcpy
 )
 
 add_header_library(
@@ -482,7 +491,9 @@ add_header_library(
     libc.hdr.stdint_proxy
     libc.src.__support.CPP.bit
     libc.src.__support.CPP.limits
+    libc.src.__support.CPP.span
     libc.src.__support.macros.attributes
+    libc.src.string.memory_utils.inline_memcpy
 )
 
 add_header_library(

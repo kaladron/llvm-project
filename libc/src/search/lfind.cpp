@@ -8,6 +8,7 @@
 
 #include "src/search/lfind.h"
 #include "src/__support/CPP/cstddef.h" // cpp::byte
+#include "src/__support/CPP/span.h"
 #include "src/__support/common.h"
 #include "src/__support/macros/config.h"
 #include "src/__support/math_extras.h"
@@ -24,11 +25,13 @@ LLVM_LIBC_FUNCTION(void *, lfind,
   if (mul_overflow(*nmemb, size, byte_len))
     return nullptr;
 
-  const cpp::byte *next = reinterpret_cast<const cpp::byte *>(base);
-  const cpp::byte *end = next + byte_len;
-  for (; next < end; next += size)
-    if (compar(key, next) == 0)
-      return const_cast<cpp::byte *>(next);
+  cpp::span<const cpp::byte> remaining(
+      reinterpret_cast<const cpp::byte *>(base), byte_len);
+  while (!remaining.empty()) {
+    if (compar(key, remaining.data()) == 0)
+      return const_cast<cpp::byte *>(remaining.data());
+    remaining = remaining.subspan(size);
+  }
   return nullptr;
 }
 

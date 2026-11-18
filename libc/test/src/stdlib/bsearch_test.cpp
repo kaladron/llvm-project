@@ -8,6 +8,8 @@
 
 #include "src/stdlib/bsearch.h"
 
+#include "src/__support/CPP/limits.h"
+#include "src/__support/CPP/span.h"
 #include "test/UnitTest/Test.h"
 
 #include "hdr/types/size_t.h"
@@ -33,6 +35,10 @@ TEST(LlvmLibcBsearchTest, ErrorInputs) {
                                       int_compare) == nullptr);
   EXPECT_TRUE(LIBC_NAMESPACE::bsearch(&val, &val, 1, 0, int_compare) ==
               nullptr);
+  EXPECT_TRUE(LIBC_NAMESPACE::bsearch(
+                  &val, &val,
+                  LIBC_NAMESPACE::cpp::numeric_limits<size_t>::max(),
+                  sizeof(int), int_compare) == nullptr);
 }
 
 TEST(LlvmLibcBsearchTest, IntegerArray) {
@@ -40,40 +46,33 @@ TEST(LlvmLibcBsearchTest, IntegerArray) {
                              100,  110,  123,   133,  135,  155,  170,
                              171,  1100, 1110,  1123, 1133, 1135, 1155,
                              1170, 1171, 11100, 12310};
-  constexpr size_t ARRAY_SIZE = sizeof(ARRAY) / sizeof(int);
+  const LIBC_NAMESPACE::cpp::span<const int> array_span(ARRAY);
 
-  for (size_t s = 1; s <= ARRAY_SIZE; ++s) {
-    for (size_t i = 0; i < s; ++i) {
-      int key = ARRAY[i];
-      void *elem =
-          LIBC_NAMESPACE::bsearch(&key, ARRAY, s, sizeof(int), int_compare);
+  for (size_t s = 1; s <= array_span.size(); ++s) {
+    auto prefix = array_span.first(s);
+    for (int key : prefix) {
+      void *elem = LIBC_NAMESPACE::bsearch(&key, prefix.data(), prefix.size(),
+                                           sizeof(int), int_compare);
       ASSERT_EQ(*reinterpret_cast<int *>(elem), key);
     }
   }
 
   // Non existent keys
-  for (size_t s = 1; s <= ARRAY_SIZE; ++s) {
-    int key = 5;
-    ASSERT_TRUE(LIBC_NAMESPACE::bsearch(&key, &ARRAY, s, sizeof(int),
-                                        int_compare) == nullptr);
-
-    key = 125;
-    ASSERT_TRUE(LIBC_NAMESPACE::bsearch(&key, &ARRAY, s, sizeof(int),
-                                        int_compare) == nullptr);
-
-    key = 136;
-    ASSERT_TRUE(LIBC_NAMESPACE::bsearch(&key, &ARRAY, s, sizeof(int),
-                                        int_compare) == nullptr);
-    key = 12345;
-    ASSERT_TRUE(LIBC_NAMESPACE::bsearch(&key, &ARRAY, s, sizeof(int),
-                                        int_compare) == nullptr);
+  constexpr int NON_EXISTENT[] = {5, 125, 136, 12345};
+  for (size_t s = 1; s <= array_span.size(); ++s) {
+    auto prefix = array_span.first(s);
+    for (int key : NON_EXISTENT) {
+      ASSERT_TRUE(LIBC_NAMESPACE::bsearch(&key, prefix.data(), prefix.size(),
+                                          sizeof(int), int_compare) == nullptr);
+    }
   }
 }
 
 TEST(LlvmLibcBsearchTest, SameKeyAndArray) {
   constexpr int ARRAY[5] = {1, 2, 3, 4, 5};
-  constexpr size_t ARRAY_SIZE = sizeof(ARRAY) / sizeof(int);
-  void *elem = LIBC_NAMESPACE::bsearch(ARRAY, ARRAY, ARRAY_SIZE, sizeof(int),
-                                       int_compare);
-  EXPECT_EQ(*reinterpret_cast<int *>(elem), ARRAY[0]);
+  const LIBC_NAMESPACE::cpp::span<const int> array_span(ARRAY);
+  void *elem =
+      LIBC_NAMESPACE::bsearch(array_span.data(), array_span.data(),
+                              array_span.size(), sizeof(int), int_compare);
+  EXPECT_EQ(*reinterpret_cast<int *>(elem), array_span.front());
 }

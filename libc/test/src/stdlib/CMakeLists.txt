@@ -236,6 +236,7 @@ add_libc_test(
   SRCS
     a64l_test.cpp
   DEPENDS
+    libc.src.__support.CPP.span
     libc.src.stdlib.a64l
 )
 
@@ -248,6 +249,7 @@ add_libc_test(
   DEPENDS
     libc.src.stdlib.l64a
     libc.src.__support.CPP.limits
+    libc.src.__support.CPP.span
 )
 
 add_libc_test(
@@ -327,6 +329,8 @@ add_libc_test(
     bsearch_test.cpp
   DEPENDS
     libc.hdr.types.size_t
+    libc.src.__support.CPP.limits
+    libc.src.__support.CPP.span
     libc.src.stdlib.bsearch
 )
 
@@ -339,6 +343,7 @@ add_libc_test(
   HDRS
     SortingTest.h
   DEPENDS
+    libc.src.__support.CPP.span
     libc.src.stdlib.qsort
 )
 
@@ -351,6 +356,7 @@ add_libc_test(
   HDRS
     SortingTest.h
   DEPENDS
+    libc.src.__support.CPP.span
     libc.src.stdlib.qsort
 )
 
@@ -490,6 +496,7 @@ add_libc_test(
     libc.hdr.errno_macros
     libc.hdr.fcntl_macros
     libc.hdr.signal_macros
+    libc.src.__support.CPP.span
     libc.src.string.strlen
     libc.src.stdlib.mkstemp
     libc.src.string.strdup
@@ -698,6 +705,7 @@ add_libc_test(
   SRCS
     getloadavg_test.cpp
   DEPENDS
+    libc.src.__support.CPP.span
     libc.src.stdlib.getloadavg
     libc.test.UnitTest.ErrnoCheckingTest
     libc.test.UnitTest.ErrnoSetterMatcher

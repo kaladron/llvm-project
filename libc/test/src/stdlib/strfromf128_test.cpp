@@ -106,6 +106,8 @@ TEST_F(LlvmLibcStrfromlTest, InsufficientBufferSize) {
   result = LIBC_NAMESPACE::strfromf128(buff, 5, "%.5f", 1.05);
   EXPECT_EQ(result, 7);
   ASSERT_STREQ(buff, "1.05");
+
+  EXPECT_EQ(LIBC_NAMESPACE::strfromf128(nullptr, 0, "%g", 1.0), 1);
 }
 
 TEST_F(LlvmLibcStrfromlTest, InfNanValues) {

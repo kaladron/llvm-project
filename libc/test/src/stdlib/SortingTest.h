@@ -6,6 +6,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "src/__support/CPP/span.h"
 #include "src/__support/macros/config.h"
 #include "test/UnitTest/Test.h"
 
@@ -27,8 +28,9 @@ class SortingTest : public LIBC_NAMESPACE::testing::Test {
       return -1;
   }
 
-  static void int_sort(SortingRoutine sort_func, int *array, size_t array_len) {
-    sort_func(reinterpret_cast<void *>(array), array_len, sizeof(int),
+  static void int_sort(SortingRoutine sort_func,
+                       LIBC_NAMESPACE::cpp::span<int> array) {
+    sort_func(reinterpret_cast<void *>(array.data()), array.size(), sizeof(int),
               int_compare);
   }
 
@@ -37,67 +39,65 @@ public:
     int array[25] = {10,   23,   33,   35,   55,   70,    71,   100,  110,
                      123,  133,  135,  155,  170,  171,   1100, 1110, 1123,
                      1133, 1135, 1155, 1170, 1171, 11100, 12310};
-    constexpr size_t ARRAY_LEN = sizeof(array) / sizeof(int);
 
-    int_sort(sort_func, array, ARRAY_LEN);
+    int_sort(sort_func, array);
 
-    ASSERT_LE(array[0], 10);
-    ASSERT_LE(array[1], 23);
-    ASSERT_LE(array[2], 33);
-    ASSERT_LE(array[3], 35);
-    ASSERT_LE(array[4], 55);
-    ASSERT_LE(array[5], 70);
-    ASSERT_LE(array[6], 71);
-    ASSERT_LE(array[7], 100);
-    ASSERT_LE(array[8], 110);
-    ASSERT_LE(array[9], 123);
-    ASSERT_LE(array[10], 133);
-    ASSERT_LE(array[11], 135);
-    ASSERT_LE(array[12], 155);
-    ASSERT_LE(array[13], 170);
-    ASSERT_LE(array[14], 171);
-    ASSERT_LE(array[15], 1100);
-    ASSERT_LE(array[16], 1110);
-    ASSERT_LE(array[17], 1123);
-    ASSERT_LE(array[18], 1133);
-    ASSERT_LE(array[19], 1135);
-    ASSERT_LE(array[20], 1155);
-    ASSERT_LE(array[21], 1170);
-    ASSERT_LE(array[22], 1171);
-    ASSERT_LE(array[23], 11100);
-    ASSERT_LE(array[24], 12310);
+    ASSERT_EQ(array[0], 10);
+    ASSERT_EQ(array[1], 23);
+    ASSERT_EQ(array[2], 33);
+    ASSERT_EQ(array[3], 35);
+    ASSERT_EQ(array[4], 55);
+    ASSERT_EQ(array[5], 70);
+    ASSERT_EQ(array[6], 71);
+    ASSERT_EQ(array[7], 100);
+    ASSERT_EQ(array[8], 110);
+    ASSERT_EQ(array[9], 123);
+    ASSERT_EQ(array[10], 133);
+    ASSERT_EQ(array[11], 135);
+    ASSERT_EQ(array[12], 155);
+    ASSERT_EQ(array[13], 170);
+    ASSERT_EQ(array[14], 171);
+    ASSERT_EQ(array[15], 1100);
+    ASSERT_EQ(array[16], 1110);
+    ASSERT_EQ(array[17], 1123);
+    ASSERT_EQ(array[18], 1133);
+    ASSERT_EQ(array[19], 1135);
+    ASSERT_EQ(array[20], 1155);
+    ASSERT_EQ(array[21], 1170);
+    ASSERT_EQ(array[22], 1171);
+    ASSERT_EQ(array[23], 11100);
+    ASSERT_EQ(array[24], 12310);
   }
 
   void test_reversed_sorted_array(SortingRoutine sort_func) {
     int array[] = {25, 24, 23, 22, 21, 20, 19, 18, 17, 16, 15, 14, 13,
                    12, 11, 10, 9,  8,  7,  6,  5,  4,  3,  2,  1};
-    constexpr size_t ARRAY_LEN = sizeof(array) / sizeof(int);
+    LIBC_NAMESPACE::cpp::span<int> array_span(array);
 
-    int_sort(sort_func, array, ARRAY_LEN);
+    int_sort(sort_func, array_span);
 
-    for (int i = 0; i < int(ARRAY_LEN - 1); ++i)
-      ASSERT_EQ(array[i], i + 1);
+    for (size_t i = 0; i < array_span.size(); ++i)
+      ASSERT_EQ(array_span[i], static_cast<int>(i + 1));
   }
 
   void test_all_equal_elements(SortingRoutine sort_func) {
     int array[] = {100, 100, 100, 100, 100, 100, 100, 100, 100,
                    100, 100, 100, 100, 100, 100, 100, 100, 100,
                    100, 100, 100, 100, 100, 100, 100};
-    constexpr size_t ARRAY_LEN = sizeof(array) / sizeof(int);
+    LIBC_NAMESPACE::cpp::span<int> array_span(array);
 
-    int_sort(sort_func, array, ARRAY_LEN);
+    int_sort(sort_func, array_span);
 
-    for (size_t i = 0; i < ARRAY_LEN; ++i)
-      ASSERT_EQ(array[i], 100);
+    for (int val : array_span)
+      ASSERT_EQ(val, 100);
   }
 
   void test_unsorted_array_1(SortingRoutine sort_func) {
     int array[25] = {10,  23,  8,    35,   55,   45,  40,  100, 110,
                      123, 90,  80,   70,   60,   171, 11,  1,   -1,
                      -5,  -10, 1155, 1170, 1171, 12,  -100};
-    constexpr size_t ARRAY_LEN = sizeof(array) / sizeof(int);
 
-    int_sort(sort_func, array, ARRAY_LEN);
+    int_sort(sort_func, array);
 
     ASSERT_EQ(array[0], -100);
     ASSERT_EQ(array[1], -10);
@@ -128,9 +128,8 @@ public:
 
   void test_unsorted_array_2(SortingRoutine sort_func) {
     int array[7] = {10, 40, 45, 55, 35, 23, 60};
-    constexpr size_t ARRAY_LEN = sizeof(array) / sizeof(int);
 
-    int_sort(sort_func, array, ARRAY_LEN);
+    int_sort(sort_func, array);
 
     ASSERT_EQ(array[0], 10);
     ASSERT_EQ(array[1], 23);
@@ -143,9 +142,8 @@ public:
 
   void test_unsorted_array_duplicated_1(SortingRoutine sort_func) {
     int array[6] = {10, 10, 20, 20, 5, 5};
-    constexpr size_t ARRAY_LEN = sizeof(array) / sizeof(int);
 
-    int_sort(sort_func, array, ARRAY_LEN);
+    int_sort(sort_func, array);
 
     ASSERT_EQ(array[0], 5);
     ASSERT_EQ(array[1], 5);
@@ -157,9 +155,8 @@ public:
 
   void test_unsorted_array_duplicated_2(SortingRoutine sort_func) {
     int array[10] = {20, 10, 10, 10, 10, 20, 21, 21, 21, 21};
-    constexpr size_t ARRAY_LEN = sizeof(array) / sizeof(int);
 
-    int_sort(sort_func, array, ARRAY_LEN);
+    int_sort(sort_func, array);
 
     ASSERT_EQ(array[0], 10);
     ASSERT_EQ(array[1], 10);
@@ -175,9 +172,8 @@ public:
 
   void test_unsorted_array_duplicated_3(SortingRoutine sort_func) {
     int array[10] = {20, 30, 30, 30, 30, 20, 21, 21, 21, 21};
-    constexpr size_t ARRAY_LEN = sizeof(array) / sizeof(int);
 
-    int_sort(sort_func, array, ARRAY_LEN);
+    int_sort(sort_func, array);
 
     ASSERT_EQ(array[0], 20);
     ASSERT_EQ(array[1], 20);
@@ -194,9 +190,7 @@ public:
   void test_unsorted_three_element_1(SortingRoutine sort_func) {
     int array[3] = {14999024, 0, 3};
 
-    constexpr size_t ARRAY_LEN = sizeof(array) / sizeof(int);
-
-    int_sort(sort_func, array, ARRAY_LEN);
+    int_sort(sort_func, array);
 
     ASSERT_EQ(array[0], 0);
     ASSERT_EQ(array[1], 3);
@@ -206,9 +200,7 @@ public:
   void test_unsorted_three_element_2(SortingRoutine sort_func) {
     int array[3] = {3, 14999024, 0};
 
-    constexpr size_t ARRAY_LEN = sizeof(array) / sizeof(int);
-
-    int_sort(sort_func, array, ARRAY_LEN);
+    int_sort(sort_func, array);
 
     ASSERT_EQ(array[0], 0);
     ASSERT_EQ(array[1], 3);
@@ -218,9 +210,7 @@ public:
   void test_unsorted_three_element_3(SortingRoutine sort_func) {
     int array[3] = {3, 0, 14999024};
 
-    constexpr size_t ARRAY_LEN = sizeof(array) / sizeof(int);
-
-    int_sort(sort_func, array, ARRAY_LEN);
+    int_sort(sort_func, array);
 
     ASSERT_EQ(array[0], 0);
     ASSERT_EQ(array[1], 3);
@@ -230,9 +220,7 @@ public:
   void test_same_three_element(SortingRoutine sort_func) {
     int array[3] = {12345, 12345, 12345};
 
-    constexpr size_t ARRAY_LEN = sizeof(array) / sizeof(int);
-
-    int_sort(sort_func, array, ARRAY_LEN);
+    int_sort(sort_func, array);
 
     ASSERT_EQ(array[0], 12345);
     ASSERT_EQ(array[1], 12345);
@@ -242,9 +230,7 @@ public:
   void test_unsorted_two_element_1(SortingRoutine sort_func) {
     int array[] = {14999024, 0};
 
-    constexpr size_t ARRAY_LEN = sizeof(array) / sizeof(int);
-
-    int_sort(sort_func, array, ARRAY_LEN);
+    int_sort(sort_func, array);
 
     ASSERT_EQ(array[0], 0);
     ASSERT_EQ(array[1], 14999024);
@@ -253,9 +239,7 @@ public:
   void test_unsorted_two_element_2(SortingRoutine sort_func) {
     int array[] = {0, 14999024};
 
-    constexpr size_t ARRAY_LEN = sizeof(array) / sizeof(int);
-
-    int_sort(sort_func, array, ARRAY_LEN);
+    int_sort(sort_func, array);
 
     ASSERT_EQ(array[0], 0);
     ASSERT_EQ(array[1], 14999024);
@@ -264,9 +248,7 @@ public:
   void test_same_two_element(SortingRoutine sort_func) {
     int array[] = {12345, 12345};
 
-    constexpr size_t ARRAY_LEN = sizeof(array) / sizeof(int);
-
-    int_sort(sort_func, array, ARRAY_LEN);
+    int_sort(sort_func, array);
 
     ASSERT_EQ(array[0], 12345);
     ASSERT_EQ(array[1], 12345);
@@ -275,9 +257,7 @@ public:
   void test_single_element(SortingRoutine sort_func) {
     int array[] = {12345};
 
-    constexpr size_t ARRAY_LEN = sizeof(array) / sizeof(int);
-
-    int_sort(sort_func, array, ARRAY_LEN);
+    int_sort(sort_func, array);
 
     ASSERT_EQ(array[0], 12345);
   }
@@ -300,21 +280,22 @@ public:
     // incorrect association between alignment and element size. The buffer is
     // 'static' as otherwise it will exhaust the stack on the GPU targets.
     alignas(1) static uint8_t buf[BUF_SIZE];
+    LIBC_NAMESPACE::cpp::span<uint8_t> buf_span(buf);
 
     // GCC still requires capturing the constant ARRAY_INITIAL_VALS in the
     // lambda hence, let's use & to implicitly capture all needed variables
     // automatically.
     const auto fill_buf = [&](size_t elem_size) {
-      for (size_t i = 0; i < BUF_SIZE; ++i) {
-        buf[i] = 0;
+      for (uint8_t &b : buf) {
+        b = 0;
       }
 
-      for (size_t elem_i = 0, buf_i = 0; elem_i < ARRAY_LEN; ++elem_i) {
-        const uint8_t elem_val = ARRAY_INITIAL_VALS[elem_i];
-        for (size_t elem_byte_i = 0; elem_byte_i < elem_size; ++elem_byte_i) {
-          buf[buf_i] = elem_val;
-          buf_i += 1;
+      LIBC_NAMESPACE::cpp::span<uint8_t> dst = buf_span;
+      for (uint8_t elem_val : ARRAY_INITIAL_VALS) {
+        for (uint8_t &b : dst.first(elem_size)) {
+          b = elem_val;
         }
+        dst = dst.subspan(elem_size);
       }
     };
 
@@ -322,7 +303,7 @@ public:
       // Fill all bytes with data to ensure mistakes in elem swap are noticed.
       fill_buf(elem_size);
 
-      sort_func(reinterpret_cast<void *>(buf), ARRAY_LEN, elem_size,
+      sort_func(reinterpret_cast<void *>(buf_span.data()), ARRAY_LEN, elem_size,
                 [](const void *a, const void *b) -> int {
                   const uint8_t a_val = *reinterpret_cast<const uint8_t *>(a);
                   const uint8_t b_val = *reinterpret_cast<const uint8_t *>(b);
@@ -336,11 +317,12 @@ public:
                   }
                 });
 
-      for (size_t elem_i = 0, buf_i = 0; elem_i < ARRAY_LEN; ++elem_i) {
+      size_t buf_i = 0;
+      for (size_t elem_i = 0; elem_i < ARRAY_LEN; ++elem_i) {
         const uint8_t expected_elem_val = static_cast<uint8_t>(elem_i);
 
-        for (size_t elem_byte_i = 0; elem_byte_i < elem_size; ++elem_byte_i) {
-          const uint8_t buf_val = buf[buf_i];
+        for (uint8_t buf_val :
+             buf_span.subspan(elem_i * elem_size, elem_size)) {
           // Check that every byte in the element has the expected value.
           ASSERT_EQ(buf_val, expected_elem_val)
               << "elem_size: " << elem_size << " buf_i: " << buf_i << '\n';

@@ -9,6 +9,7 @@ add_header_library(
     libc.src.__support.common
     libc.src.__support.CPP.bit
     libc.src.__support.macros.properties.cpu_features
+    libc.src.string.memory_utils.inline_memcpy
 )
 
 list(FIND TARGET_ENTRYPOINT_NAME_LIST getrandom getrandom_index)

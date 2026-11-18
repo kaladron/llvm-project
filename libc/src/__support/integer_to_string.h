@@ -464,9 +464,11 @@ public:
   format_to(cpp::span<CharT> buffer, T value) {
     details::BackwardStringBufferWriter<CharT> writer(buffer);
     IntegerWriter::write(value, writer);
-    if (writer.ok())
-      return cpp::basic_string_view<CharT>(
-          buffer.data() + buffer.size() - writer.size(), writer.size());
+    if (writer.ok()) {
+      cpp::span<const CharT> written_span = buffer.last(writer.size());
+      return cpp::basic_string_view<CharT>(written_span.data(),
+                                           written_span.size());
+    }
     return cpp::nullopt;
   }
 
@@ -475,8 +477,10 @@ public:
   LIBC_INLINE size_t size() const { return written; }
   LIBC_INLINE cpp::basic_string_view<CharT> view() && = delete;
   LIBC_INLINE cpp::basic_string_view<CharT> view() const & {
-    return cpp::basic_string_view<CharT>(array.data() + array.size() - size(),
-                                         size());
+    cpp::span<const CharT> written_span =
+        cpp::span<const CharT>(array).last(size());
+    return cpp::basic_string_view<CharT>(written_span.data(),
+                                         written_span.size());
   }
 };
 

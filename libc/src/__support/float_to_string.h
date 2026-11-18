@@ -11,6 +11,7 @@
 
 #include "hdr/stdint_proxy.h"
 #include "src/__support/CPP/limits.h"
+#include "src/__support/CPP/span.h"
 #include "src/__support/CPP/type_traits.h"
 #include "src/__support/FPUtil/FPBits.h"
 #include "src/__support/FPUtil/dyadic_float.h"
@@ -685,8 +686,10 @@ class FloatToString<T, cpp::enable_if_t<IsFloat128<T>::value
   LIBC_INLINE static constexpr void zero_leading_digits(wide_int &int_num) {
     // WORD_SIZE is the width of the numbers used to internally represent the
     // UInt
-    for (size_t i = 0; i < EXTRA_INT_WIDTH / wide_int::WORD_SIZE; ++i)
-      int_num[i + (FLOAT_AS_INT_WIDTH / wide_int::WORD_SIZE)] = 0;
+    for (auto &word : cpp::span(int_num.val)
+                          .subspan(FLOAT_AS_INT_WIDTH / wide_int::WORD_SIZE,
+                                   EXTRA_INT_WIDTH / wide_int::WORD_SIZE))
+      word = 0;
   }
 
   // init_convert initializes float_as_int, cur_block, and block_buffer based on
@@ -805,7 +808,7 @@ public:
   LIBC_INLINE constexpr BlockInt get_positive_block(int block_index) {
     if (exponent < -FRACTION_LEN)
       return 0;
-    if (block_index > static_cast<int>(block_buffer_valid) || block_index < 0)
+    if (block_index >= static_cast<int>(block_buffer_valid) || block_index < 0)
       return 0;
 
     LIBC_ASSERT(block_index < static_cast<int>(BLOCK_BUFFER_LEN));

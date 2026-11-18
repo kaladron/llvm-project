@@ -9,6 +9,7 @@
 #ifndef LLVM_LIBC_SRC_STDLIB_QSORT_UTIL_H
 #define LLVM_LIBC_SRC_STDLIB_QSORT_UTIL_H
 
+#include "src/__support/math_extras.h"
 #include "src/stdlib/heap_sort.h"
 #include "src/stdlib/quick_sort.h"
 
@@ -31,6 +32,10 @@ template <bool USE_QUICKSORT, typename F>
 LIBC_INLINE void unstable_sort_impl(void *array, size_t array_len,
                                     size_t elem_size, const F &is_less) {
   if (array == nullptr || array_len == 0 || elem_size == 0)
+    return;
+
+  size_t byte_len = 0;
+  if (mul_overflow(array_len, elem_size, byte_len))
     return;
 
   if constexpr (USE_QUICKSORT) {

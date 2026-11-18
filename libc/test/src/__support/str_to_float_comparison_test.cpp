@@ -8,6 +8,8 @@
 
 #include "hdr/stdint_proxy.h"
 #include "src/__support/CPP/bit.h"
+#include "src/__support/CPP/span.h"
+#include "src/__support/CPP/string_view.h"
 #include "src/stdio/fclose.h"
 #include "src/stdio/fgets.h"
 #include "src/stdio/fopen.h"
@@ -51,38 +53,35 @@ static inline uint32_t hexCharToU32(char in) {
   return in > '9' ? in + 10 - 'A' : in - '0';
 }
 
-// Fast because it assumes inStr points to exactly 8 uppercase hex chars
-static inline uint32_t fastHexToU32(const char *inStr) {
+// Fast because it assumes inStr contains 8 uppercase hex chars
+static inline uint32_t
+fastHexToU32(LIBC_NAMESPACE::cpp::span<const char> inStr) {
   uint32_t result = 0;
-  result = (hexCharToU32(inStr[0]) << 28) + (hexCharToU32(inStr[1]) << 24) +
-           (hexCharToU32(inStr[2]) << 20) + (hexCharToU32(inStr[3]) << 16) +
-           (hexCharToU32(inStr[4]) << 12) + (hexCharToU32(inStr[5]) << 8) +
-           (hexCharToU32(inStr[6]) << 4) + hexCharToU32(inStr[7]);
+  for (char ch : inStr.first<8>())
+    result = (result << 4) + hexCharToU32(ch);
   return result;
 }
 
-// Fast because it assumes inStr points to exactly 8 uppercase hex chars
-static inline uint64_t fastHexToU64(const char *inStr) {
-  uint64_t result = 0;
-  result = (static_cast<uint64_t>(fastHexToU32(inStr)) << 32) +
-           fastHexToU32(inStr + 8);
-  return result;
+// Fast because it assumes inStr contains 16 uppercase hex chars
+static inline uint64_t
+fastHexToU64(LIBC_NAMESPACE::cpp::span<const char> inStr) {
+  return (static_cast<uint64_t>(fastHexToU32(inStr.first<8>())) << 32) +
+         fastHexToU32(inStr.subspan<8, 8>());
 }
 
 static void parseLine(const char *line, ParseResult &parseResult,
                       int32_t &curFails, int32_t &curBitDiffs) {
-
-  if (line[0] == '#')
+  LIBC_NAMESPACE::cpp::string_view lineView(line);
+  if (lineView.empty() || lineView.front() == '#')
     return;
 
+  LIBC_NAMESPACE::cpp::span<const char> lineSpan(lineView.data(),
+                                                 lineView.size());
   parseResult.total += 1;
-  uint32_t expectedFloatRaw;
-  uint64_t expectedDoubleRaw;
+  uint32_t expectedFloatRaw = fastHexToU32(lineSpan.subspan(5).first<8>());
+  uint64_t expectedDoubleRaw = fastHexToU64(lineSpan.subspan(14).first<16>());
 
-  expectedFloatRaw = fastHexToU32(line + 5);
-  expectedDoubleRaw = fastHexToU64(line + 14);
-
-  const char *num = line + 31;
+  const char *num = lineSpan.subspan(31).data();
 
   float floatResult = LIBC_NAMESPACE::strtof(num, nullptr);
 
@@ -145,8 +144,8 @@ ParseStatus checkBuffer(ParseResult &parseResult) {
   int32_t curBitDiffs = 0; // A bitdiff is when the expected result and actual
   // result are off by +/- 1 bit.
 
-  for (uint8_t i = 0; i < sizeof(LINES) / sizeof(LINES[0]); i++) {
-    parseLine(LINES[i], parseResult, curFails, curBitDiffs);
+  for (const char *line : LINES) {
+    parseLine(line, parseResult, curFails, curBitDiffs);
   }
 
   parseResult.totalBitDiffs += curBitDiffs;

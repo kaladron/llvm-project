@@ -17,6 +17,7 @@
 
 #include "hdr/stdint_proxy.h"
 #include "src/__support/CPP/limits.h"
+#include "src/__support/CPP/span.h"
 #include "src/__support/ctype_utils.h"
 #include "src/__support/macros/config.h"
 #include "src/__support/str_to_integer.h"
@@ -148,6 +149,10 @@ class HighPrecisionDecimal {
   uint8_t digits[MAX_NUM_DIGITS];
 
 private:
+  LIBC_INLINE cpp::span<const uint8_t> active_digits() const {
+    return cpp::span<const uint8_t>(this->digits).first(this->num_digits);
+  }
+
   LIBC_INLINE bool should_round_up(int32_t round_to_digit,
                                    RoundDirection round) {
     if (round_to_digit < 0 ||
@@ -284,19 +289,18 @@ private:
   LIBC_INLINE void left_shift(uint32_t shift_amount) {
     uint32_t new_digits = this->get_num_new_digits(shift_amount);
 
-    int32_t read_index = static_cast<int32_t>(this->num_digits - 1);
     uint32_t write_index = this->num_digits + new_digits;
 
     uint64_t accumulator = 0;
+    cpp::span<const uint8_t> active = active_digits();
 
     // No Warm Up phase. Since we're putting digits in at the top and taking
     // digits from the bottom we don't have to wait for the accumulator to fill.
 
     // Middle phase: while we have more digits to read, keep reading as well as
     // writing.
-    while (read_index >= 0) {
-      accumulator += static_cast<uint64_t>(this->digits[read_index])
-                     << shift_amount;
+    for (auto it = active.rbegin(); it != active.rend(); ++it) {
+      accumulator += static_cast<uint64_t>(*it) << shift_amount;
       uint64_t next_accumulator = accumulator / 10;
       uint64_t write_digit = accumulator - (10 * next_accumulator);
       --write_index;
@@ -306,7 +310,6 @@ private:
         this->truncated = true;
       }
       accumulator = next_accumulator;
-      --read_index;
     }
 
     // Cool Down phase: there are no more digits to read, so just write the
@@ -376,7 +379,8 @@ public:
     if (num_cur < num_len && tolower(num_string[num_cur]) ==
                                  constants<CharType>::DECIMAL_EXPONENT_MARKER) {
       ++num_cur;
-      if (isdigit(num_string[num_cur]) || get_sign(num_string + num_cur) != 0) {
+      if (num_cur < num_len && (isdigit(num_string[num_cur]) ||
+                                get_sign(num_string + num_cur) != 0)) {
         auto result =
             strtointeger<int32_t>(num_string + num_cur, 10, num_len - num_cur);
         if (result.has_error()) {
@@ -431,13 +435,17 @@ public:
   LIBC_INLINE T
   round_to_integer_type(RoundDirection round = RoundDirection::Nearest) {
     T result = 0;
-    uint32_t cur_digit = 0;
-
-    while (static_cast<int32_t>(cur_digit) < this->decimal_point &&
-           cur_digit < this->num_digits) {
-      result = result * 10 + (this->digits[cur_digit]);
-      ++cur_digit;
+    size_t digits_to_read = this->num_digits;
+    if (this->decimal_point <= 0) {
+      digits_to_read = 0;
+    } else if (static_cast<size_t>(this->decimal_point) < digits_to_read) {
+      digits_to_read = static_cast<size_t>(this->decimal_point);
     }
+
+    for (uint8_t digit : active_digits().first(digits_to_read)) {
+      result = result * 10 + digit;
+    }
+    uint32_t cur_digit = static_cast<uint32_t>(digits_to_read);
 
     // If there are implicit 0s at the end of the number, include those.
     while (static_cast<int32_t>(cur_digit) < this->decimal_point) {

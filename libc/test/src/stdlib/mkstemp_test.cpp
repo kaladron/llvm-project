@@ -15,6 +15,7 @@
 #include "hdr/errno_macros.h"
 #include "hdr/fcntl_macros.h"
 #include "hdr/signal_macros.h"
+#include "src/__support/CPP/span.h"
 #include "src/stdlib/mkstemp.h"
 #include "src/string/strdup.h"
 #include "src/string/strlen.h"
@@ -46,8 +47,8 @@ TEST_F(LlvmLibcMkstempTest, TemplateModifiedInPlace) {
   int fd = LIBC_NAMESPACE::mkstemp(tmpl);
   ASSERT_GE(fd, 0);
   bool modified = false;
-  for (size_t i = len - count; i < len; i++)
-    if (tmpl[i] != 'X') {
+  for (char ch : LIBC_NAMESPACE::cpp::span<const char>(tmpl, len).last(count))
+    if (ch != 'X') {
       modified = true;
       break;
     }
@@ -71,10 +72,12 @@ TEST_F(LlvmLibcMkstempTest, AllCharactersInCharset) {
   const char charset[] = "-._0123456789"
                          "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
                          "abcdefghijklmnopqrstuvwxyz";
-  for (size_t i = len - count; i < len; i++) {
+  LIBC_NAMESPACE::cpp::span<const char> charset_span =
+      LIBC_NAMESPACE::cpp::span<const char>(charset).first(sizeof(charset) - 1);
+  for (char ch : LIBC_NAMESPACE::cpp::span<const char>(tmpl, len).last(count)) {
     bool found = false;
-    for (size_t j = 0; j < sizeof(charset) - 1; j++) {
-      if (tmpl[i] == charset[j]) {
+    for (char allowed : charset_span) {
+      if (ch == allowed) {
         found = true;
         break;
       }
@@ -153,8 +156,8 @@ TEST_F(LlvmLibcMkstempTest, MoreThanSixXs) {
   int fd = LIBC_NAMESPACE::mkstemp(tmpl);
   ASSERT_GE(fd, 0);
   bool modified = false;
-  for (size_t i = len - count; i < len; i++)
-    if (tmpl[i] != 'X') {
+  for (char ch : LIBC_NAMESPACE::cpp::span<const char>(tmpl, len).last(count))
+    if (ch != 'X') {
       modified = true;
       break;
     }

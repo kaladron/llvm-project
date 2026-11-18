@@ -12,10 +12,11 @@
 #include "hdr/func/free.h"
 #include "hdr/func/malloc.h"
 #include "hdr/func/realloc.h"
+#include "hdr/types/size_t.h"
+#include "src/__support/CPP/span.h"
 #include "src/__support/common.h" // LIBC_INLINE
 #include "src/__support/macros/config.h"
-
-#include <stddef.h> // size_t
+#include "src/string/memory_utils/inline_memcpy.h"
 
 namespace LIBC_NAMESPACE_DECL {
 
@@ -28,39 +29,37 @@ namespace LIBC_NAMESPACE_DECL {
 class CharVector {
   static constexpr size_t INIT_BUFF_SIZE = 64;
   char local_buffer[INIT_BUFF_SIZE];
-  char *cur_str = local_buffer;
-  size_t cur_buff_size = INIT_BUFF_SIZE;
+  cpp::span<char> cur_str{local_buffer};
   size_t index = 0;
 
 public:
   CharVector() = default;
   LIBC_INLINE ~CharVector() {
-    if (cur_str != local_buffer)
-      free(cur_str);
+    if (cur_str.data() != local_buffer)
+      free(cur_str.data());
   }
 
   // append returns true on success and false on allocation failure.
   LIBC_INLINE bool append(char new_char) {
     // Subtract 1 for index starting at 0 and another for the null terminator.
-    if (index >= cur_buff_size - 2) {
+    if (index >= cur_str.size() - 2) {
       // If the new character would cause the string to be longer than the
       // buffer's size, attempt to allocate a new buffer.
-      cur_buff_size = cur_buff_size * 2;
-      if (cur_str == local_buffer) {
-        char *new_str;
-        new_str = reinterpret_cast<char *>(malloc(cur_buff_size));
-        if (new_str == nullptr) {
+      const size_t new_buff_size = cur_str.size() * 2;
+      if (new_buff_size <= cur_str.size())
+        return false;
+      if (cur_str.data() == local_buffer) {
+        char *new_str = reinterpret_cast<char *>(malloc(new_buff_size));
+        if (new_str == nullptr)
           return false;
-        }
-        // TODO: replace with inline memcpy
-        for (size_t i = 0; i < index; ++i)
-          new_str[i] = cur_str[i];
-        cur_str = new_str;
+        inline_memcpy(new_str, cur_str.data(), index);
+        cur_str = {new_str, new_buff_size};
       } else {
-        cur_str = reinterpret_cast<char *>(realloc(cur_str, cur_buff_size));
-        if (cur_str == nullptr) {
+        char *new_str =
+            reinterpret_cast<char *>(realloc(cur_str.data(), new_buff_size));
+        if (new_str == nullptr)
           return false;
-        }
+        cur_str = {new_str, new_buff_size};
       }
     }
     cur_str[index] = new_char;
@@ -70,7 +69,7 @@ public:
 
   LIBC_INLINE char *c_str() {
     cur_str[index] = '\0';
-    return cur_str;
+    return cur_str.data();
   }
 
   LIBC_INLINE size_t length() { return index; }

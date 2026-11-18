@@ -297,6 +297,7 @@ add_libc_test(
     libc.src.__support.hash
     libc.src.__support.CPP.bit
     libc.src.__support.CPP.new
+    libc.src.__support.CPP.span
     libc.src.stdlib.rand
     libc.src.stdlib.srand
     libc.src.string.memset
@@ -352,6 +353,8 @@ add_libc_test(
     libc.src.string.strtok
     libc.src.string.strdup
     libc.src.__support.CPP.bit
+    libc.src.__support.CPP.span
+    libc.src.__support.CPP.string_view
 )
 
 add_libc_test(

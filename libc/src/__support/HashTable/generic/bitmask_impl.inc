@@ -10,6 +10,7 @@
 #include "src/__support/common.h"
 #include "src/__support/endian_internal.h"
 #include "src/__support/macros/config.h"
+#include "src/string/memory_utils/inline_memcpy.h"
 
 namespace LIBC_NAMESPACE_DECL {
 namespace internal {
@@ -46,9 +47,7 @@ struct Group {
   // Load a group of control words from an arbitary address.
   LIBC_INLINE static Group load(const void *addr) {
     char bytes[sizeof(bitmask_t)];
-
-    for (size_t i = 0; i < sizeof(bitmask_t); ++i)
-      bytes[i] = static_cast<const char *>(addr)[i];
+    inline_memcpy(bytes, addr, sizeof(bitmask_t));
     return Group{cpp::bit_cast<bitmask_t>(bytes)};
   }
 

@@ -8,6 +8,7 @@
 
 #include "src/stdlib/strfroml.h"
 #include "hdr/types/size_t.h"
+#include "src/__support/CPP/span.h"
 #include "src/stdlib/str_from_util.h"
 
 namespace LIBC_NAMESPACE_DECL {
@@ -15,7 +16,7 @@ namespace LIBC_NAMESPACE_DECL {
 LLVM_LIBC_FUNCTION(int, strfroml,
                    (char *__restrict s, size_t n, const char *__restrict format,
                     long double fp)) {
-  return internal::strfromfloat_impl(s, n, format, fp);
+  return internal::strfromfloat_impl(cpp::span<char>(s, n), format, fp);
 }
 
 } // namespace LIBC_NAMESPACE_DECL

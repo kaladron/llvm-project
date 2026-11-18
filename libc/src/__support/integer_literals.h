@@ -14,12 +14,13 @@
 #define LLVM_LIBC_SRC___SUPPORT_INTEGER_LITERALS_H
 
 #include "hdr/stdint_proxy.h"         // uintxx_t
+#include "hdr/types/size_t.h"
 #include "src/__support/CPP/limits.h" // CHAR_BIT
+#include "src/__support/CPP/span.h"
 #include "src/__support/ctype_utils.h"
 #include "src/__support/macros/attributes.h" // LIBC_INLINE
 #include "src/__support/macros/config.h"
 #include "src/__support/uint128.h" // UInt128
-#include <stddef.h>                // size_t
 
 namespace LIBC_NAMESPACE_DECL {
 
@@ -41,16 +42,21 @@ LIBC_INLINE constexpr uint64_t operator""_u64(unsigned long long value) {
 
 namespace internal {
 
-// Creates a T by reading digits from an array.
+// Creates a T by reading digits from a span.
+template <typename T>
+LIBC_INLINE constexpr T accumulate(int base, cpp::span<const uint8_t> digits) {
+  T value{};
+  for (uint8_t digit : digits) {
+    value *= static_cast<unsigned int>(base);
+    value += digit;
+  }
+  return value;
+}
+
 template <typename T>
 LIBC_INLINE constexpr T accumulate(int base, const uint8_t *digits,
                                    size_t size) {
-  T value{};
-  for (; size; ++digits, --size) {
-    value *= static_cast<unsigned int>(base);
-    value += *digits;
-  }
-  return value;
+  return accumulate<T>(base, cpp::span<const uint8_t>(digits, size));
 }
 
 // A static buffer to hold the digits for a T.
@@ -74,6 +80,10 @@ template <typename T, int base> struct DigitBuffer {
   constexpr DigitBuffer(const char *str) {
     for (; *str != '\0'; ++str)
       push(*str);
+  }
+
+  LIBC_INLINE constexpr cpp::span<const uint8_t> view() const {
+    return cpp::span<const uint8_t>(digits).first(size);
   }
 
   // Adds a single character to this buffer.
@@ -100,7 +110,7 @@ template <typename T, int base> struct DigitBuffer {
 template <typename T> struct Parser {
   template <int base> LIBC_INLINE static constexpr T parse(const char *str) {
     const DigitBuffer<T, base> buffer(str);
-    return accumulate<T>(base, buffer.digits, buffer.size);
+    return accumulate<T>(base, buffer.view());
   }
 };
 
@@ -115,21 +125,20 @@ template <size_t N> struct Parser<LIBC_NAMESPACE::UInt<N>> {
     const DigitBuffer<UIntT, base> buffer(str);
     if constexpr (base == 10) {
       // Slow path, we sum and multiply BigInt for each digit.
-      return accumulate<UIntT>(base, buffer.digits, buffer.size);
+      return accumulate<UIntT>(base, buffer.view());
     } else {
       // Fast path, we consume blocks of WordType and creates the BigInt's
       // internal representation directly.
       using WordArrayT = decltype(UIntT::val);
       using WordType = typename WordArrayT::value_type;
       WordArrayT array = {};
-      size_t size = buffer.size;
-      const uint8_t *digit_ptr = buffer.digits + size;
-      for (size_t i = 0; i < array.size(); ++i) {
+      cpp::span<const uint8_t> remaining = buffer.view();
+      for (WordType &word : array) {
         constexpr size_t DIGITS = DigitBuffer<WordType, base>::MAX_DIGITS;
-        const size_t chunk = size > DIGITS ? DIGITS : size;
-        digit_ptr -= chunk;
-        size -= chunk;
-        array[i] = accumulate<WordType>(base, digit_ptr, chunk);
+        const size_t chunk =
+            remaining.size() > DIGITS ? DIGITS : remaining.size();
+        word = accumulate<WordType>(base, remaining.last(chunk));
+        remaining = remaining.first(remaining.size() - chunk);
       }
       return UIntT(array);
     }
