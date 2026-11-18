@@ -7,7 +7,7 @@
 //===----------------------------------------------------------------------===//
 ///
 /// \file
-/// Co-allocated struct addrinfo builder and IPv4 literal getaddrinfo driver.
+/// Co-allocated struct addrinfo builder and local literal getaddrinfo driver.
 ///
 //===----------------------------------------------------------------------===//
 
@@ -23,7 +23,9 @@
 #include "hdr/types/struct_addrinfo.h"
 #include "hdr/types/struct_sockaddr.h"
 #include "hdr/types/struct_sockaddr_in.h"
+#include "hdr/types/struct_sockaddr_in6.h"
 #include "src/__support/CPP/array.h"
+#include "src/__support/CPP/functional.h"
 #include "src/__support/CPP/new.h"
 #include "src/__support/CPP/optional.h"
 #include "src/__support/CPP/span.h"
@@ -41,7 +43,10 @@ namespace netdb {
 
 struct AddrinfoNode {
   struct addrinfo ai{};
-  struct sockaddr_in sa{};
+  union {
+    struct sockaddr_in v4;
+    struct sockaddr_in6 v6;
+  } sa{};
 };
 static_assert(__builtin_offsetof(AddrinfoNode, ai) == 0);
 
@@ -67,6 +72,10 @@ struct ServiceSpec {
   int protocol = 0;
   in_port_t net_port = 0;
 };
+
+using ServLookupFn =
+    cpp::function_ref<int(cpp::string_view, const char *, int, int,
+                          cpp::span<ServiceSpec>, size_t &, int &)>;
 
 #ifndef LIBC_COPT_PUBLIC_PACKAGING
 LIBC_INLINE_VAR LIBC_THREAD_LOCAL bool ai_alloc_budget_active = false;
@@ -96,6 +105,16 @@ LIBC_ALWAYS_INLINE CheckedPtr<uint8_t[]> alloc_ai_bytes(size_t n) {
 }
 #endif // LIBC_COPT_PUBLIC_PACKAGING
 
+LIBC_INLINE constexpr ScopedIpAddr to_v4mapped_ip6(const ScopedIpAddr &v4) {
+  ScopedIpAddr out{};
+  out.is_ipv6 = true;
+  out.addr[10] = 0xff;
+  out.addr[11] = 0xff;
+  for (size_t i = 0; i < 4; ++i)
+    out.addr[12 + i] = v4.addr[i];
+  return out;
+}
+
 LIBC_INLINE CheckedAddrInfo alloc_ai_node(const ScopedIpAddr &ip,
                                           ServiceSpec spec, int flags,
                                           cpp::string_view canonname) {
@@ -108,15 +127,26 @@ LIBC_INLINE CheckedAddrInfo alloc_ai_node(const ScopedIpAddr &ip,
   uint8_t *buf = raw.get();
   auto *node = new (buf) AddrinfoNode{};
   node->ai.ai_flags = flags;
-  node->ai.ai_family = AF_INET;
   node->ai.ai_socktype = spec.socktype;
   node->ai.ai_protocol = spec.protocol;
-  node->ai.ai_addrlen = sizeof(node->sa);
   node->ai.ai_addr = reinterpret_cast<struct sockaddr *>(&node->sa);
 
-  node->sa.sin_family = AF_INET;
-  node->sa.sin_port = spec.net_port;
-  inline_memcpy(&node->sa.sin_addr, ip.addr.data(), sizeof(node->sa.sin_addr));
+  if (ip.is_ipv6) {
+    node->ai.ai_family = AF_INET6;
+    node->ai.ai_addrlen = sizeof(node->sa.v6);
+    node->sa.v6.sin6_family = AF_INET6;
+    node->sa.v6.sin6_port = spec.net_port;
+    node->sa.v6.sin6_scope_id = ip.scope_id;
+    inline_memcpy(&node->sa.v6.sin6_addr, ip.addr.data(),
+                  sizeof(node->sa.v6.sin6_addr));
+  } else {
+    node->ai.ai_family = AF_INET;
+    node->ai.ai_addrlen = sizeof(node->sa.v4);
+    node->sa.v4.sin_family = AF_INET;
+    node->sa.v4.sin_port = spec.net_port;
+    inline_memcpy(&node->sa.v4.sin_addr, ip.addr.data(),
+                  sizeof(node->sa.v4.sin_addr));
+  }
 
   if (EXTRA > 0) {
     cpp::span<uint8_t> tail =
@@ -174,8 +204,9 @@ LIBC_INLINE constexpr void push_tcp_udp(bool allow_tcp, bool allow_udp,
 }
 
 LIBC_INLINE int resolve_services(const char *serv, int flags, int socktype,
-                                 int protocol, cpp::span<ServiceSpec> specs,
-                                 size_t &count) {
+                                 int protocol, ServLookupFn on_serv,
+                                 cpp::span<ServiceSpec> specs, size_t &count,
+                                 int &sys_err) {
   if (socktype == SOCK_RAW) {
     if (protocol < 0)
       return EAI_SOCKTYPE;
@@ -194,12 +225,32 @@ LIBC_INLINE int resolve_services(const char *serv, int flags, int socktype,
 
   if (serv != nullptr) {
     const cpp::optional<uint16_t> PORT = parse_unsigned<uint16_t>(serv);
-    if (!PORT.has_value())
-      return (flags & AI_NUMERICSERV) != 0 ? EAI_NONAME : EAI_SERVICE;
+    if (PORT.has_value()) {
+      push_tcp_udp(ALLOW_TCP, ALLOW_UDP,
+                   net::hton(static_cast<in_port_t>(*PORT)), specs, count);
+      return 0;
+    }
+    if ((flags & AI_NUMERICSERV) != 0)
+      return EAI_NONAME;
 
-    push_tcp_udp(ALLOW_TCP, ALLOW_UDP, net::hton(static_cast<in_port_t>(*PORT)),
-                 specs, count);
-    return 0;
+    struct ProtoCandidate {
+      bool enabled;
+      const char *name;
+      int socktype;
+      int protocol;
+    };
+    const ProtoCandidate CANDIDATES[2] = {
+        {ALLOW_TCP, "tcp", SOCK_STREAM, IPPROTO_TCP},
+        {ALLOW_UDP, "udp", SOCK_DGRAM, IPPROTO_UDP},
+    };
+    for (const ProtoCandidate &CAND : CANDIDATES) {
+      if (!CAND.enabled)
+        continue;
+      if (on_serv(serv, CAND.name, CAND.socktype, CAND.protocol, specs, count,
+                  sys_err) != 0)
+        return EAI_SYSTEM;
+    }
+    return count > 0 ? 0 : EAI_SERVICE;
   }
 
   push_tcp_udp(ALLOW_TCP, ALLOW_UDP, 0, specs, count);
@@ -214,7 +265,8 @@ LIBC_INLINE constexpr bool valid_ai_family(int family) {
 
 LIBC_INLINE int lookup_addrinfo(const char *node, const char *serv,
                                 const struct addrinfo *hints,
-                                struct addrinfo **res) {
+                                ServLookupFn on_serv, struct addrinfo **res,
+                                int &sys_err) {
   *res = nullptr;
 
   const struct addrinfo DEFAULT_HINTS{};
@@ -237,28 +289,43 @@ LIBC_INLINE int lookup_addrinfo(const char *node, const char *serv,
 
   cpp::array<ServiceSpec, 3> specs{};
   size_t spec_count = 0;
-  const int SERV_RC = resolve_services(serv, H.ai_flags, H.ai_socktype,
-                                       H.ai_protocol, specs, spec_count);
+  const int SERV_RC =
+      resolve_services(serv, H.ai_flags, H.ai_socktype, H.ai_protocol, on_serv,
+                       specs, spec_count, sys_err);
   if (SERV_RC != 0)
     return SERV_RC;
 
   const cpp::span<const ServiceSpec> ACTIVE_SPECS(specs.data(), spec_count);
 
   if (node == nullptr) {
-    if (H.ai_family == AF_INET6)
-      return EAI_NONAME;
+    ScopedIpAddr addrs[2]{};
+    addrs[1].is_ipv6 = true;
+    if ((H.ai_flags & AI_PASSIVE) == 0) {
+      addrs[0].addr[0] = 127;
+      addrs[0].addr[3] = 1;
+      addrs[1].addr[15] = 1;
+    }
 
-    ScopedIpAddr ip{};
-    if ((H.ai_flags & AI_PASSIVE) == 0)
-      ip.addr = {127, 0, 0, 1};
-    return emit_ai_list({&ip, 1}, ACTIVE_SPECS, H.ai_flags, {}, res);
+    const size_t OFFSET = H.ai_family == AF_INET6 ? 1 : 0;
+    const size_t ADDR_COUNT = H.ai_family == AF_UNSPEC ? 2 : 1;
+    return emit_ai_list(
+        cpp::span<const ScopedIpAddr>(addrs).subspan(OFFSET, ADDR_COUNT),
+        ACTIVE_SPECS, H.ai_flags, {}, res);
   }
 
   ScopedIpAddr ip{};
-  if (!parse_ipv4(node, ip))
+  if (!parse_scoped_ip(node, ip))
     return EAI_NONAME;
-  if (H.ai_family == AF_INET6)
+
+  if (!ip.is_ipv6) {
+    if (H.ai_family == AF_INET6) {
+      if ((H.ai_flags & AI_V4MAPPED) == 0)
+        return EAI_NONAME;
+      ip = to_v4mapped_ip6(ip);
+    }
+  } else if (H.ai_family == AF_INET) {
     return EAI_NONAME;
+  }
 
   cpp::string_view canonname{};
   if ((H.ai_flags & AI_CANONNAME) != 0)

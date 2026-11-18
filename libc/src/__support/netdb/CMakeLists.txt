@@ -5,6 +5,7 @@ add_header_library(
   DEPENDS
     libc.hdr.stdint_proxy
     libc.hdr.types.size_t
+    libc.hdr.types.struct_in6_addr
     libc.hdr.types.struct_in_addr
     libc.src.__support.CPP.array
     libc.src.__support.CPP.optional
@@ -32,7 +33,9 @@ add_header_library(
     libc.hdr.types.struct_addrinfo
     libc.hdr.types.struct_sockaddr
     libc.hdr.types.struct_sockaddr_in
+    libc.hdr.types.struct_sockaddr_in6
     libc.src.__support.CPP.array
+    libc.src.__support.CPP.functional
     libc.src.__support.CPP.new
     libc.src.__support.CPP.optional
     libc.src.__support.CPP.span

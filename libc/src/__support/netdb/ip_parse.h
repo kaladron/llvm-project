@@ -7,7 +7,7 @@
 //===----------------------------------------------------------------------===//
 ///
 /// \file
-/// Bounded unsigned integer and IPv4 literal parser for netdb.
+/// Bounded unsigned integer and scoped IPv4/IPv6 literal parser for netdb.
 ///
 //===----------------------------------------------------------------------===//
 
@@ -16,6 +16,7 @@
 
 #include "hdr/stdint_proxy.h"
 #include "hdr/types/size_t.h"
+#include "hdr/types/struct_in6_addr.h"
 #include "hdr/types/struct_in_addr.h"
 #include "src/__support/CPP/array.h"
 #include "src/__support/CPP/optional.h"
@@ -31,7 +32,9 @@ namespace LIBC_NAMESPACE_DECL {
 namespace netdb {
 
 struct ScopedIpAddr {
-  cpp::array<uint8_t, 4> addr{};
+  bool is_ipv6 = false;
+  cpp::array<uint8_t, 16> addr{};
+  uint32_t scope_id = 0;
 };
 
 template <typename T>
@@ -51,8 +54,35 @@ LIBC_INLINE bool parse_ipv4(cpp::string_view tok, ScopedIpAddr &out) {
   if (!net::str_to_ipv4(tok, v4))
     return false;
 
+  out = {};
   inline_memcpy(out.addr.data(), &v4, sizeof(v4));
   return true;
+}
+
+LIBC_INLINE bool parse_ipv6(cpp::string_view tok, ScopedIpAddr &out) {
+  const size_t PCT = tok.find_first_of('%');
+  struct in6_addr v6{};
+  if (!net::str_to_ipv6(tok.substr(0, PCT), v6))
+    return false;
+
+  uint32_t scope = 0;
+  if (PCT != cpp::string_view::npos) {
+    const cpp::optional<uint32_t> PARSED =
+        parse_unsigned<uint32_t>(tok.substr(PCT + 1));
+    if (!PARSED.has_value())
+      return false;
+    scope = *PARSED;
+  }
+
+  out = {};
+  out.is_ipv6 = true;
+  out.scope_id = scope;
+  inline_memcpy(out.addr.data(), &v6, sizeof(v6));
+  return true;
+}
+
+LIBC_INLINE bool parse_scoped_ip(cpp::string_view tok, ScopedIpAddr &out) {
+  return parse_ipv4(tok, out) || parse_ipv6(tok, out);
 }
 
 } // namespace netdb

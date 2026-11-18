@@ -31,7 +31,7 @@ struct addrinfo *make_test_node(size_t extra) {
 
   uint8_t *buf = raw.release();
   auto *node = new (buf) LIBC_NAMESPACE::netdb::AddrinfoNode{};
-  node->ai.ai_addr = reinterpret_cast<struct sockaddr *>(&node->sa);
+  node->ai.ai_addr = reinterpret_cast<struct sockaddr *>(&node->sa.v4);
   return &node->ai;
 }
 

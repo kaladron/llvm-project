@@ -29,28 +29,6 @@ add_libc_test(
 )
 
 add_libc_test(
-  getaddrinfo_test
-  SUITE
-    libc-netdb-tests
-  SRCS
-    getaddrinfo_test.cpp
-  DEPENDS
-    libc.hdr.netdb_macros
-    libc.hdr.netinet_in_macros
-    libc.hdr.signal_macros
-    libc.hdr.stdint_proxy
-    libc.hdr.sys_socket_macros
-    libc.hdr.types.in_port_t
-    libc.hdr.types.size_t
-    libc.hdr.types.struct_addrinfo
-    libc.hdr.types.struct_sockaddr_in
-    libc.src.__support.net.byte_order
-    libc.src.__support.netdb.addrinfo
-    libc.src.netdb.getaddrinfo
-    libc.test.UnitTest.ErrnoCheckingTest
-)
-
-add_libc_test(
   h_errno_test
   SUITE
     libc-netdb-tests
@@ -75,6 +53,33 @@ add_header_library(
     libc.src.__support.File.platform_file
     libc.src.stdio.remove
     libc.src.string.string_utils
+)
+
+add_libc_test(
+  getaddrinfo_test
+  SUITE
+    libc-netdb-tests
+  SRCS
+    getaddrinfo_test.cpp
+  DEPENDS
+    .test_db_file
+    libc.hdr.errno_macros
+    libc.hdr.netdb_macros
+    libc.hdr.netinet_in_macros
+    libc.hdr.signal_macros
+    libc.hdr.stdint_proxy
+    libc.hdr.sys_socket_macros
+    libc.hdr.types.in_port_t
+    libc.hdr.types.size_t
+    libc.hdr.types.struct_addrinfo
+    libc.hdr.types.struct_sockaddr_in
+    libc.hdr.types.struct_sockaddr_in6
+    libc.src.__support.net.byte_order
+    libc.src.__support.netdb.addrinfo
+    libc.src.__support.netdb.services
+    libc.src.netdb.getaddrinfo
+    libc.test.UnitTest.ErrnoCheckingTest
+    libc.test.UnitTest.ErrnoSetterMatcher
 )
 
 add_libc_test(

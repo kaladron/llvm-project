@@ -31,6 +31,11 @@ add_entrypoint_object(
     libc.src.__support.macros.config
 )
 
+if(NOT TARGET libc.src.__support.File.file OR
+    NOT TARGET libc.src.__support.File.platform_file)
+  return()
+endif()
+
 add_entrypoint_object(
   getaddrinfo
   SRCS
@@ -38,15 +43,19 @@ add_entrypoint_object(
   HDRS
     getaddrinfo.h
   DEPENDS
+    libc.hdr.netdb_macros
+    libc.hdr.types.in_port_t
+    libc.hdr.types.size_t
     libc.hdr.types.struct_addrinfo
+    libc.hdr.types.struct_servent
+    libc.src.__support.CPP.span
+    libc.src.__support.CPP.string_view
+    libc.src.__support.libc_errno
     libc.src.__support.macros.null_check
     libc.src.__support.netdb.addrinfo
+    libc.src.__support.netdb.services
+    libc.src.errno.errno
 )
-
-if(NOT TARGET libc.src.__support.File.file OR
-    NOT TARGET libc.src.__support.File.platform_file)
-  return()
-endif()
 
 add_object_library(
   getnet_internal
