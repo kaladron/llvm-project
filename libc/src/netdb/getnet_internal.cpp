@@ -43,6 +43,11 @@ struct LineScan {
   bool matched = false;
 };
 
+struct NetQuery {
+  cpp::optional<cpp::string_view> name;
+  uint32_t net = 0;
+};
+
 } // namespace
 
 static cpp::optional<uint8_t> parse_octet(cpp::string_view part) {
@@ -149,16 +154,15 @@ static int pack_netent(const cpp::StringStream &out, cpp::span<char> buffer,
 }
 
 static ErrorOr<cpp::optional<int>>
-parse_line(netdb::LineReader &reader, cpp::string_view target_name,
-           cpp::span<char> buffer, struct netent *result_buf,
-           struct netent **result, int *h_errnop) {
+parse_line(netdb::LineReader &reader, NetQuery query, cpp::span<char> buffer,
+           struct netent *result_buf, struct netent **result, int *h_errnop) {
   constexpr size_t NUM_BUF_SIZE = 32;
   char num_buf[NUM_BUF_SIZE];
   cpp::StringStream out(buffer);
   cpp::StringStream num_out(num_buf);
 
-  ErrorOr<LineScan> scan_or =
-      scan_line_tokens(reader, target_name, out, num_out);
+  ErrorOr<LineScan> scan_or = scan_line_tokens(
+      reader, query.name.value_or(cpp::string_view{}), out, num_out);
   if (!scan_or.has_value())
     return Error(scan_or.error());
 
@@ -169,11 +173,15 @@ parse_line(netdb::LineReader &reader, cpp::string_view target_name,
     }
     return cpp::optional<int>(cpp::nullopt);
   }
-  if (!scan_or->matched || reader.is_invalid())
+  if (reader.is_invalid())
+    return cpp::optional<int>(cpp::nullopt);
+  if (query.name.has_value() && !scan_or->matched)
     return cpp::optional<int>(cpp::nullopt);
 
   const cpp::optional<uint32_t> NET_NUM = parse_darpa_net(num_out);
   if (!NET_NUM.has_value())
+    return cpp::optional<int>(cpp::nullopt);
+  if (!query.name.has_value() && *NET_NUM != query.net)
     return cpp::optional<int>(cpp::nullopt);
 
   const int RC = pack_netent(out, buffer, *NET_NUM, scan_or->token_count - 2,
@@ -183,14 +191,14 @@ parse_line(netdb::LineReader &reader, cpp::string_view target_name,
   return cpp::optional<int>(RC);
 }
 
-static int search_networks(File *file, cpp::string_view target_name,
-                           cpp::span<char> buffer, struct netent *result_buf,
-                           struct netent **result, int *h_errnop) {
+static int search_networks(File *file, NetQuery query, cpp::span<char> buffer,
+                           struct netent *result_buf, struct netent **result,
+                           int *h_errnop) {
   netdb::LineReader reader(file);
 
   while (true) {
     ErrorOr<cpp::optional<int>> line_or =
-        parse_line(reader, target_name, buffer, result_buf, result, h_errnop);
+        parse_line(reader, query, buffer, result_buf, result, h_errnop);
     if (!line_or.has_value()) {
       *h_errnop = NO_RECOVERY;
       return line_or.error();
@@ -200,9 +208,9 @@ static int search_networks(File *file, cpp::string_view target_name,
   }
 }
 
-int netdb::lookup_net_by_name(cpp::string_view name, struct netent *result_buf,
-                              cpp::span<char> buffer, struct netent **result,
-                              int *h_errnop, const char *path) {
+static int lookup_net(NetQuery query, struct netent *result_buf,
+                      cpp::span<char> buffer, struct netent **result,
+                      int *h_errnop, const char *path) {
   *result = nullptr;
 
   const char *db_path = path != nullptr ? path : DEFAULT_NETWORKS_PATH;
@@ -220,7 +228,26 @@ int netdb::lookup_net_by_name(cpp::string_view name, struct netent *result_buf,
   cpp::scope_exit close_file([file]() { file->close(); });
   File::FileLock lock(file);
 
-  return search_networks(file, name, buffer, result_buf, result, h_errnop);
+  return search_networks(file, query, buffer, result_buf, result, h_errnop);
+}
+
+int netdb::lookup_net_by_name(cpp::string_view name, struct netent *result_buf,
+                              cpp::span<char> buffer, struct netent **result,
+                              int *h_errnop, const char *path) {
+  return lookup_net({name, 0}, result_buf, buffer, result, h_errnop, path);
+}
+
+int netdb::lookup_net_by_addr(uint32_t net, int type, struct netent *result_buf,
+                              cpp::span<char> buffer, struct netent **result,
+                              int *h_errnop, const char *path) {
+  if (type != AF_INET) {
+    *result = nullptr;
+    *h_errnop = HOST_NOT_FOUND;
+    return 0;
+  }
+
+  return lookup_net({cpp::nullopt, net}, result_buf, buffer, result, h_errnop,
+                    path);
 }
 
 } // namespace LIBC_NAMESPACE_DECL

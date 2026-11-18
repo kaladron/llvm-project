@@ -415,6 +415,7 @@ add_header_macro(
     .llvm-libc-types.struct_addrinfo
     .llvm-libc-types.struct_netent
     .llvm-libc-types.struct_protoent
+    .stdint
 )
 
 add_header_macro(

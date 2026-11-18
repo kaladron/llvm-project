@@ -14,6 +14,7 @@
 #ifndef LLVM_LIBC_SRC_NETDB_GETNET_INTERNAL_H
 #define LLVM_LIBC_SRC_NETDB_GETNET_INTERNAL_H
 
+#include "hdr/stdint_proxy.h"
 #include "hdr/types/struct_netent.h"
 #include "src/__support/CPP/span.h"
 #include "src/__support/CPP/string_view.h"
@@ -34,6 +35,10 @@ LIBC_ALWAYS_INLINE constexpr const char *get_networks_path() { return nullptr; }
 #endif // LIBC_COPT_PUBLIC_PACKAGING
 
 int lookup_net_by_name(cpp::string_view name, struct netent *result_buf,
+                       cpp::span<char> buffer, struct netent **result,
+                       int *h_errnop, const char *path = nullptr);
+
+int lookup_net_by_addr(uint32_t net, int type, struct netent *result_buf,
                        cpp::span<char> buffer, struct netent **result,
                        int *h_errnop, const char *path = nullptr);
 

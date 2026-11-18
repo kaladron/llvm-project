@@ -58,6 +58,7 @@ types:
   - type_name: struct_addrinfo
   - type_name: struct_netent
   - type_name: struct_protoent
+  - type_name: uint32_t
 enums: []
 objects: []
 functions:
@@ -88,6 +89,18 @@ functions:
       - type: const char *__restrict
       - type: const struct addrinfo *__restrict
       - type: struct addrinfo **__restrict
+  - name: getnetbyaddr_r
+    standards:
+      - gnu
+    return_type: int
+    arguments:
+      - type: uint32_t
+      - type: int
+      - type: struct netent *__restrict
+      - type: char *__restrict
+      - type: size_t
+      - type: struct netent **__restrict
+      - type: int *__restrict
   - name: getnetbyname_r
     standards:
       - gnu

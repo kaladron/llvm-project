@@ -81,6 +81,21 @@ add_object_library(
 )
 
 add_entrypoint_object(
+  getnetbyaddr_r
+  SRCS
+    getnetbyaddr_r.cpp
+  HDRS
+    getnetbyaddr_r.h
+  DEPENDS
+    .getnet_internal
+    libc.hdr.stdint_proxy
+    libc.hdr.types.size_t
+    libc.hdr.types.struct_netent
+    libc.src.__support.CPP.span
+    libc.src.__support.macros.null_check
+)
+
+add_entrypoint_object(
   getnetbyname_r
   SRCS
     getnetbyname_r.cpp
