@@ -28,6 +28,17 @@ add_libc_test(
     libc.test.UnitTest.ErrnoSetterMatcher
 )
 
+add_libc_test(
+  h_errno_test
+  SUITE
+    libc-netdb-tests
+  SRCS
+    h_errno_test.cpp
+  DEPENDS
+    libc.hdr.netdb_macros
+    libc.src.netdb.__h_errno_location
+)
+
 if(NOT TARGET libc.src.netdb.getprotobyname_r)
   return()
 endif()

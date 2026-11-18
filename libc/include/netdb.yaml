@@ -39,6 +39,20 @@ macros:
     macro_header: netdb-macros.h
   - macro_name: EAI_OVERFLOW
     macro_header: netdb-macros.h
+  - macro_name: IPPORT_RESERVED
+    macro_header: netdb-macros.h
+  - macro_name: HOST_NOT_FOUND
+    macro_header: netdb-macros.h
+  - macro_name: TRY_AGAIN
+    macro_header: netdb-macros.h
+  - macro_name: NO_RECOVERY
+    macro_header: netdb-macros.h
+  - macro_name: NO_DATA
+    macro_header: netdb-macros.h
+  - macro_name: NO_ADDRESS
+    macro_header: netdb-macros.h
+  - macro_name: h_errno
+    macro_header: netdb-macros.h
 types:
   - type_name: size_t
   - type_name: struct_addrinfo
@@ -46,6 +60,12 @@ types:
 enums: []
 objects: []
 functions:
+  - name: __h_errno_location
+    standards:
+      - gnu
+    return_type: int *
+    arguments:
+      - type: void
   - name: freeaddrinfo
     standards:
       - posix

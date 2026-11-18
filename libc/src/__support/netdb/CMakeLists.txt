@@ -1,0 +1,10 @@
+add_object_library(
+  h_errno
+  SRCS
+    h_errno.cpp
+  HDRS
+    h_errno.h
+  DEPENDS
+    libc.src.__support.macros.attributes
+    libc.src.__support.macros.config
+)

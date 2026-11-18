@@ -33,4 +33,14 @@
 #define EAI_SYSTEM -11
 #define EAI_OVERFLOW -12
 
+#define IPPORT_RESERVED 1024
+
+#define HOST_NOT_FOUND 1
+#define TRY_AGAIN 2
+#define NO_RECOVERY 3
+#define NO_DATA 4
+#define NO_ADDRESS NO_DATA
+
+#define h_errno (*__h_errno_location())
+
 #endif // LLVM_LIBC_MACROS_LINUX_NETDB_MACROS_H

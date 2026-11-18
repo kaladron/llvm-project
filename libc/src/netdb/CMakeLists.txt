@@ -1,4 +1,14 @@
 add_entrypoint_object(
+  __h_errno_location
+  SRCS
+    __h_errno_location.cpp
+  HDRS
+    __h_errno_location.h
+  DEPENDS
+    libc.src.__support.netdb.h_errno
+)
+
+add_entrypoint_object(
   freeaddrinfo
   SRCS
     freeaddrinfo.cpp

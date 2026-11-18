@@ -1847,6 +1847,7 @@ if(LLVM_LIBC_ENABLE_EXPERIMENTAL_ENTRYPOINTS)
       libc.src.libintl.textdomain
 
       # netdb.h entrypoints
+      libc.src.netdb.__h_errno_location
       libc.src.netdb.freeaddrinfo
       libc.src.netdb.gai_strerror
       libc.src.netdb.getaddrinfo
