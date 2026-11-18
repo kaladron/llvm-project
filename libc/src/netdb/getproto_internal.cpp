@@ -27,6 +27,7 @@
 #include "src/__support/error_or.h"
 #include "src/__support/macros/config.h"
 #include "src/__support/memory_size.h"
+#include "src/__support/netdb/line_reader.h"
 #include "src/__support/str_to_integer.h"
 
 namespace LIBC_NAMESPACE_DECL {
@@ -34,101 +35,6 @@ namespace LIBC_NAMESPACE_DECL {
 static constexpr const char *DEFAULT_PROTOCOLS_PATH = "/etc/protocols";
 
 namespace {
-
-struct TokenMatcher {
-  cpp::string_view target;
-  size_t len = 0;
-  bool matches = true;
-
-  void push(char ch) {
-    if (len >= target.size() || ch != target[len])
-      matches = false;
-    ++len;
-  }
-
-  bool matched() const { return matches && len == target.size(); }
-};
-
-class LineReader {
-  File *file;
-  bool saw_bytes = false;
-  bool at_eol = false;
-  bool at_eof = false;
-  bool in_comment = false;
-  bool invalid_line = false;
-
-  ErrorOr<cpp::optional<char>> next_char() {
-    while (true) {
-      char ch = '\0';
-      FileIOResult res = file->read_unlocked(&ch, 1);
-      if (res.has_error())
-        return Error(res.error);
-      if (res.value == 0) {
-        at_eof = true;
-        at_eol = true;
-        return cpp::optional<char>(cpp::nullopt);
-      }
-
-      saw_bytes = true;
-      if (ch == '\n') {
-        at_eol = true;
-        return cpp::optional<char>(cpp::nullopt);
-      }
-      if (ch == '#')
-        in_comment = true;
-      if (in_comment)
-        continue;
-      if (ch == '\0')
-        invalid_line = true;
-      return cpp::optional<char>(ch);
-    }
-  }
-
-public:
-  explicit LineReader(File *f) : file(f) {}
-
-  void begin_line() {
-    saw_bytes = false;
-    at_eol = at_eof;
-    in_comment = false;
-    invalid_line = false;
-  }
-
-  bool has_bytes() const { return saw_bytes; }
-
-  bool is_invalid() const { return invalid_line; }
-
-  ErrorOr<cpp::optional<bool>> read_token(cpp::StringStream &dst,
-                                          cpp::string_view target) {
-    TokenMatcher matcher{target};
-    bool in_token = false;
-
-    while (!at_eol) {
-      ErrorOr<cpp::optional<char>> ch_or = next_char();
-      if (!ch_or.has_value())
-        return Error(ch_or.error());
-      if (!ch_or->has_value())
-        break;
-
-      const char CH = **ch_or;
-      if (internal::isspace(CH)) {
-        if (in_token)
-          break;
-        continue;
-      }
-
-      in_token = true;
-      matcher.push(CH);
-      dst << CH;
-    }
-
-    if (!in_token)
-      return cpp::optional<bool>(cpp::nullopt);
-
-    dst << cpp::StringStream::ENDS;
-    return cpp::optional<bool>(matcher.matched());
-  }
-};
 
 struct LineScan {
   size_t token_count = 0;
@@ -163,7 +69,7 @@ parse_protocol_number(const cpp::StringStream &num_out) {
   return parsed.value;
 }
 
-static ErrorOr<LineScan> scan_line_tokens(LineReader &reader,
+static ErrorOr<LineScan> scan_line_tokens(netdb::LineReader &reader,
                                           cpp::string_view target_name,
                                           cpp::StringStream &out,
                                           cpp::StringStream &num_out) {
@@ -227,7 +133,7 @@ static int pack_protoent(const cpp::StringStream &out, cpp::span<char> buffer,
 }
 
 static ErrorOr<cpp::optional<int>>
-parse_line(LineReader &reader, ProtoQuery query, cpp::span<char> buffer,
+parse_line(netdb::LineReader &reader, ProtoQuery query, cpp::span<char> buffer,
            struct protoent *result_buf, struct protoent **result) {
   constexpr size_t NUM_BUF_SIZE = 32;
   char num_buf[NUM_BUF_SIZE];
@@ -262,7 +168,7 @@ parse_line(LineReader &reader, ProtoQuery query, cpp::span<char> buffer,
 static int search_protocols(File *file, ProtoQuery query,
                             cpp::span<char> buffer, struct protoent *result_buf,
                             struct protoent **result) {
-  LineReader reader(file);
+  netdb::LineReader reader(file);
 
   while (true) {
     ErrorOr<cpp::optional<int>> line_or =
