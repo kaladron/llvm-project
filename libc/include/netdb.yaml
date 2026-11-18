@@ -67,6 +67,12 @@ functions:
       - type: const char *__restrict
       - type: const struct addrinfo *__restrict
       - type: struct addrinfo **__restrict
+  - name: getprotobyname
+    standards:
+      - posix
+    return_type: struct protoent *
+    arguments:
+      - type: const char *
   - name: getprotobyname_r
     standards:
       - gnu
@@ -77,6 +83,12 @@ functions:
       - type: char *__restrict
       - type: size_t
       - type: struct protoent **__restrict
+  - name: getprotobynumber
+    standards:
+      - posix
+    return_type: struct protoent *
+    arguments:
+      - type: int
   - name: getprotobynumber_r
     standards:
       - gnu

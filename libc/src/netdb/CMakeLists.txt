@@ -68,6 +68,22 @@ add_object_library(
 )
 
 add_entrypoint_object(
+  getprotobyname
+  SRCS
+    getprotobyname.cpp
+  HDRS
+    getprotobyname.h
+  DEPENDS
+    .getproto_internal
+    libc.hdr.types.size_t
+    libc.hdr.types.struct_protoent
+    libc.src.__support.CPP.span
+    libc.src.__support.CPP.string_view
+    libc.src.__support.macros.attributes
+    libc.src.__support.macros.null_check
+)
+
+add_entrypoint_object(
   getprotobyname_r
   SRCS
     getprotobyname_r.cpp
@@ -80,6 +96,20 @@ add_entrypoint_object(
     libc.src.__support.CPP.span
     libc.src.__support.CPP.string_view
     libc.src.__support.macros.null_check
+)
+
+add_entrypoint_object(
+  getprotobynumber
+  SRCS
+    getprotobynumber.cpp
+  HDRS
+    getprotobynumber.h
+  DEPENDS
+    .getproto_internal
+    libc.hdr.types.size_t
+    libc.hdr.types.struct_protoent
+    libc.src.__support.CPP.span
+    libc.src.__support.macros.attributes
 )
 
 add_entrypoint_object(

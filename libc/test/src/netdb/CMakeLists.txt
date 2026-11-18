@@ -32,6 +32,34 @@ if(NOT TARGET libc.src.netdb.getprotobyname_r)
   return()
 endif()
 
+add_header_library(
+  test_db_file
+  HDRS
+    test_db_file.h
+  DEPENDS
+    libc.src.__support.CPP.string_view
+    libc.src.__support.File.file
+    libc.src.__support.File.platform_file
+    libc.src.stdio.remove
+    libc.src.string.string_utils
+)
+
+add_libc_test(
+  getprotobyname_test
+  SUITE
+    libc-netdb-tests
+  SRCS
+    getprotobyname_test.cpp
+  DEPENDS
+    .test_db_file
+    libc.hdr.signal_macros
+    libc.hdr.types.struct_protoent
+    libc.src.netdb.getproto_internal
+    libc.src.netdb.getprotobyname
+    libc.src.netdb.getprotobynumber
+    libc.test.UnitTest.ErrnoCheckingTest
+)
+
 add_libc_test(
   getprotobyname_r_test
   SUITE
