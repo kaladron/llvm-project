@@ -1,3 +1,50 @@
+add_header_library(
+  ip_parse
+  HDRS
+    ip_parse.h
+  DEPENDS
+    libc.hdr.stdint_proxy
+    libc.hdr.types.size_t
+    libc.hdr.types.struct_in_addr
+    libc.src.__support.CPP.array
+    libc.src.__support.CPP.optional
+    libc.src.__support.CPP.string_view
+    libc.src.__support.ctype_utils
+    libc.src.__support.macros.attributes
+    libc.src.__support.macros.config
+    libc.src.__support.net.address
+    libc.src.__support.str_to_integer
+    libc.src.string.memory_utils.inline_memcpy
+)
+
+add_header_library(
+  addrinfo
+  HDRS
+    addrinfo.h
+  DEPENDS
+    .ip_parse
+    libc.hdr.netdb_macros
+    libc.hdr.netinet_in_macros
+    libc.hdr.stdint_proxy
+    libc.hdr.sys_socket_macros
+    libc.hdr.types.in_port_t
+    libc.hdr.types.size_t
+    libc.hdr.types.struct_addrinfo
+    libc.hdr.types.struct_sockaddr
+    libc.hdr.types.struct_sockaddr_in
+    libc.src.__support.CPP.array
+    libc.src.__support.CPP.new
+    libc.src.__support.CPP.optional
+    libc.src.__support.CPP.span
+    libc.src.__support.CPP.string_view
+    libc.src.__support.CPP.unique_ptr
+    libc.src.__support.checked_ptr
+    libc.src.__support.macros.attributes
+    libc.src.__support.macros.config
+    libc.src.__support.net.byte_order
+    libc.src.string.memory_utils.inline_memcpy
+)
+
 add_object_library(
   h_errno
   SRCS

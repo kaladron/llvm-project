@@ -16,8 +16,7 @@ add_entrypoint_object(
     freeaddrinfo.h
   DEPENDS
     libc.hdr.types.struct_addrinfo
-    libc.src.__support.common
-    libc.src.__support.macros.config
+    libc.src.__support.netdb.addrinfo
 )
 
 add_entrypoint_object(
@@ -39,12 +38,9 @@ add_entrypoint_object(
   HDRS
     getaddrinfo.h
   DEPENDS
-    libc.hdr.errno_macros
-    libc.hdr.netdb_macros
     libc.hdr.types.struct_addrinfo
-    libc.src.__support.common
-    libc.src.__support.macros.config
-    libc.src.errno.errno
+    libc.src.__support.macros.null_check
+    libc.src.__support.netdb.addrinfo
 )
 
 if(NOT TARGET libc.src.__support.File.file OR

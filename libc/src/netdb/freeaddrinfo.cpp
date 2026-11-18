@@ -12,16 +12,16 @@
 //===----------------------------------------------------------------------===//
 
 #include "src/netdb/freeaddrinfo.h"
+
 #include "hdr/types/struct_addrinfo.h"
 #include "src/__support/common.h"
 #include "src/__support/macros/config.h"
+#include "src/__support/netdb/addrinfo.h"
 
 namespace LIBC_NAMESPACE_DECL {
 
-LLVM_LIBC_FUNCTION(void, freeaddrinfo,
-                   ([[maybe_unused]] struct addrinfo * res)) {
-  // TODO: Implement freeaddrinfo.
-  return;
+LLVM_LIBC_FUNCTION(void, freeaddrinfo, (struct addrinfo * ai)) {
+  netdb::free_addrinfo_list(ai);
 }
 
 } // namespace LIBC_NAMESPACE_DECL

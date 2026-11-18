@@ -1,6 +1,23 @@
 add_libc_testsuite(libc-netdb-tests)
 
 add_libc_test(
+  freeaddrinfo_test
+  SUITE
+    libc-netdb-tests
+  SRCS
+    freeaddrinfo_test.cpp
+  DEPENDS
+    libc.hdr.stdint_proxy
+    libc.hdr.types.size_t
+    libc.hdr.types.struct_addrinfo
+    libc.hdr.types.struct_sockaddr
+    libc.src.__support.CPP.new
+    libc.src.__support.checked_ptr
+    libc.src.__support.netdb.addrinfo
+    libc.src.netdb.freeaddrinfo
+)
+
+add_libc_test(
   gai_strerror_test
   SUITE
     libc-netdb-tests
@@ -18,14 +35,19 @@ add_libc_test(
   SRCS
     getaddrinfo_test.cpp
   DEPENDS
-    libc.hdr.errno_macros
     libc.hdr.netdb_macros
+    libc.hdr.netinet_in_macros
+    libc.hdr.signal_macros
+    libc.hdr.stdint_proxy
     libc.hdr.sys_socket_macros
+    libc.hdr.types.in_port_t
+    libc.hdr.types.size_t
     libc.hdr.types.struct_addrinfo
-    libc.src.netdb.freeaddrinfo
+    libc.hdr.types.struct_sockaddr_in
+    libc.src.__support.net.byte_order
+    libc.src.__support.netdb.addrinfo
     libc.src.netdb.getaddrinfo
     libc.test.UnitTest.ErrnoCheckingTest
-    libc.test.UnitTest.ErrnoSetterMatcher
 )
 
 add_libc_test(

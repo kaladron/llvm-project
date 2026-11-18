@@ -12,23 +12,23 @@
 //===----------------------------------------------------------------------===//
 
 #include "src/netdb/getaddrinfo.h"
-#include "hdr/errno_macros.h"
-#include "hdr/netdb_macros.h"
+
 #include "hdr/types/struct_addrinfo.h"
 #include "src/__support/common.h"
-#include "src/__support/libc_errno.h"
 #include "src/__support/macros/config.h"
+#include "src/__support/macros/null_check.h"
+#include "src/__support/netdb/addrinfo.h"
 
 namespace LIBC_NAMESPACE_DECL {
 
 LLVM_LIBC_FUNCTION(int, getaddrinfo,
-                   ([[maybe_unused]] const char *__restrict nodename,
-                    [[maybe_unused]] const char *__restrict servname,
-                    [[maybe_unused]] const struct addrinfo *__restrict hints,
-                    [[maybe_unused]] struct addrinfo **__restrict res)) {
-  // TODO: Implement getaddrinfo.
-  libc_errno = ENOSYS;
-  return EAI_SYSTEM;
+                   (const char *__restrict nodename,
+                    const char *__restrict servname,
+                    const struct addrinfo *__restrict hints,
+                    struct addrinfo **__restrict res)) {
+  LIBC_CRASH_ON_NULLPTR(res);
+
+  return netdb::lookup_addrinfo(nodename, servname, hints, res);
 }
 
 } // namespace LIBC_NAMESPACE_DECL
