@@ -227,6 +227,51 @@ add_entrypoint_object(
 )
 
 add_entrypoint_object(
+  getservbyname
+  SRCS
+    getservbyname.cpp
+  HDRS
+    getservbyname.h
+  DEPENDS
+    libc.hdr.types.size_t
+    libc.hdr.types.struct_servent
+    libc.src.__support.CPP.span
+    libc.src.__support.CPP.string_view
+    libc.src.__support.macros.attributes
+    libc.src.__support.macros.null_check
+    libc.src.__support.netdb.services
+)
+
+add_entrypoint_object(
+  getservbyname_r
+  SRCS
+    getservbyname_r.cpp
+  HDRS
+    getservbyname_r.h
+  DEPENDS
+    libc.hdr.types.size_t
+    libc.hdr.types.struct_servent
+    libc.src.__support.CPP.span
+    libc.src.__support.CPP.string_view
+    libc.src.__support.macros.null_check
+    libc.src.__support.netdb.services
+)
+
+add_entrypoint_object(
+  getservbyport
+  SRCS
+    getservbyport.cpp
+  HDRS
+    getservbyport.h
+  DEPENDS
+    libc.hdr.types.size_t
+    libc.hdr.types.struct_servent
+    libc.src.__support.CPP.span
+    libc.src.__support.macros.attributes
+    libc.src.__support.netdb.services
+)
+
+add_entrypoint_object(
   getservbyport_r
   SRCS
     getservbyport_r.cpp

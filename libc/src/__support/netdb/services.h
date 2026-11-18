@@ -54,6 +54,13 @@ struct PortProto {
 
 struct ServiceLineScan {
   size_t token_count = 0;
+  bool matched = false;
+};
+
+struct ServiceQuery {
+  cpp::optional<cpp::string_view> name;
+  int port = 0;
+  const char *proto = nullptr;
 };
 
 LIBC_INLINE cpp::optional<PortProto>
@@ -92,22 +99,27 @@ parse_port_proto(const cpp::StringStream &port_proto_out,
 }
 
 LIBC_INLINE ErrorOr<ServiceLineScan>
-scan_service_tokens(LineReader &reader, cpp::StringStream &out,
-                    cpp::StringStream &port_proto_out) {
+scan_service_tokens(LineReader &reader, cpp::string_view target_name,
+                    cpp::StringStream &out, cpp::StringStream &port_proto_out) {
   reader.begin_line();
   ServiceLineScan scan{};
 
   while (true) {
     cpp::StringStream *dst = &out;
-    if (scan.token_count == 1)
+    cpp::string_view tok_target = target_name;
+    if (scan.token_count == 1) {
       dst = &port_proto_out;
+      tok_target = {};
+    }
 
-    ErrorOr<cpp::optional<bool>> tok_or = reader.read_token(*dst, {});
+    ErrorOr<cpp::optional<bool>> tok_or = reader.read_token(*dst, tok_target);
     if (!tok_or.has_value())
       return Error(tok_or.error());
     if (!tok_or->has_value())
       return scan;
 
+    if (**tok_or)
+      scan.matched = true;
     ++scan.token_count;
   }
 }
@@ -155,16 +167,16 @@ LIBC_INLINE int pack_servent(cpp::StringStream &out, cpp::span<char> buffer,
 }
 
 LIBC_INLINE ErrorOr<cpp::optional<int>>
-parse_service_line_by_port(LineReader &reader, int port, const char *req_proto,
-                           cpp::span<char> buffer, struct servent *result_buf,
-                           struct servent **result) {
+parse_service_line(LineReader &reader, ServiceQuery query,
+                   cpp::span<char> buffer, struct servent *result_buf,
+                   struct servent **result) {
   constexpr size_t PORT_PROTO_BUF_SIZE = 64;
   char port_proto_buf[PORT_PROTO_BUF_SIZE];
   cpp::StringStream out(buffer);
   cpp::StringStream port_proto_out(port_proto_buf);
 
-  ErrorOr<ServiceLineScan> scan_or =
-      scan_service_tokens(reader, out, port_proto_out);
+  ErrorOr<ServiceLineScan> scan_or = scan_service_tokens(
+      reader, query.name.value_or(cpp::string_view{}), out, port_proto_out);
   if (!scan_or.has_value())
     return Error(scan_or.error());
 
@@ -175,21 +187,23 @@ parse_service_line_by_port(LineReader &reader, int port, const char *req_proto,
   }
   if (reader.is_invalid())
     return cpp::optional<int>(cpp::nullopt);
+  if (query.name.has_value() && !scan_or->matched)
+    return cpp::optional<int>(cpp::nullopt);
 
   const cpp::optional<PortProto> PP =
-      parse_port_proto(port_proto_out, req_proto);
-  if (!PP.has_value() || static_cast<int>(PP->net_port) != port)
+      parse_port_proto(port_proto_out, query.proto);
+  if (!PP.has_value())
+    return cpp::optional<int>(cpp::nullopt);
+  if (!query.name.has_value() && static_cast<int>(PP->net_port) != query.port)
     return cpp::optional<int>(cpp::nullopt);
 
   return cpp::optional<int>(pack_servent(
       out, buffer, *PP, scan_or->token_count - 2, result_buf, result));
 }
 
-LIBC_INLINE int lookup_serv_by_port(int port, const char *proto,
-                                    struct servent *result_buf,
-                                    cpp::span<char> buffer,
-                                    struct servent **result,
-                                    const char *path = nullptr) {
+LIBC_INLINE int lookup_service(ServiceQuery query, struct servent *result_buf,
+                               cpp::span<char> buffer, struct servent **result,
+                               const char *path) {
   static constexpr const char *DEFAULT_SERVICES_PATH = "/etc/services";
   *result = nullptr;
 
@@ -204,13 +218,30 @@ LIBC_INLINE int lookup_serv_by_port(int port, const char *proto,
 
   LineReader reader(file);
   while (true) {
-    ErrorOr<cpp::optional<int>> line_or = parse_service_line_by_port(
-        reader, port, proto, buffer, result_buf, result);
+    ErrorOr<cpp::optional<int>> line_or =
+        parse_service_line(reader, query, buffer, result_buf, result);
     if (!line_or.has_value())
       return line_or.error();
     if (line_or->has_value())
       return **line_or;
   }
+}
+
+LIBC_INLINE int lookup_serv_by_port(int port, const char *proto,
+                                    struct servent *result_buf,
+                                    cpp::span<char> buffer,
+                                    struct servent **result,
+                                    const char *path = nullptr) {
+  return lookup_service({cpp::nullopt, port, proto}, result_buf, buffer, result,
+                        path);
+}
+
+LIBC_INLINE int lookup_serv_by_name(cpp::string_view name, const char *proto,
+                                    struct servent *result_buf,
+                                    cpp::span<char> buffer,
+                                    struct servent **result,
+                                    const char *path = nullptr) {
+  return lookup_service({name, 0, proto}, result_buf, buffer, result, path);
 }
 
 } // namespace netdb

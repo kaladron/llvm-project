@@ -159,6 +159,31 @@ functions:
       - type: char *__restrict
       - type: size_t
       - type: struct protoent **__restrict
+  - name: getservbyname
+    standards:
+      - posix
+    return_type: struct servent *
+    arguments:
+      - type: const char *
+      - type: const char *
+  - name: getservbyname_r
+    standards:
+      - gnu
+    return_type: int
+    arguments:
+      - type: const char *__restrict
+      - type: const char *__restrict
+      - type: struct servent *__restrict
+      - type: char *__restrict
+      - type: size_t
+      - type: struct servent **__restrict
+  - name: getservbyport
+    standards:
+      - posix
+    return_type: struct servent *
+    arguments:
+      - type: int
+      - type: const char *
   - name: getservbyport_r
     standards:
       - gnu

@@ -175,6 +175,27 @@ add_libc_test(
 )
 
 add_libc_test(
+  getservbyname_test
+  SUITE
+    libc-netdb-tests
+  SRCS
+    getservbyname_test.cpp
+  DEPENDS
+    .test_db_file
+    libc.hdr.errno_macros
+    libc.hdr.signal_macros
+    libc.hdr.types.in_port_t
+    libc.hdr.types.size_t
+    libc.hdr.types.struct_servent
+    libc.src.__support.net.byte_order
+    libc.src.__support.netdb.services
+    libc.src.netdb.getservbyname
+    libc.src.netdb.getservbyname_r
+    libc.src.netdb.getservbyport
+    libc.test.UnitTest.ErrnoCheckingTest
+)
+
+add_libc_test(
   getservbyport_r_test
   SUITE
     libc-netdb-tests
