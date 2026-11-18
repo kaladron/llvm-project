@@ -76,6 +76,26 @@ add_libc_test(
 )
 
 add_libc_test(
+  getnetbyname_test
+  SUITE
+    libc-netdb-tests
+  SRCS
+    getnetbyname_test.cpp
+  DEPENDS
+    .test_db_file
+    libc.hdr.netdb_macros
+    libc.hdr.signal_macros
+    libc.hdr.stdint_proxy
+    libc.hdr.sys_socket_macros
+    libc.hdr.types.struct_netent
+    libc.src.netdb.__h_errno_location
+    libc.src.netdb.getnet_internal
+    libc.src.netdb.getnetbyaddr
+    libc.src.netdb.getnetbyname
+    libc.test.UnitTest.ErrnoCheckingTest
+)
+
+add_libc_test(
   getnetbyname_r_test
   SUITE
     libc-netdb-tests

@@ -89,6 +89,13 @@ functions:
       - type: const char *__restrict
       - type: const struct addrinfo *__restrict
       - type: struct addrinfo **__restrict
+  - name: getnetbyaddr
+    standards:
+      - posix
+    return_type: struct netent *
+    arguments:
+      - type: uint32_t
+      - type: int
   - name: getnetbyaddr_r
     standards:
       - gnu
@@ -101,6 +108,12 @@ functions:
       - type: size_t
       - type: struct netent **__restrict
       - type: int *__restrict
+  - name: getnetbyname
+    standards:
+      - posix
+    return_type: struct netent *
+    arguments:
+      - type: const char *
   - name: getnetbyname_r
     standards:
       - gnu
