@@ -107,39 +107,6 @@ add_header_library(
     libc.src.string.memory_utils.inline_memcpy
 )
 
-add_header_library(
-  addrinfo
-  HDRS
-    addrinfo.h
-  DEPENDS
-    .hosts
-    .ip_parse
-    libc.hdr.netdb_macros
-    libc.hdr.netinet_in_macros
-    libc.hdr.stdint_proxy
-    libc.hdr.sys_socket_macros
-    libc.hdr.types.in_port_t
-    libc.hdr.types.size_t
-    libc.hdr.types.struct_addrinfo
-    libc.hdr.types.struct_sockaddr
-    libc.hdr.types.struct_sockaddr_in
-    libc.hdr.types.struct_sockaddr_in6
-    libc.src.__support.CPP.array
-    libc.src.__support.CPP.functional
-    libc.src.__support.CPP.new
-    libc.src.__support.CPP.optional
-    libc.src.__support.CPP.span
-    libc.src.__support.CPP.string_view
-    libc.src.__support.CPP.unique_ptr
-    libc.src.__support.OSUtil.network
-    libc.src.__support.checked_ptr
-    libc.src.__support.error_or
-    libc.src.__support.macros.attributes
-    libc.src.__support.macros.config
-    libc.src.__support.net.byte_order
-    libc.src.string.memory_utils.inline_memcpy
-)
-
 if(NOT TARGET libc.src.__support.time.clock_gettime)
   return()
 endif()
@@ -246,6 +213,44 @@ add_header_library(
     libc.src.__support.macros.attributes
     libc.src.__support.macros.config
     libc.src.__support.time.clock_gettime
+    libc.src.string.memory_utils.inline_memcpy
+)
+
+add_header_library(
+  addrinfo
+  HDRS
+    addrinfo.h
+  DEPENDS
+    .dns_client
+    .dns_response
+    .dns_transport
+    .dns_wire
+    .hosts
+    .ip_parse
+    .resolv_conf
+    libc.hdr.netdb_macros
+    libc.hdr.netinet_in_macros
+    libc.hdr.stdint_proxy
+    libc.hdr.sys_socket_macros
+    libc.hdr.types.in_port_t
+    libc.hdr.types.size_t
+    libc.hdr.types.struct_addrinfo
+    libc.hdr.types.struct_sockaddr
+    libc.hdr.types.struct_sockaddr_in
+    libc.hdr.types.struct_sockaddr_in6
+    libc.src.__support.CPP.array
+    libc.src.__support.CPP.functional
+    libc.src.__support.CPP.new
+    libc.src.__support.CPP.optional
+    libc.src.__support.CPP.span
+    libc.src.__support.CPP.string_view
+    libc.src.__support.CPP.unique_ptr
+    libc.src.__support.OSUtil.network
+    libc.src.__support.checked_ptr
+    libc.src.__support.error_or
+    libc.src.__support.macros.attributes
+    libc.src.__support.macros.config
+    libc.src.__support.net.byte_order
     libc.src.string.memory_utils.inline_memcpy
 )
 

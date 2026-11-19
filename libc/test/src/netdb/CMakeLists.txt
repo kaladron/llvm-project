@@ -74,18 +74,31 @@ if(TARGET libc.src.netdb.getaddrinfo)
       libc.hdr.sys_socket_macros
       libc.hdr.types.in_port_t
       libc.hdr.types.size_t
+      libc.hdr.types.socklen_t
       libc.hdr.types.struct_addrinfo
+      libc.hdr.types.struct_sockaddr
       libc.hdr.types.struct_sockaddr_in
       libc.hdr.types.struct_sockaddr_in6
+      libc.src.__support.CPP.scope
       libc.src.__support.CPP.span
       libc.src.__support.CPP.string_view
       libc.src.__support.OSUtil.network
       libc.src.__support.net.byte_order
       libc.src.__support.netdb.addrinfo
+      libc.src.__support.netdb.dns_client
+      libc.src.__support.netdb.dns_response
+      libc.src.__support.netdb.dns_wire
       libc.src.__support.netdb.hosts
+      libc.src.__support.netdb.resolv_conf
       libc.src.__support.netdb.services
       libc.src.netdb.getaddrinfo
+      libc.src.string.memory_utils.inline_memcpy
       libc.src.string.string_utils
+      libc.src.sys.socket.bind
+      libc.src.sys.socket.getsockname
+      libc.src.sys.socket.listen
+      libc.src.sys.socket.socket
+      libc.src.unistd.close
       libc.test.UnitTest.ErrnoCheckingTest
       libc.test.UnitTest.ErrnoSetterMatcher
   )

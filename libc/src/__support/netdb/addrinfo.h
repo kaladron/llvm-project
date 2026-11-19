@@ -37,8 +37,13 @@
 #include "src/__support/macros/attributes.h"
 #include "src/__support/macros/config.h"
 #include "src/__support/net/byte_order.h"
+#include "src/__support/netdb/dns_client.h"
+#include "src/__support/netdb/dns_response.h"
+#include "src/__support/netdb/dns_transport.h"
+#include "src/__support/netdb/dns_wire.h"
 #include "src/__support/netdb/hosts.h"
 #include "src/__support/netdb/ip_parse.h"
+#include "src/__support/netdb/resolv_conf.h"
 #include "src/string/memory_utils/inline_memcpy.h"
 
 namespace LIBC_NAMESPACE_DECL {
@@ -296,6 +301,84 @@ LIBC_INLINE constexpr HostsFamily select_hosts_family(bool want_v4,
   return HostsFamily::IPV4;
 }
 
+LIBC_INLINE void query_dns_family(const ResolvConfig &cfg,
+                                  cpp::string_view node, bool is_v6,
+                                  bool map_v4, cpp::span<ScopedIpAddr> ips,
+                                  size_t &count, HostsForwardResult &hres,
+                                  DnsStatus &worst) {
+  DnsParsedResponse dns{};
+  const uint16_t QTYPE = is_v6 ? DNS_TYPE_AAAA : DNS_TYPE_A;
+  const DnsStatus ST = dispatch_dns_name(cfg, node, QTYPE, dns);
+  if (ST != DnsStatus::OK) {
+    if (ST < DnsStatus::NODATA)
+      worst = worse_miss(worst, ST);
+    return;
+  }
+
+  cpp::array<char, DNS_MAX_TEXT_NAME + 1> canon_buf{};
+  const size_t CANON_LEN =
+      wire_to_presentation({dns.canon_wire.data(), dns.clen}, canon_buf);
+  store_canon_if_unset({canon_buf.data(), CANON_LEN}, hres);
+
+  const size_t ADDR_LEN = is_v6 ? 16 : 4;
+  for (size_t i = 0; i < dns.num_addrs; ++i) {
+    ScopedIpAddr ip{};
+    ip.is_ipv6 = is_v6;
+    inline_memcpy(ip.addr.data(), dns.addrs[i].data(), ADDR_LEN);
+    ips[count++] = map_v4 ? to_v4mapped_ip6(ip) : ip;
+  }
+}
+
+LIBC_INLINE int emit_hosts_ai(cpp::span<const ScopedIpAddr> ips,
+                              const HostsForwardResult &hres, int flags,
+                              cpp::span<const ServiceSpec> specs,
+                              struct addrinfo **res) {
+  cpp::string_view canonname{};
+  if ((flags & AI_CANONNAME) != 0)
+    canonname = {hres.canon_name.data(), hres.canon_len};
+  return emit_ai_list(ips, specs, flags, canonname, res);
+}
+
+LIBC_INLINE int lookup_dns_node(cpp::string_view node, int flags, bool want_v4,
+                                bool want_v6, bool v4_mapped,
+                                cpp::span<const ServiceSpec> specs,
+                                HostsForwardResult &hres, struct addrinfo **res,
+                                int &sys_err) {
+  if (classify_special_domain(node) == SpecialDomainKind::INVALID)
+    return EAI_NONAME;
+
+  ResolvConfig cfg{};
+  ErrorOr<void> rcfg = load_resolv_conf(cfg, get_resolv_conf_path());
+  if (!rcfg.has_value()) {
+    sys_err = rcfg.error();
+    return EAI_SYSTEM;
+  }
+
+  cpp::array<ScopedIpAddr, 2 * DNS_MAX_ADDRS> ips{};
+  size_t count = 0;
+  DnsStatus worst = DnsStatus::NXDOMAIN;
+  if (want_v6)
+    query_dns_family(cfg, node, true, false, ips, count, hres, worst);
+
+  bool run_v4 = want_v4;
+  if (v4_mapped && count > 0) {
+    if ((flags & AI_ALL) == 0)
+      run_v4 = false;
+  }
+  if (run_v4)
+    query_dns_family(cfg, node, false, v4_mapped, ips, count, hres, worst);
+
+  if (count == 0) {
+    if (worst == DnsStatus::RETRY)
+      return EAI_AGAIN;
+    if (worst == DnsStatus::FAIL)
+      return EAI_FAIL;
+    return EAI_NONAME;
+  }
+
+  return emit_hosts_ai({ips.data(), count}, hres, flags, specs, res);
+}
+
 LIBC_INLINE int resolve_hosts_node(cpp::string_view node, int family, int flags,
                                    cpp::span<const ServiceSpec> specs,
                                    struct addrinfo **res, int &sys_err) {
@@ -332,17 +415,14 @@ LIBC_INLINE int resolve_hosts_node(cpp::string_view node, int family, int flags,
     return EAI_SYSTEM;
   }
   if (!*found_or)
-    return EAI_NONAME;
+    return lookup_dns_node(node, flags, want_v4, want_v6, v4_mapped, specs,
+                           hosts_res, res, sys_err);
 
   if (v4_mapped)
     apply_v4mapped_hosts(hosts_res, flags);
 
-  cpp::string_view canonname{};
-  if ((flags & AI_CANONNAME) != 0)
-    canonname = {hosts_res.canon_name.data(), hosts_res.canon_len};
-
-  return emit_ai_list({hosts_res.addrs.data(), hosts_res.num_addrs}, specs,
-                      flags, canonname, res);
+  return emit_hosts_ai({hosts_res.addrs.data(), hosts_res.num_addrs}, hosts_res,
+                       flags, specs, res);
 }
 
 LIBC_INLINE constexpr bool valid_ai_family(int family) {

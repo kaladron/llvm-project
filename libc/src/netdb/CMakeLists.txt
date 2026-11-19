@@ -25,7 +25,8 @@ if(NOT TARGET libc.src.__support.File.file OR
   return()
 endif()
 
-if(TARGET libc.src.__support.OSUtil.network)
+if(TARGET libc.src.__support.OSUtil.network AND
+    TARGET libc.src.__support.time.clock_gettime)
   add_entrypoint_object(
     freeaddrinfo
     SRCS
@@ -58,41 +59,39 @@ if(TARGET libc.src.__support.OSUtil.network)
       libc.src.errno.errno
   )
 
-  if(TARGET libc.src.__support.time.clock_gettime)
-    add_entrypoint_object(
-      gethostbyname
-      SRCS
-        gethostbyname.cpp
-      HDRS
-        gethostbyname.h
-      DEPENDS
-        libc.hdr.types.size_t
-        libc.hdr.types.struct_hostent
-        libc.src.__support.CPP.span
-        libc.src.__support.CPP.string_view
-        libc.src.__support.macros.attributes
-        libc.src.__support.macros.null_check
-        libc.src.__support.netdb.h_errno
-        libc.src.__support.netdb.hostent
-        libc.src.__support.netdb.hosts
-    )
+  add_entrypoint_object(
+    gethostbyname
+    SRCS
+      gethostbyname.cpp
+    HDRS
+      gethostbyname.h
+    DEPENDS
+      libc.hdr.types.size_t
+      libc.hdr.types.struct_hostent
+      libc.src.__support.CPP.span
+      libc.src.__support.CPP.string_view
+      libc.src.__support.macros.attributes
+      libc.src.__support.macros.null_check
+      libc.src.__support.netdb.h_errno
+      libc.src.__support.netdb.hostent
+      libc.src.__support.netdb.hosts
+  )
 
-    add_entrypoint_object(
-      gethostbyname_r
-      SRCS
-        gethostbyname_r.cpp
-      HDRS
-        gethostbyname_r.h
-      DEPENDS
-        libc.hdr.types.size_t
-        libc.hdr.types.struct_hostent
-        libc.src.__support.CPP.span
-        libc.src.__support.CPP.string_view
-        libc.src.__support.macros.null_check
-        libc.src.__support.netdb.hostent
-        libc.src.__support.netdb.hosts
-    )
-  endif()
+  add_entrypoint_object(
+    gethostbyname_r
+    SRCS
+      gethostbyname_r.cpp
+    HDRS
+      gethostbyname_r.h
+    DEPENDS
+      libc.hdr.types.size_t
+      libc.hdr.types.struct_hostent
+      libc.src.__support.CPP.span
+      libc.src.__support.CPP.string_view
+      libc.src.__support.macros.null_check
+      libc.src.__support.netdb.hostent
+      libc.src.__support.netdb.hosts
+  )
 endif()
 
 add_object_library(

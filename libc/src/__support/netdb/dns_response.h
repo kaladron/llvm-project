@@ -30,6 +30,7 @@ namespace netdb {
 constexpr uint16_t DNS_CLASS_IN = 1;
 constexpr uint16_t DNS_TYPE_A = 1;
 constexpr uint16_t DNS_TYPE_CNAME = 5;
+constexpr uint16_t DNS_TYPE_AAAA = 28;
 constexpr uint16_t DNS_FLAG_QR = 0x8000;
 constexpr uint16_t DNS_FLAG_OPCODE_MASK = 0x7800;
 constexpr uint16_t DNS_FLAG_TC = 0x0200;
@@ -161,8 +162,14 @@ LIBC_INLINE DnsStatus parse_dns_response(cpp::span<const uint8_t> msg,
       cur = NEXT_RR;
       if (RCLASS != DNS_CLASS_IN)
         continue;
-      if (RTYPE == DNS_TYPE_A && RDLEN != 4)
-        return DnsStatus::IGNORE;
+      if (RTYPE == DNS_TYPE_A) {
+        if (RDLEN != 4)
+          return DnsStatus::IGNORE;
+      }
+      if (RTYPE == DNS_TYPE_AAAA) {
+        if (RDLEN != 16)
+          return DnsStatus::IGNORE;
+      }
 
       if (RTYPE == DNS_TYPE_CNAME) {
         const cpp::optional<DecodedWireName> TARGET =

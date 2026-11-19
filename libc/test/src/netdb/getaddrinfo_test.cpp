@@ -19,18 +19,31 @@
 #include "hdr/sys_socket_macros.h"
 #include "hdr/types/in_port_t.h"
 #include "hdr/types/size_t.h"
+#include "hdr/types/socklen_t.h"
 #include "hdr/types/struct_addrinfo.h"
+#include "hdr/types/struct_sockaddr.h"
 #include "hdr/types/struct_sockaddr_in.h"
 #include "hdr/types/struct_sockaddr_in6.h"
+#include "src/__support/CPP/scope.h"
 #include "src/__support/CPP/span.h"
 #include "src/__support/CPP/string_view.h"
 #include "src/__support/OSUtil/network.h"
 #include "src/__support/net/byte_order.h"
 #include "src/__support/netdb/addrinfo.h"
+#include "src/__support/netdb/dns_client.h"
+#include "src/__support/netdb/dns_response.h"
+#include "src/__support/netdb/dns_wire.h"
 #include "src/__support/netdb/hosts.h"
+#include "src/__support/netdb/resolv_conf.h"
 #include "src/__support/netdb/services.h"
 #include "src/netdb/getaddrinfo.h"
+#include "src/string/memory_utils/inline_memcpy.h"
 #include "src/string/string_utils.h"
+#include "src/sys/socket/bind.h"
+#include "src/sys/socket/getsockname.h"
+#include "src/sys/socket/listen.h"
+#include "src/sys/socket/socket.h"
+#include "src/unistd/close.h"
 #include "test/UnitTest/ErrnoCheckingTest.h"
 #include "test/UnitTest/ErrnoSetterMatcher.h"
 #include "test/UnitTest/Test.h"
@@ -44,7 +57,10 @@ protected:
   void TearDown() override {
     LIBC_NAMESPACE::netdb::clear_addrinfo_alloc_budget();
     LIBC_NAMESPACE::network::clear_addrconfig_override();
+    LIBC_NAMESPACE::netdb::set_dns_wire_hook(nullptr);
+    LIBC_NAMESPACE::netdb::set_dns_port_override(0);
     LIBC_NAMESPACE::netdb::set_hosts_path(nullptr);
+    LIBC_NAMESPACE::netdb::set_resolv_conf_path(nullptr);
     LIBC_NAMESPACE::netdb::set_services_path(nullptr);
     ErrnoCheckingTest::TearDown();
   }
@@ -290,9 +306,21 @@ TEST_F(LlvmLibcGetaddrinfoTest, Ipv6LiteralsScopeV4MappedAndServiceErrors) {
 }
 
 TEST_F(LlvmLibcGetaddrinfoTest, HostsDatabaseRfc6761AndOverlongLines) {
+  using LIBC_NAMESPACE::cpp::span;
   using LIBC_NAMESPACE::cpp::string_view;
   using LIBC_NAMESPACE::net::hton;
   using LIBC_NAMESPACE::netdb::AddrinfoPtr;
+
+  LIBC_NAMESPACE::netdb::set_resolv_conf_path(
+      libc_make_test_file_path("gai_resolv_missing.test"));
+  LIBC_NAMESPACE::netdb::set_dns_wire_hook(
+      [](const LIBC_NAMESPACE::netdb::ScopedIpAddr &, bool,
+         span<const uint8_t> q, span<uint8_t> r) -> int {
+        using namespace LIBC_NAMESPACE::netdb;
+        LIBC_NAMESPACE::inline_memcpy(r.data(), q.data(), q.size());
+        write_u16_be(r, 2, DNS_FLAG_QR | 3);
+        return static_cast<int>(q.size());
+      });
 
   struct addrinfo *raw = nullptr;
 
@@ -640,6 +668,155 @@ TEST_F(LlvmLibcGetaddrinfoTest, HostsDatabaseRfc6761AndOverlongLines) {
   LIBC_NAMESPACE::netdb::set_hosts_path(".");
   EXPECT_THAT(LIBC_NAMESPACE::getaddrinfo("canon.local", "80", nullptr, &raw),
               Fails<int>(EISDIR, EAI_SYSTEM));
+}
+
+TEST_F(LlvmLibcGetaddrinfoTest, LiveDualStackDnsAndTcpFallback) {
+  using namespace LIBC_NAMESPACE::netdb;
+  using LIBC_NAMESPACE::cpp::scope_exit;
+  using LIBC_NAMESPACE::cpp::span;
+  using LIBC_NAMESPACE::net::hton;
+  using LIBC_NAMESPACE::net::ntoh;
+
+  ScopedTestDbFile hdb(libc_make_test_file_path("gai_dns_hosts.test"), "",
+                       &set_hosts_path);
+  ScopedTestDbFile rdb(libc_make_test_file_path("gai_dns_resolv.test"),
+                       "nameserver 127.0.0.1\noptions attempts:1 timeout:1\n",
+                       &set_resolv_conf_path);
+
+  int tfd = LIBC_NAMESPACE::socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
+  ASSERT_GE(tfd, 0);
+  scope_exit close_tfd([&] {
+    if (tfd >= 0)
+      LIBC_NAMESPACE::close(tfd);
+  });
+
+  struct sockaddr_in sa{};
+  sa.sin_family = AF_INET;
+  sa.sin_addr.s_addr = hton<uint32_t>(0x7f000001U);
+  auto *sap = reinterpret_cast<struct sockaddr *>(&sa);
+  socklen_t slen = sizeof(sa);
+  ASSERT_EQ(LIBC_NAMESPACE::bind(tfd, sap, slen), 0);
+  ASSERT_EQ(LIBC_NAMESPACE::getsockname(tfd, sap, &slen), 0);
+  ASSERT_EQ(LIBC_NAMESPACE::listen(tfd, 1), 0);
+  LIBC_NAMESPACE::close(tfd);
+  tfd = -1;
+  set_dns_port_override(ntoh(sa.sin_port));
+
+  ScopedTestDbFile rvc(libc_make_test_file_path("gai_dns_vc.test"),
+                       "nameserver 127.0.0.1\noptions use-vc attempts:1\n",
+                       &set_resolv_conf_path);
+  struct addrinfo hints{};
+  hints.ai_flags = AI_CANONNAME;
+  hints.ai_socktype = SOCK_STREAM;
+  struct addrinfo *raw = nullptr;
+  EXPECT_EQ(LIBC_NAMESPACE::getaddrinfo("tcp.example.", "80", &hints, &raw),
+            EAI_AGAIN);
+  set_resolv_conf_path(rdb.get_path());
+
+  set_dns_wire_hook([](const ScopedIpAddr &, bool is_tcp, span<const uint8_t> q,
+                       span<uint8_t> r) -> int {
+    const char C = static_cast<char>(q[13]);
+    const int Q = static_cast<int>(q.size());
+    const uint16_t QT = read_u16_be(q, static_cast<size_t>(Q - 4));
+    LIBC_NAMESPACE::inline_memcpy(r.data(), q.data(), q.size());
+
+    if (!is_tcp && C == 't') {
+      write_u16_be(r, 2, DNS_FLAG_QR | DNS_FLAG_TC);
+      return Q;
+    }
+    if (C == '2' || C == '5' || C == '0' || (C == '4' && QT == DNS_TYPE_AAAA)) {
+      const uint16_t RC = C == '4' ? 0 : static_cast<uint16_t>(C - '0');
+      write_u16_be(r, 2, static_cast<uint16_t>(DNS_FLAG_QR | RC));
+      return Q;
+    }
+    if (C == 'x') {
+      // Malformed AAAA (RDLEN = 3 != 16) -> IGNORE -> RETRY -> EAI_AGAIN.
+      write_u16_be(r, 2, DNS_FLAG_QR);
+      write_u16_be(r, 6, 1);
+      const uint8_t BAD_AAAA[15] = {
+          0xc0, 12, 0, static_cast<uint8_t>(QT), 0, 1, 0, 0, 0, 5, 0, 3,
+          1,    2,  3,
+      };
+      LIBC_NAMESPACE::inline_memcpy(r.data() + Q, BAD_AAAA, sizeof(BAD_AAAA));
+      return Q + 15;
+    }
+
+    write_u16_be(r, 2, DNS_FLAG_QR);
+    write_u16_be(r, 6, 2);
+    const uint16_t RL = QT == DNS_TYPE_AAAA ? 16 : 4;
+    uint8_t rr[43] = {
+        1, 'r', 0, 0, static_cast<uint8_t>(QT), 0, 1, 0,
+        0, 0,   5, 0, static_cast<uint8_t>(RL),
+    };
+    rr[13] = QT == DNS_TYPE_AAAA ? 0x20 : 203;
+    rr[13 + RL - 1] = 7;
+    const uint8_t CN[14] = {
+        0xc0, 12, 0, 5, 0, 1, 0, 0, 0, 5, 0, 2, 0xc0, static_cast<uint8_t>(Q),
+    };
+    LIBC_NAMESPACE::inline_memcpy(r.data() + Q, rr, 13 + RL);
+    LIBC_NAMESPACE::inline_memcpy(r.data() + Q + 13 + RL, CN, sizeof(CN));
+    return Q + 27 + RL;
+  });
+
+  // Dual-stack AF_UNSPEC with TC=1 TCP fallback + CNAME ai_canonname.
+  ASSERT_EQ(LIBC_NAMESPACE::getaddrinfo("t.example", "80", &hints, &raw), 0);
+  AddrinfoPtr res(raw);
+  ASSERT_NE(res.get(), nullptr);
+  EXPECT_STREQ(res->ai_canonname, "r");
+  EXPECT_EQ(res->ai_family, AF_INET6);
+  ASSERT_NE(res->ai_next, nullptr);
+  EXPECT_EQ(res->ai_next->ai_family, AF_INET);
+
+  hints = {};
+  hints.ai_family = AF_INET;
+  hints.ai_socktype = SOCK_STREAM;
+  ASSERT_EQ(LIBC_NAMESPACE::getaddrinfo("d.example", "80", &hints, &raw), 0);
+  res.reset(raw);
+  EXPECT_EQ(res->ai_family, AF_INET);
+
+  hints = {};
+  hints.ai_family = AF_INET6;
+  hints.ai_socktype = SOCK_STREAM;
+  ASSERT_EQ(LIBC_NAMESPACE::getaddrinfo("d.example", "80", &hints, &raw), 0);
+  res.reset(raw);
+  EXPECT_EQ(res->ai_family, AF_INET6);
+
+  hints = {};
+  hints.ai_flags = AI_V4MAPPED;
+  hints.ai_family = AF_INET6;
+  hints.ai_socktype = SOCK_STREAM;
+  ASSERT_EQ(LIBC_NAMESPACE::getaddrinfo("d.example", "80", &hints, &raw), 0);
+  res.reset(raw);
+  EXPECT_EQ(res->ai_next, nullptr);
+
+  ASSERT_EQ(LIBC_NAMESPACE::getaddrinfo("4.example", "80", &hints, &raw), 0);
+  res.reset(raw);
+  EXPECT_EQ(reinterpret_cast<const struct sockaddr_in6 *>(res->ai_addr)
+                ->sin6_addr.s6_addr[10],
+            uint8_t(0xff));
+
+  hints.ai_flags = AI_V4MAPPED | AI_ALL;
+  ASSERT_EQ(LIBC_NAMESPACE::getaddrinfo("d.example", "80", &hints, &raw), 0);
+  res.reset(raw);
+  ASSERT_NE(res->ai_next, nullptr);
+
+  EXPECT_EQ(LIBC_NAMESPACE::getaddrinfo("2.example", "80", nullptr, &raw),
+            EAI_AGAIN);
+  EXPECT_EQ(LIBC_NAMESPACE::getaddrinfo("x.example", "80", nullptr, &raw),
+            EAI_AGAIN);
+  EXPECT_EQ(LIBC_NAMESPACE::getaddrinfo("5.example", "80", nullptr, &raw),
+            EAI_FAIL);
+  EXPECT_EQ(LIBC_NAMESPACE::getaddrinfo("0.example", "80", nullptr, &raw),
+            EAI_NONAME);
+
+  char notdir_path[280];
+  const size_t BASE_LEN = LIBC_NAMESPACE::internal::strlcpy(
+      notdir_path, rdb.get_path(), sizeof(notdir_path));
+  LIBC_NAMESPACE::internal::strlcpy(notdir_path + BASE_LEN, "/resolv.conf",
+                                    sizeof(notdir_path) - BASE_LEN);
+  set_resolv_conf_path(notdir_path);
+  EXPECT_THAT(LIBC_NAMESPACE::getaddrinfo("d.example", "80", nullptr, &raw),
+              Fails<int>(ENOTDIR, EAI_SYSTEM));
 }
 
 #if defined(LIBC_ADD_NULL_CHECKS)
