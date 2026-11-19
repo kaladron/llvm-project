@@ -13,6 +13,7 @@
 
 #include "src/netdb/gethostbyname_r.h"
 
+#include "hdr/sys_socket_macros.h"
 #include "hdr/types/size_t.h"
 #include "hdr/types/struct_hostent.h"
 #include "src/__support/CPP/span.h"
@@ -35,8 +36,8 @@ LLVM_LIBC_FUNCTION(int, gethostbyname_r,
     LIBC_CRASH_ON_NULLPTR(buf);
   LIBC_CRASH_ON_NULLPTR(result);
 
-  return netdb::lookup_host_byname(name, ret, {buf, buflen}, result, h_errnop,
-                                   netdb::get_hosts_path());
+  return netdb::lookup_host_byname(name, AF_INET, ret, {buf, buflen}, result,
+                                   h_errnop, netdb::get_hosts_path());
 }
 
 } // namespace LIBC_NAMESPACE_DECL

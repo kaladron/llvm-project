@@ -7,7 +7,7 @@
 //===----------------------------------------------------------------------===//
 ///
 /// \file
-/// Caller-buffer struct hostent packer and IPv4 host lookup driver.
+/// Caller-buffer struct hostent packer and IPv4/IPv6 host lookup driver.
 ///
 //===----------------------------------------------------------------------===//
 
@@ -20,6 +20,7 @@
 #include "hdr/sys_socket_macros.h"
 #include "hdr/types/size_t.h"
 #include "hdr/types/struct_hostent.h"
+#include "hdr/types/struct_in6_addr.h"
 #include "hdr/types/struct_in_addr.h"
 #include "src/__support/CPP/array.h"
 #include "src/__support/CPP/scope.h"
@@ -34,6 +35,7 @@
 #include "src/__support/net/address.h"
 #include "src/__support/netdb/dns_client.h"
 #include "src/__support/netdb/hosts.h"
+#include "src/__support/netdb/ip_parse.h"
 #include "src/__support/netdb/line_reader.h"
 #include "src/__support/netdb/resolv_conf.h"
 #include "src/string/memory_utils/inline_memcpy.h"
@@ -42,10 +44,10 @@ namespace LIBC_NAMESPACE_DECL {
 namespace netdb {
 
 static_assert(alignof(char *) >= alignof(struct in_addr) &&
-              sizeof(char *) % alignof(struct in_addr) == 0);
+              alignof(char *) >= alignof(struct in6_addr));
 
 struct HostentScanState {
-  cpp::array<struct in_addr, HOSTS_MAX_ADDRS> addrs{};
+  cpp::array<cpp::array<uint8_t, 16>, HOSTS_MAX_ADDRS> addrs{};
   size_t num_addrs = 0;
   size_t alias_count = 0;
   size_t text_len = 0;
@@ -57,11 +59,19 @@ LIBC_INLINE void set_herr_out(int *h_errnop, int val) {
     *h_errnop = val;
 }
 
-LIBC_INLINE int pack_hostent_layout(cpp::span<char> buffer, size_t text_len,
-                                    size_t alias_count,
-                                    cpp::span<const struct in_addr> addrs,
-                                    struct hostent *ret,
-                                    struct hostent **result) {
+LIBC_INLINE constexpr size_t host_family_len(int af) {
+  if (af == AF_INET)
+    return sizeof(struct in_addr);
+  if (af == AF_INET6)
+    return sizeof(struct in6_addr);
+  return 0;
+}
+
+LIBC_INLINE int
+pack_hostent_layout(cpp::span<char> buffer, size_t text_len, size_t alias_count,
+                    cpp::span<const cpp::array<uint8_t, 16>> addrs, int af,
+                    size_t addr_len, struct hostent *ret,
+                    struct hostent **result) {
   cpp::span<char> tail = buffer.subspan(text_len);
   const uintptr_t TAIL_ADDR = reinterpret_cast<uintptr_t>(tail.data());
   const size_t PADDING =
@@ -76,7 +86,7 @@ LIBC_INLINE int pack_hostent_layout(cpp::span<char> buffer, size_t text_len,
 
   char **ptrs = reinterpret_cast<char **>(tail.data());
   tail = tail.subspan(PTR_COUNT * sizeof(char *));
-  const size_t ADDR_BYTES = addrs.size() * sizeof(struct in_addr);
+  const size_t ADDR_BYTES = addrs.size() * addr_len;
   if (tail.size() < ADDR_BYTES)
     return ERANGE;
 
@@ -96,24 +106,24 @@ LIBC_INLINE int pack_hostent_layout(cpp::span<char> buffer, size_t text_len,
   char *addr_dst = tail.data();
   for (size_t i = 0; i < addrs.size(); ++i) {
     addr_list[i] = addr_dst;
-    inline_memcpy(addr_dst, &addrs[i], sizeof(struct in_addr));
-    addr_dst += sizeof(struct in_addr);
+    inline_memcpy(addr_dst, addrs[i].data(), addr_len);
+    addr_dst += addr_len;
   }
   addr_list[addrs.size()] = nullptr;
 
   ret->h_aliases = aliases;
-  ret->h_addrtype = AF_INET;
-  ret->h_length = static_cast<int>(sizeof(struct in_addr));
+  ret->h_addrtype = af;
+  ret->h_length = static_cast<int>(addr_len);
   ret->h_addr_list = addr_list;
   *result = ret;
   return 0;
 }
 
-LIBC_INLINE int pack_named_v4_hostent(cpp::string_view canon_name,
-                                      cpp::span<const struct in_addr> addrs,
-                                      cpp::span<char> buffer,
-                                      struct hostent *ret,
-                                      struct hostent **result, int *h_errnop) {
+LIBC_INLINE int
+pack_named_hostent(cpp::string_view canon_name,
+                   cpp::span<const cpp::array<uint8_t, 16>> addrs, int af,
+                   size_t addr_len, cpp::span<char> buffer, struct hostent *ret,
+                   struct hostent **result, int *h_errnop) {
   cpp::StringStream out(buffer);
   out << canon_name << cpp::StringStream::ENDS;
   if (out.overflow()) {
@@ -121,15 +131,33 @@ LIBC_INLINE int pack_named_v4_hostent(cpp::string_view canon_name,
     return ERANGE;
   }
 
-  const int RC =
-      pack_hostent_layout(buffer, out.str().size(), 0, addrs, ret, result);
+  const int RC = pack_hostent_layout(buffer, out.str().size(), 0, addrs, af,
+                                     addr_len, ret, result);
   if (RC != 0)
     set_herr_out(h_errnop, NETDB_INTERNAL);
   return RC;
 }
 
+LIBC_INLINE bool try_parse_host_literal(cpp::string_view name, bool is_ipv6,
+                                        cpp::array<uint8_t, 16> &out) {
+  if (is_ipv6) {
+    struct in6_addr v6{};
+    if (!net::str_to_ipv6(name, v6))
+      return false;
+    inline_memcpy(out.data(), &v6, sizeof(v6));
+    return true;
+  }
+
+  struct in_addr v4{};
+  if (!net::str_to_ipv4(name, v4))
+    return false;
+  inline_memcpy(out.data(), &v4, sizeof(v4));
+  return true;
+}
+
 LIBC_INLINE ErrorOr<bool> parse_hostent_hosts_line(LineReader &reader,
                                                    cpp::string_view query,
+                                                   bool is_ipv6,
                                                    cpp::span<char> buffer,
                                                    HostentScanState &state) {
   constexpr size_t IP_BUF_SIZE = 64;
@@ -151,8 +179,10 @@ LIBC_INLINE ErrorOr<bool> parse_hostent_hosts_line(LineReader &reader,
   if (!line_or->valid)
     return line_or->eof;
 
-  struct in_addr v4{};
-  if (!net::str_to_ipv4(line_or->ip_tok, v4))
+  ScopedIpAddr ip{};
+  if (!parse_scoped_ip(line_or->ip_tok, ip))
+    return false;
+  if (ip.is_ipv6 != is_ipv6)
     return false;
 
   if (state.num_addrs == 0) {
@@ -163,14 +193,14 @@ LIBC_INLINE ErrorOr<bool> parse_hostent_hosts_line(LineReader &reader,
   }
 
   if (state.num_addrs < HOSTS_MAX_ADDRS)
-    state.addrs[state.num_addrs++] = v4;
+    state.addrs[state.num_addrs++] = ip.addr;
   return false;
 }
 
-LIBC_INLINE ErrorOr<void> scan_hosts_v4_file(cpp::string_view trimmed,
-                                             cpp::span<char> buffer,
-                                             HostentScanState &state,
-                                             const char *path) {
+LIBC_INLINE ErrorOr<void> scan_hosts_file(cpp::string_view trimmed,
+                                          bool is_ipv6, cpp::span<char> buffer,
+                                          HostentScanState &state,
+                                          const char *path) {
   static constexpr const char *DEFAULT_HOSTS_PATH = "/etc/hosts";
   const char *db_path = path != nullptr ? path : DEFAULT_HOSTS_PATH;
   auto file_or = openfile(db_path, "re");
@@ -187,7 +217,7 @@ LIBC_INLINE ErrorOr<void> scan_hosts_v4_file(cpp::string_view trimmed,
 
   while (true) {
     ErrorOr<bool> eof_or =
-        parse_hostent_hosts_line(reader, trimmed, buffer, state);
+        parse_hostent_hosts_line(reader, trimmed, is_ipv6, buffer, state);
     if (!eof_or.has_value())
       return Error(eof_or.error());
     if (*eof_or)
@@ -205,16 +235,23 @@ LIBC_INLINE constexpr int dns_status_to_h_errno(DnsStatus st) {
   return HOST_NOT_FOUND;
 }
 
-LIBC_INLINE int lookup_host_byname(cpp::string_view name, struct hostent *ret,
-                                   cpp::span<char> buffer,
+LIBC_INLINE int lookup_host_byname(cpp::string_view name, int af,
+                                   struct hostent *ret, cpp::span<char> buffer,
                                    struct hostent **result, int *h_errnop,
                                    const char *path = nullptr) {
   *result = nullptr;
 
-  struct in_addr literal_v4{};
-  if (net::str_to_ipv4(name, literal_v4))
-    return pack_named_v4_hostent(name, {&literal_v4, 1}, buffer, ret, result,
-                                 h_errnop);
+  const size_t ADDR_LEN = host_family_len(af);
+  if (ADDR_LEN == 0) {
+    set_herr_out(h_errnop, NO_RECOVERY);
+    return EAFNOSUPPORT;
+  }
+
+  const bool IS_IPV6 = af == AF_INET6;
+  cpp::array<uint8_t, 16> literal_addr{};
+  if (try_parse_host_literal(name, IS_IPV6, literal_addr))
+    return pack_named_hostent(name, {&literal_addr, 1}, af, ADDR_LEN, buffer,
+                              ret, result, h_errnop);
 
   const SpecialDomainKind KIND = classify_special_domain(name);
   if (KIND == SpecialDomainKind::INVALID) {
@@ -224,7 +261,8 @@ LIBC_INLINE int lookup_host_byname(cpp::string_view name, struct hostent *ret,
 
   const cpp::string_view TRIMMED = strip_trailing_dot(name);
   HostentScanState state{};
-  ErrorOr<void> scan_res = scan_hosts_v4_file(TRIMMED, buffer, state, path);
+  ErrorOr<void> scan_res =
+      scan_hosts_file(TRIMMED, IS_IPV6, buffer, state, path);
   if (!scan_res.has_value()) {
     set_herr_out(h_errnop, NO_RECOVERY);
     return scan_res.error();
@@ -236,20 +274,24 @@ LIBC_INLINE int lookup_host_byname(cpp::string_view name, struct hostent *ret,
       return ERANGE;
     }
 
-    const int RC =
-        pack_hostent_layout(buffer, state.text_len, state.alias_count,
-                            {state.addrs.data(), state.num_addrs}, ret, result);
+    const int RC = pack_hostent_layout(
+        buffer, state.text_len, state.alias_count,
+        {state.addrs.data(), state.num_addrs}, af, ADDR_LEN, ret, result);
     if (RC != 0)
       set_herr_out(h_errnop, NETDB_INTERNAL);
     return RC;
   }
 
   if (KIND == SpecialDomainKind::LOCALHOST) {
-    struct in_addr lo{};
-    const uint8_t LOOPBACK[4] = {127, 0, 0, 1};
-    inline_memcpy(&lo, LOOPBACK, sizeof(lo));
-    return pack_named_v4_hostent(TRIMMED, {&lo, 1}, buffer, ret, result,
-                                 h_errnop);
+    cpp::array<uint8_t, 16> lo{};
+    if (IS_IPV6) {
+      lo[15] = 1;
+    } else {
+      lo[0] = 127;
+      lo[3] = 1;
+    }
+    return pack_named_hostent(TRIMMED, {&lo, 1}, af, ADDR_LEN, buffer, ret,
+                              result, h_errnop);
   }
 
   ResolvConfig cfg{};
@@ -259,18 +301,19 @@ LIBC_INLINE int lookup_host_byname(cpp::string_view name, struct hostent *ret,
     return rcfg.error();
   }
 
+  uint16_t qtype = DNS_TYPE_A;
+  if (IS_IPV6)
+    qtype = DNS_TYPE_AAAA;
+
   DnsParsedResponse dns{};
-  const DnsStatus ST = dispatch_dns_name(cfg, name, DNS_TYPE_A, dns);
+  const DnsStatus ST = dispatch_dns_name(cfg, name, qtype, dns);
   if (ST == DnsStatus::OK) {
     cpp::array<char, DNS_MAX_TEXT_NAME + 1> canon_buf{};
     const size_t CANON_LEN =
         wire_to_presentation({dns.canon_wire.data(), dns.clen}, canon_buf);
-    cpp::array<struct in_addr, DNS_MAX_ADDRS> dns_addrs{};
-    for (size_t i = 0; i < dns.num_addrs; ++i)
-      inline_memcpy(&dns_addrs[i], dns.addrs[i].data(), sizeof(struct in_addr));
-    return pack_named_v4_hostent({canon_buf.data(), CANON_LEN},
-                                 {dns_addrs.data(), dns.num_addrs}, buffer, ret,
-                                 result, h_errnop);
+    return pack_named_hostent({canon_buf.data(), CANON_LEN},
+                              {dns.addrs.data(), dns.num_addrs}, af, ADDR_LEN,
+                              buffer, ret, result, h_errnop);
   }
 
   set_herr_out(h_errnop, dns_status_to_h_errno(ST));

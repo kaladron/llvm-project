@@ -102,6 +102,25 @@ functions:
     return_type: struct hostent *
     arguments:
       - type: const char *
+  - name: gethostbyname2
+    standards:
+      - gnu
+    return_type: struct hostent *
+    arguments:
+      - type: const char *
+      - type: int
+  - name: gethostbyname2_r
+    standards:
+      - gnu
+    return_type: int
+    arguments:
+      - type: const char *__restrict
+      - type: int
+      - type: struct hostent *__restrict
+      - type: char *__restrict
+      - type: size_t
+      - type: struct hostent **__restrict
+      - type: int *__restrict
   - name: gethostbyname_r
     standards:
       - gnu

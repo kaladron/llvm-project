@@ -261,6 +261,7 @@ add_header_library(
   DEPENDS
     .dns_client
     .hosts
+    .ip_parse
     .line_reader
     .resolv_conf
     libc.hdr.errno_macros
@@ -269,6 +270,7 @@ add_header_library(
     libc.hdr.sys_socket_macros
     libc.hdr.types.size_t
     libc.hdr.types.struct_hostent
+    libc.hdr.types.struct_in6_addr
     libc.hdr.types.struct_in_addr
     libc.src.__support.CPP.array
     libc.src.__support.CPP.scope

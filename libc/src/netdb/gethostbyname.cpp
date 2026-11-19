@@ -13,6 +13,7 @@
 
 #include "src/netdb/gethostbyname.h"
 
+#include "hdr/sys_socket_macros.h"
 #include "hdr/types/size_t.h"
 #include "hdr/types/struct_hostent.h"
 #include "src/__support/CPP/span.h"
@@ -35,7 +36,7 @@ LLVM_LIBC_FUNCTION(struct hostent *, gethostbyname, (const char *name)) {
 
   struct hostent *result = nullptr;
   int herr = 0;
-  netdb::lookup_host_byname(name, &entry, buffer, &result, &herr,
+  netdb::lookup_host_byname(name, AF_INET, &entry, buffer, &result, &herr,
                             netdb::get_hosts_path());
   if (result == nullptr)
     netdb::set_h_errno(herr);
