@@ -254,7 +254,8 @@ struct DnsIo {
   }
 };
 
-LIBC_INLINE bool tcp_io_all(DnsIo &io, int fd, uint8_t *buf, size_t len,
+template <typename Io>
+LIBC_INLINE bool tcp_io_all(Io &io, int fd, uint8_t *buf, size_t len,
                             uint64_t deadline, bool is_send) {
   for (size_t off = 0; off < len;) {
     const uint64_t NOW = io.now_ms();
@@ -273,7 +274,8 @@ LIBC_INLINE bool tcp_io_all(DnsIo &io, int fd, uint8_t *buf, size_t len,
   return true;
 }
 
-LIBC_INLINE DnsStatus run_tcp_query(DnsIo &io, const ScopedIpAddr &ns,
+template <typename Io>
+LIBC_INLINE DnsStatus run_tcp_query(Io &io, const ScopedIpAddr &ns,
                                     cpp::span<const uint8_t> qname,
                                     uint16_t qtype, uint32_t timeout_ms,
                                     DnsParsedResponse &out) {
@@ -313,7 +315,8 @@ LIBC_INLINE DnsStatus run_tcp_query(DnsIo &io, const ScopedIpAddr &ns,
   return ST;
 }
 
-LIBC_INLINE DnsStatus run_udp_query(DnsIo &io, const ScopedIpAddr &ns,
+template <typename Io>
+LIBC_INLINE DnsStatus run_udp_query(Io &io, const ScopedIpAddr &ns,
                                     cpp::span<const uint8_t> qname,
                                     uint16_t qtype, uint32_t timeout_ms,
                                     DnsParsedResponse &out) {

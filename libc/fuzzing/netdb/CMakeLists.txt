@@ -1,0 +1,26 @@
+if(TARGET libc.src.__support.netdb.dns_client)
+  add_libc_fuzzer(
+    dns_wire_fuzz
+    SRCS
+      dns_wire_fuzz.cpp
+    DEPENDS
+      libc.hdr.stdint_proxy
+      libc.hdr.types.size_t
+      libc.hdr.types.ssize_t
+      libc.src.__support.CPP.array
+      libc.src.__support.CPP.optional
+      libc.src.__support.CPP.span
+      libc.src.__support.CPP.string_view
+      libc.src.__support.OSUtil.network
+      libc.src.__support.ctype_utils
+      libc.src.__support.netdb.dns_client
+      libc.src.__support.netdb.dns_ptr
+      libc.src.__support.netdb.dns_response
+      libc.src.__support.netdb.dns_transport
+      libc.src.__support.netdb.dns_wire
+      libc.src.__support.netdb.hosts
+      libc.src.__support.netdb.ip_parse
+      libc.src.__support.netdb.resolv_conf
+      libc.src.string.memory_utils.inline_memcpy
+  )
+endif()
