@@ -62,12 +62,14 @@ add_header_library(
   HDRS
     network.h
   DEPENDS
+    libc.hdr.errno_macros
     libc.hdr.net_if_macros
     libc.hdr.poll_macros
     libc.hdr.stdint_proxy
     libc.hdr.sys_ioctl_macros
     libc.hdr.sys_socket_macros
     libc.hdr.types.size_t
+    libc.hdr.types.socklen_t
     libc.hdr.types.ssize_t
     libc.hdr.types.struct_ifreq
     libc.hdr.types.struct_pollfd
@@ -79,6 +81,7 @@ add_header_library(
     libc.src.__support.OSUtil.linux.syscall_wrappers.close
     libc.src.__support.OSUtil.linux.syscall_wrappers.connect
     libc.src.__support.OSUtil.linux.syscall_wrappers.getrandom
+    libc.src.__support.OSUtil.linux.syscall_wrappers.getsockopt
     libc.src.__support.OSUtil.linux.syscall_wrappers.ioctl
     libc.src.__support.OSUtil.linux.syscall_wrappers.poll
     libc.src.__support.OSUtil.linux.syscall_wrappers.recvfrom

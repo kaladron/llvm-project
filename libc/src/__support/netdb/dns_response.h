@@ -32,6 +32,7 @@ constexpr uint16_t DNS_TYPE_A = 1;
 constexpr uint16_t DNS_TYPE_CNAME = 5;
 constexpr uint16_t DNS_FLAG_QR = 0x8000;
 constexpr uint16_t DNS_FLAG_OPCODE_MASK = 0x7800;
+constexpr uint16_t DNS_FLAG_TC = 0x0200;
 constexpr uint16_t DNS_FLAG_RD = 0x0100;
 constexpr uint16_t DNS_RCODE_MASK = 0x000f;
 constexpr uint16_t DNS_RCODE_SERVFAIL = 2;
@@ -41,6 +42,7 @@ constexpr size_t DNS_MAX_ADDRS = 16;
 
 enum class DnsStatus : uint8_t {
   IGNORE,
+  TRUNCATED,
   NXDOMAIN,
   FAIL,
   RETRY,
@@ -101,6 +103,16 @@ LIBC_INLINE DnsStatus parse_dns_response(cpp::span<const uint8_t> msg,
 
   if ((FLAGS & (DNS_FLAG_QR | DNS_FLAG_OPCODE_MASK)) != DNS_FLAG_QR)
     return DnsStatus::IGNORE;
+
+  if ((FLAGS & DNS_FLAG_TC) != 0) {
+    if (QDCOUNT == 0)
+      return DnsStatus::TRUNCATED;
+    if (QDCOUNT == 1) {
+      if (match_question(msg, qname, qtype) != 0)
+        return DnsStatus::TRUNCATED;
+    }
+    return DnsStatus::IGNORE;
+  }
 
   if (QDCOUNT != 1) {
     if (QDCOUNT == 0) {

@@ -40,8 +40,10 @@
 #include "src/netdb/gethostbyname_r.h"
 #include "src/string/memory_utils/inline_memcpy.h"
 #include "src/string/string_utils.h"
+#include "src/sys/socket/accept.h"
 #include "src/sys/socket/bind.h"
 #include "src/sys/socket/getsockname.h"
+#include "src/sys/socket/listen.h"
 #include "src/sys/socket/recvfrom.h"
 #include "src/sys/socket/sendto.h"
 #include "src/sys/socket/socket.h"
@@ -516,16 +518,19 @@ TEST_F(LlvmLibcGethostbynameTest, LoopbackUdpSocketTransportAndTimeouts) {
                        &set_resolv_conf_path);
 
   int sfd = LIBC_NAMESPACE::socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
+  int tfd = LIBC_NAMESPACE::socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
   int cfd = -1;
   int cfd6 = -1;
+  int tcfd = -1;
+  int acfd = -1;
   ASSERT_GE(sfd, 0);
+  ASSERT_GE(tfd, 0);
   scope_exit guard([&] {
-    if (sfd >= 0)
-      LIBC_NAMESPACE::close(sfd);
-    if (cfd >= 0)
-      nw::close_fd(cfd);
-    if (cfd6 >= 0)
-      nw::close_fd(cfd6);
+    const int FDS[6] = {sfd, tfd, cfd, cfd6, tcfd, acfd};
+    for (int fd : FDS) {
+      if (fd >= 0)
+        nw::close_fd(fd);
+    }
   });
 
   struct sockaddr_in sa{};
@@ -540,7 +545,14 @@ TEST_F(LlvmLibcGethostbynameTest, LoopbackUdpSocketTransportAndTimeouts) {
   ASSERT_EQ(LIBC_NAMESPACE::getsockname(sfd, sap, &slen), 0);
   const uint16_t PORT = ntoh(sa.sin_port);
 
+  sa.sin_port = 0;
+  ASSERT_EQ(LIBC_NAMESPACE::bind(tfd, sap, slen), 0);
+  ASSERT_EQ(LIBC_NAMESPACE::getsockname(tfd, sap, &slen), 0);
+  ASSERT_EQ(LIBC_NAMESPACE::listen(tfd, 2), 0);
+  const uint16_t TPORT = ntoh(sa.sin_port);
+
   static constexpr uint8_t LO4[4] = {127, 0, 0, 1};
+  static constexpr uint8_t DOC4[4] = {198, 51, 100, 1};
   static constexpr uint8_t LO6[16] = {0, 0, 0, 0, 0, 0, 0, 0,
                                       0, 0, 0, 0, 0, 0, 0, 1};
   static constexpr uint8_t UNROUTABLE6[16] = {0xfe, 0x80};
@@ -553,6 +565,17 @@ TEST_F(LlvmLibcGethostbynameTest, LoopbackUdpSocketTransportAndTimeouts) {
   cfd6 = nw::open_udp(true, LO6, 0, PORT);
   EXPECT_GE(cfd6, 0);
   EXPECT_EQ(nw::udp_send(-1, {}), ssize_t(-1));
+  EXPECT_EQ(nw::tcp_send(-1, QN, 0), ssize_t(-1));
+  EXPECT_EQ(nw::tcp_send(cfd6, QN, 200), ssize_t(3));
+  EXPECT_EQ(nw::open_tcp(false, DOC4, 0, 53, 0), -1);
+
+  tcfd = nw::open_tcp(false, LO4, 0, TPORT, 200);
+  ASSERT_GE(tcfd, 0);
+  uint8_t listen_rx[4]{};
+  EXPECT_EQ(nw::tcp_recv(tfd, listen_rx, 200), ssize_t(-1));
+  acfd = LIBC_NAMESPACE::accept(tfd, nullptr, nullptr);
+  ASSERT_GE(acfd, 0);
+  ASSERT_EQ(nw::tcp_send(tcfd, QN, 200), ssize_t(3));
 
   cfd = nw::open_udp(false, LO4, 0, PORT);
   ASSERT_GE(cfd, 0);
@@ -561,38 +584,77 @@ TEST_F(LlvmLibcGethostbynameTest, LoopbackUdpSocketTransportAndTimeouts) {
   ASSERT_EQ(nw::udp_send(cfd, {qpkt.data(), QL}), static_cast<ssize_t>(QL));
 
   uint8_t srx[32]{};
+  ASSERT_EQ(LIBC_NAMESPACE::recvfrom(acfd, srx, 3, 0, nullptr, nullptr),
+            ssize_t(3));
   ASSERT_EQ(LIBC_NAMESPACE::recvfrom(sfd, srx, sizeof(srx), 0, psp, &plen),
             static_cast<ssize_t>(QL));
 
-  // Oversized (>1232B) UDP datagram is detected via MSG_TRUNC.
+  // Oversized (>1232B) UDP datagram is detected via MSG_TRUNC as TRUNCATED.
   array<uint8_t, 1300> big{};
   span<uint8_t> urx = span<uint8_t>(big).subspan(0, DNS_UDP_RX_SIZE);
+  EXPECT_EQ(nw::tcp_recv(tcfd, urx.subspan(0, 3), 0), ssize_t(-1));
+  ASSERT_EQ(LIBC_NAMESPACE::sendto(acfd, QN, 3, 0, nullptr, 0), ssize_t(3));
+  EXPECT_EQ(nw::tcp_recv(tcfd, urx.subspan(0, 3), 200), ssize_t(3));
   ASSERT_EQ(LIBC_NAMESPACE::sendto(sfd, big.data(), big.size(), 0, psp, plen),
             static_cast<ssize_t>(big.size()));
-  EXPECT_EQ(nw::udp_poll_recv(cfd, urx, 200).kind, nw::UdpRecvKind::HARD_ERROR);
+  EXPECT_EQ(nw::udp_poll_recv(cfd, urx, 200).kind, nw::UdpRecvKind::TRUNCATED);
 
   ASSERT_EQ(LIBC_NAMESPACE::sendto(sfd, qpkt.data(), QL, 0, psp, plen),
             static_cast<ssize_t>(QL));
   EXPECT_EQ(nw::udp_poll_recv(cfd, urx, 200).kind, nw::UdpRecvKind::PACKET);
   EXPECT_EQ(nw::udp_poll_recv(cfd, urx, 1).kind, nw::UdpRecvKind::TIMEOUT);
 
-  // Closed ephemeral UDP port triggers ECONNREFUSED -> TRY_AGAIN cleanly.
+  // Closed ephemeral UDP & live/closed TCP ports trigger TRY_AGAIN cleanly.
   LIBC_NAMESPACE::close(sfd);
   sfd = -1;
   set_dns_port_override(PORT);
   EXPECT_EQ(LIBC_NAMESPACE::gethostbyname("live.example."), nullptr);
   EXPECT_EQ(*h_errno_addr(), TRY_AGAIN);
 
-  set_dns_wire_hook([](const ScopedIpAddr &ns, bool, span<const uint8_t> q,
-                       span<uint8_t> r) -> int {
+  ScopedTestDbFile rdb_vc_live(
+      libc_make_test_file_path("host_resolv_vc_live.test"),
+      "nameserver 127.0.0.1\noptions use-vc tcp attempts:1 timeout:1\n",
+      &set_resolv_conf_path);
+  set_dns_port_override(TPORT);
+  EXPECT_EQ(LIBC_NAMESPACE::gethostbyname("live.example."), nullptr);
+  EXPECT_EQ(*h_errno_addr(), TRY_AGAIN);
+
+  ScopedTestDbFile rdb_vc(
+      libc_make_test_file_path("host_resolv_vc.test"),
+      "nameserver 0.0.0.0\nnameserver ::1\nnameserver 127.0.0.1\n"
+      "options use-vc tcp attempts:1 timeout:1\n",
+      &set_resolv_conf_path);
+  LIBC_NAMESPACE::close(tfd);
+  tfd = -1;
+  EXPECT_EQ(nw::open_tcp(false, LO4, 0, TPORT, 200), -1);
+  EXPECT_EQ(LIBC_NAMESPACE::gethostbyname("live.example."), nullptr);
+  EXPECT_EQ(*h_errno_addr(), TRY_AGAIN);
+  set_resolv_conf_path(rdb.get_path());
+
+  set_dns_wire_hook([](const ScopedIpAddr &ns, bool is_tcp,
+                       span<const uint8_t> q, span<uint8_t> r) -> int {
     const char C = static_cast<char>(q[13]);
     const int Q = static_cast<int>(q.size());
-    if (C == '3' || C == '4')
-      return '0' - C;
+    if (C == '3' || C == '4' || (is_tcp && C >= '6' && C <= '9'))
+      return C <= '4' ? '0' - C : '1' - C;
 
     LIBC_NAMESPACE::inline_memcpy(r.data(), q.data(), q.size());
     if (ns.is_ipv6) {
       write_u16_be(r, 2, DNS_FLAG_QR | 5);
+      return Q;
+    }
+    if (!is_tcp && (C == 't' || C == 'g' || C == 'u' || C == 'k')) {
+      write_u16_be(r, 2, DNS_FLAG_QR | DNS_FLAG_TC);
+      if (C == 'g' || C == 'u')
+        write_u16_be(r, 4, C == 'g' ? 0 : 2);
+      if (C == 'k')
+        r[13] ^= 1;
+      return C == 'g' ? 12 : Q;
+    }
+    if (!is_tcp && C == 'm')
+      return 1300;
+    if (is_tcp && C == 'g') {
+      write_u16_be(r, 2, DNS_FLAG_QR | DNS_FLAG_TC);
       return Q;
     }
     if (C == 'q' || C == 'n' || C == 'f') {
@@ -737,6 +799,22 @@ TEST_F(LlvmLibcGethostbynameTest, LoopbackUdpSocketTransportAndTimeouts) {
   ASSERT_NE(cn_he, nullptr);
   EXPECT_STREQ(cn_he->h_name, "app.net");
   EXPECT_EQ(static_cast<uint8_t>(cn_he->h_addr[0]), uint8_t(9));
+
+  // TC=1 and MSG_TRUNC fallback to TCP, plus malformed TCP frames.
+  EXPECT_EQ(LIBC_NAMESPACE::gethostbyname("g.x"), nullptr);
+  EXPECT_EQ(LIBC_NAMESPACE::gethostbyname("u.x"), nullptr);
+  EXPECT_EQ(LIBC_NAMESPACE::gethostbyname("k.x"), nullptr);
+  ASSERT_NE(LIBC_NAMESPACE::gethostbyname("t.x"), nullptr);
+  ASSERT_NE(LIBC_NAMESPACE::gethostbyname("m.x"), nullptr);
+
+  set_resolv_conf_path(rdb_vc.get_path());
+  static constexpr const char *TCP_ERR_HOSTS[] = {
+      "3.x", "4.x", "6.x", "7.x", "8.x", "9.x", "b.x", "5.x",
+  };
+  for (const char *th : TCP_ERR_HOSTS)
+    EXPECT_EQ(LIBC_NAMESPACE::gethostbyname(th), nullptr);
+  EXPECT_EQ(*h_errno_addr(), TRY_AGAIN);
+  ASSERT_NE(LIBC_NAMESPACE::gethostbyname("c.x"), nullptr);
 
   // Exercise default nullptr resolv_conf_path and missing ENOENT fallback.
   set_resolv_conf_path(nullptr);

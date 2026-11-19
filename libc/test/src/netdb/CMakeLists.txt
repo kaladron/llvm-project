@@ -128,8 +128,10 @@ if(TARGET libc.src.netdb.getaddrinfo)
         libc.src.netdb.gethostbyname_r
         libc.src.string.memory_utils.inline_memcpy
         libc.src.string.string_utils
+        libc.src.sys.socket.accept
         libc.src.sys.socket.bind
         libc.src.sys.socket.getsockname
+        libc.src.sys.socket.listen
         libc.src.sys.socket.recvfrom
         libc.src.sys.socket.sendto
         libc.src.sys.socket.socket

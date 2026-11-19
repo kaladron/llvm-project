@@ -7,7 +7,7 @@
 //===----------------------------------------------------------------------===//
 ///
 /// \file
-/// Ephemeral non-blocking UDP DNS query client and resolver dispatcher.
+/// Non-blocking UDP and RFC 7766 TCP DNS query client and dispatcher.
 ///
 //===----------------------------------------------------------------------===//
 
@@ -39,6 +39,7 @@ namespace netdb {
 
 constexpr uint16_t DNS_DEFAULT_PORT = 53;
 constexpr size_t DNS_UDP_RX_SIZE = 1232;
+constexpr size_t DNS_TCP_RX_SIZE = 2048;
 constexpr size_t DNS_MAX_QUERY_PKT = DNS_HEADER_LEN + DNS_MAX_WIRE_NAME + 4;
 
 LIBC_INLINE_VAR cpp::Atomic<size_t> dns_rotate_counter{0};
@@ -92,10 +93,68 @@ struct DnsIo {
 #ifndef LIBC_COPT_PUBLIC_PACKAGING
   DnsWireHook hook = get_dns_wire_hook();
   ScopedIpAddr cur_ns{};
-  cpp::array<uint8_t, DNS_UDP_RX_SIZE> rx{};
+  cpp::array<uint8_t, 2 + DNS_TCP_RX_SIZE> rx{};
+  size_t rx_len = 0;
+  size_t rx_pos = 0;
   int st = -1;
   uint64_t tick = 0;
   uint16_t next_id = 0x0100;
+
+  LIBC_INLINE int hook_open_ns(const ScopedIpAddr &ns) {
+    cur_ns = ns;
+    rx_len = 0;
+    rx_pos = 0;
+    st = -1;
+    if (!ns.is_ipv6 && ns.addr[0] == 0)
+      return -1;
+    return 1;
+  }
+
+  LIBC_INLINE ssize_t hook_tcp_send(cpp::span<const uint8_t> frame) {
+    if (rx_len != 0)
+      return static_cast<ssize_t>(frame.size());
+
+    const int N =
+        hook(cur_ns, true, frame.subspan(2), {rx.data() + 2, DNS_TCP_RX_SIZE});
+    if (N == -3)
+      return -1;
+    if (N == -4) {
+      st = -4;
+      return 1;
+    }
+
+    uint16_t hdr_len = 3000;
+    if (N >= 0)
+      hdr_len = static_cast<uint16_t>(N);
+    else if (N == -5)
+      hdr_len = 5;
+    else if (N == -8)
+      hdr_len = 20;
+    write_u16_be(rx, 0, hdr_len);
+
+    if (N >= 0)
+      rx_len = 2 + static_cast<size_t>(N);
+    else if (N == -7)
+      rx_len = 1;
+    else if (N == -8)
+      rx_len = 5;
+    else
+      rx_len = 2;
+    return 1;
+  }
+
+  LIBC_INLINE ssize_t hook_tcp_recv(cpp::span<uint8_t> out) {
+    if (rx_pos >= rx_len)
+      return 0;
+
+    const size_t REM = rx_len - rx_pos;
+    size_t n = out.size() < REM ? out.size() : REM;
+    if (REM > 1 && out.size() > 1)
+      n = 1;
+    inline_memcpy(out.data(), rx.data() + rx_pos, n);
+    rx_pos += n;
+    return static_cast<ssize_t>(n);
+  }
 #endif // LIBC_COPT_PUBLIC_PACKAGING
 
   LIBC_INLINE uint64_t now_ms() {
@@ -130,12 +189,8 @@ struct DnsIo {
 
   LIBC_INLINE int open_udp(const ScopedIpAddr &ns) {
 #ifndef LIBC_COPT_PUBLIC_PACKAGING
-    if (hook != nullptr) {
-      cur_ns = ns;
-      if (!ns.is_ipv6 && ns.addr[0] == 0)
-        return -1;
-      return 1;
-    }
+    if (hook != nullptr)
+      return hook_open_ns(ns);
 #endif // LIBC_COPT_PUBLIC_PACKAGING
     return network::open_udp(ns.is_ipv6, ns.addr, ns.scope_id, port);
   }
@@ -143,7 +198,7 @@ struct DnsIo {
   LIBC_INLINE ssize_t udp_send(int fd, cpp::span<const uint8_t> pkt) {
 #ifndef LIBC_COPT_PUBLIC_PACKAGING
     if (hook != nullptr) {
-      st = hook(cur_ns, false, pkt, rx);
+      st = hook(cur_ns, false, pkt, {rx.data(), DNS_TCP_RX_SIZE});
       if (st == -3)
         return -1;
       return static_cast<ssize_t>(pkt.size());
@@ -161,13 +216,102 @@ struct DnsIo {
 
       const size_t N = static_cast<size_t>(st);
       st = -1;
+      if (N > out.size())
+        return {network::UdpRecvKind::TRUNCATED, N};
+
       inline_memcpy(out.data(), rx.data(), N);
       return {network::UdpRecvKind::PACKET, N};
     }
 #endif // LIBC_COPT_PUBLIC_PACKAGING
     return network::udp_poll_recv(fd, out, timeout_ms);
   }
+
+  LIBC_INLINE int open_tcp(const ScopedIpAddr &ns, uint32_t timeout_ms) {
+#ifndef LIBC_COPT_PUBLIC_PACKAGING
+    if (hook != nullptr)
+      return hook_open_ns(ns);
+#endif // LIBC_COPT_PUBLIC_PACKAGING
+    return network::open_tcp(ns.is_ipv6, ns.addr, ns.scope_id, port,
+                             timeout_ms);
+  }
+
+  LIBC_INLINE ssize_t tcp_send(int fd, cpp::span<const uint8_t> pkt,
+                               uint32_t timeout_ms) {
+#ifndef LIBC_COPT_PUBLIC_PACKAGING
+    if (hook != nullptr)
+      return hook_tcp_send(pkt);
+#endif // LIBC_COPT_PUBLIC_PACKAGING
+    return network::tcp_send(fd, pkt, timeout_ms);
+  }
+
+  LIBC_INLINE ssize_t tcp_recv(int fd, cpp::span<uint8_t> out,
+                               uint32_t timeout_ms) {
+#ifndef LIBC_COPT_PUBLIC_PACKAGING
+    if (hook != nullptr)
+      return hook_tcp_recv(out);
+#endif // LIBC_COPT_PUBLIC_PACKAGING
+    return network::tcp_recv(fd, out, timeout_ms);
+  }
 };
+
+LIBC_INLINE bool tcp_io_all(DnsIo &io, int fd, uint8_t *buf, size_t len,
+                            uint64_t deadline, bool is_send) {
+  for (size_t off = 0; off < len;) {
+    const uint64_t NOW = io.now_ms();
+    if (NOW >= deadline)
+      return false;
+
+    const uint32_t REM_MS = static_cast<uint32_t>(deadline - NOW);
+    const size_t REM_LEN = len - off;
+    const ssize_t N = is_send ? io.tcp_send(fd, {buf + off, REM_LEN}, REM_MS)
+                              : io.tcp_recv(fd, {buf + off, REM_LEN}, REM_MS);
+    if (N <= 0)
+      return false;
+
+    off += static_cast<size_t>(N);
+  }
+  return true;
+}
+
+LIBC_INLINE DnsStatus run_tcp_query(DnsIo &io, const ScopedIpAddr &ns,
+                                    cpp::span<const uint8_t> qname,
+                                    uint16_t qtype, uint32_t timeout_ms,
+                                    DnsParsedResponse &out) {
+  const int FD = io.open_tcp(ns, timeout_ms);
+  if (FD < 0)
+    return DnsStatus::RETRY;
+
+  cpp::scope_exit close_guard([&]() { io.close_fd(FD); });
+  const uint16_t TXID = io.random_txid();
+  cpp::array<uint8_t, 2 + DNS_MAX_QUERY_PKT> frame{};
+  const size_t QLEN = write_query_packet(TXID, qname, qtype,
+                                         cpp::span<uint8_t>(frame).subspan(2));
+  write_u16_be(frame, 0, static_cast<uint16_t>(QLEN));
+
+  const uint64_t DEADLINE = io.now_ms() + timeout_ms;
+  if (!tcp_io_all(io, FD, frame.data(), 2 + QLEN, DEADLINE, true))
+    return DnsStatus::RETRY;
+
+  cpp::array<uint8_t, 2> hdr{};
+  if (!tcp_io_all(io, FD, hdr.data(), hdr.size(), DEADLINE, false))
+    return DnsStatus::RETRY;
+
+  const size_t RESP_LEN = read_u16_be(hdr, 0);
+  if (RESP_LEN < DNS_HEADER_LEN)
+    return DnsStatus::RETRY;
+
+  cpp::array<uint8_t, DNS_TCP_RX_SIZE> rx{};
+  if (RESP_LEN > rx.size())
+    return DnsStatus::RETRY;
+  if (!tcp_io_all(io, FD, rx.data(), RESP_LEN, DEADLINE, false))
+    return DnsStatus::RETRY;
+
+  const DnsStatus ST =
+      parse_dns_response({rx.data(), RESP_LEN}, TXID, qname, qtype, out);
+  if (ST == DnsStatus::IGNORE || ST == DnsStatus::TRUNCATED)
+    return DnsStatus::RETRY;
+  return ST;
+}
 
 LIBC_INLINE DnsStatus run_udp_query(DnsIo &io, const ScopedIpAddr &ns,
                                     cpp::span<const uint8_t> qname,
@@ -189,6 +333,8 @@ LIBC_INLINE DnsStatus run_udp_query(DnsIo &io, const ScopedIpAddr &ns,
   for (uint64_t now = io.now_ms(); now < DEADLINE; now = io.now_ms()) {
     const network::UdpRecvResult RECV =
         io.udp_poll_recv(FD, rx, static_cast<uint32_t>(DEADLINE - now));
+    if (RECV.kind == network::UdpRecvKind::TRUNCATED)
+      return DnsStatus::TRUNCATED;
     if (RECV.kind != network::UdpRecvKind::PACKET)
       return DnsStatus::RETRY;
 
@@ -201,12 +347,23 @@ LIBC_INLINE DnsStatus run_udp_query(DnsIo &io, const ScopedIpAddr &ns,
   return DnsStatus::RETRY;
 }
 
-LIBC_INLINE DnsStatus dispatch_ns_query(void *ctx, const ScopedIpAddr &ns,
+struct DnsDispatchCtx {
+  DnsIo io{};
+  bool use_vc = false;
+};
+
+LIBC_INLINE DnsStatus dispatch_ns_query(void *raw_ctx, const ScopedIpAddr &ns,
                                         cpp::span<const uint8_t> qname,
                                         uint16_t qtype, uint32_t timeout_ms,
                                         DnsParsedResponse &out) {
-  return run_udp_query(*static_cast<DnsIo *>(ctx), ns, qname, qtype, timeout_ms,
-                       out);
+  auto &ctx = *static_cast<DnsDispatchCtx *>(raw_ctx);
+  if (!ctx.use_vc) {
+    const DnsStatus ST =
+        run_udp_query(ctx.io, ns, qname, qtype, timeout_ms, out);
+    if (ST != DnsStatus::TRUNCATED)
+      return ST;
+  }
+  return run_tcp_query(ctx.io, ns, qname, qtype, timeout_ms, out);
 }
 
 LIBC_INLINE DnsStatus dispatch_dns_name(const ResolvConfig &cfg,
@@ -219,8 +376,8 @@ LIBC_INLINE DnsStatus dispatch_dns_name(const ResolvConfig &cfg,
     start = COUNT % cfg.num_nameservers;
   }
 
-  DnsIo io{};
-  return DnsResolver{&dispatch_ns_query, &io, cfg, start}.resolve_name(
+  DnsDispatchCtx ctx{{}, cfg.use_vc};
+  return DnsResolver{&dispatch_ns_query, &ctx, cfg, start}.resolve_name(
       name, qtype, out);
 }
 

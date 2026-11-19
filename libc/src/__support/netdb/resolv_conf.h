@@ -57,6 +57,7 @@ struct ResolvConfig {
   uint8_t timeout = 5;
   uint8_t attempts = 2;
   bool rotate = false;
+  bool use_vc = false;
 };
 
 enum class ResolvDirective : uint8_t {
@@ -100,6 +101,10 @@ LIBC_INLINE void parse_clamped_opt(cpp::string_view opt,
 LIBC_INLINE void apply_resolv_option(cpp::string_view opt, ResolvConfig &cfg) {
   if (opt == "rotate") {
     cfg.rotate = true;
+    return;
+  }
+  if (opt == "use-vc" || opt == "tcp") {
+    cfg.use_vc = true;
     return;
   }
 

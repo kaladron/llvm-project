@@ -14,12 +14,14 @@
 #ifndef LLVM_LIBC_SRC___SUPPORT_OSUTIL_LINUX_NETWORK_H
 #define LLVM_LIBC_SRC___SUPPORT_OSUTIL_LINUX_NETWORK_H
 
+#include "hdr/errno_macros.h"
 #include "hdr/net_if_macros.h"
 #include "hdr/poll_macros.h"
 #include "hdr/stdint_proxy.h"
 #include "hdr/sys_ioctl_macros.h"
 #include "hdr/sys_socket_macros.h"
 #include "hdr/types/size_t.h"
+#include "hdr/types/socklen_t.h"
 #include "hdr/types/ssize_t.h"
 #include "hdr/types/struct_ifreq.h"
 #include "hdr/types/struct_pollfd.h"
@@ -31,6 +33,7 @@
 #include "src/__support/OSUtil/linux/syscall_wrappers/close.h"
 #include "src/__support/OSUtil/linux/syscall_wrappers/connect.h"
 #include "src/__support/OSUtil/linux/syscall_wrappers/getrandom.h"
+#include "src/__support/OSUtil/linux/syscall_wrappers/getsockopt.h"
 #include "src/__support/OSUtil/linux/syscall_wrappers/ioctl.h"
 #include "src/__support/OSUtil/linux/syscall_wrappers/poll.h"
 #include "src/__support/OSUtil/linux/syscall_wrappers/recvfrom.h"
@@ -48,7 +51,7 @@
 namespace LIBC_NAMESPACE_DECL {
 namespace network {
 
-enum class UdpRecvKind : uint8_t { PACKET, TIMEOUT, HARD_ERROR };
+enum class UdpRecvKind : uint8_t { PACKET, TRUNCATED, TIMEOUT, HARD_ERROR };
 
 struct UdpRecvResult {
   UdpRecvKind kind;
@@ -93,29 +96,83 @@ LIBC_INLINE ErrorOr<int> connect_endpoint(int fd, bool is_ipv6,
       fd, reinterpret_cast<const struct sockaddr *>(&s4), sizeof(s4));
 }
 
-LIBC_INLINE int open_udp(bool is_ipv6, cpp::span<const uint8_t> addr,
-                         uint32_t scope_id, uint16_t port,
-                         int extra_flags = 0) {
+LIBC_INLINE int finish_connect(int fd, const ErrorOr<int> &cr,
+                               uint32_t timeout_ms) {
+  if (cr.has_value())
+    return fd;
+  if (cr.error() != EINPROGRESS) {
+    close_fd(fd);
+    return -1;
+  }
+
+  int so_err = ETIMEDOUT;
+  socklen_t err_len = sizeof(so_err);
+  if (poll_fd_ready(fd, POLLOUT, timeout_ms)) {
+    (void)linux_syscalls::getsockopt(fd, SOL_SOCKET, SO_ERROR, &so_err,
+                                     &err_len);
+  }
+  if (so_err != 0) {
+    close_fd(fd);
+    return -1;
+  }
+  return fd;
+}
+
+LIBC_INLINE int open_sock(bool is_ipv6, int sock_type,
+                          cpp::span<const uint8_t> addr, uint32_t scope_id,
+                          uint16_t port, uint32_t timeout_ms) {
   const int DOMAIN = is_ipv6 ? AF_INET6 : AF_INET;
   ErrorOr<int> fd = linux_syscalls::socket(
-      DOMAIN, SOCK_DGRAM | SOCK_NONBLOCK | SOCK_CLOEXEC | extra_flags, 0);
+      DOMAIN, sock_type | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
   if (!fd.has_value())
     return -1;
 
-  ErrorOr<int> cr = connect_endpoint(*fd, is_ipv6, addr, scope_id, port);
-  if (!cr.has_value()) {
-    close_fd(*fd);
-    return -1;
-  }
-  return *fd;
+  return finish_connect(
+      *fd, connect_endpoint(*fd, is_ipv6, addr, scope_id, port), timeout_ms);
 }
 
-LIBC_INLINE ssize_t udp_send(int fd, cpp::span<const uint8_t> pkt) {
-  ErrorOr<ssize_t> rc = linux_syscalls::sendto(fd, pkt.data(), pkt.size(),
-                                               MSG_NOSIGNAL, nullptr, 0);
+LIBC_INLINE int open_udp(bool is_ipv6, cpp::span<const uint8_t> addr,
+                         uint32_t scope_id, uint16_t port,
+                         int extra_flags = 0) {
+  return open_sock(is_ipv6, SOCK_DGRAM | extra_flags, addr, scope_id, port, 0);
+}
+
+LIBC_INLINE int open_tcp(bool is_ipv6, cpp::span<const uint8_t> addr,
+                         uint32_t scope_id, uint16_t port,
+                         uint32_t timeout_ms) {
+  return open_sock(is_ipv6, SOCK_STREAM, addr, scope_id, port, timeout_ms);
+}
+
+LIBC_INLINE ssize_t send_bytes(int fd, cpp::span<const uint8_t> pkt,
+                               int flags) {
+  ErrorOr<ssize_t> rc =
+      linux_syscalls::sendto(fd, pkt.data(), pkt.size(), flags, nullptr, 0);
   if (!rc.has_value())
     return -1;
   return *rc;
+}
+
+LIBC_INLINE ssize_t udp_send(int fd, cpp::span<const uint8_t> pkt) {
+  return send_bytes(fd, pkt, MSG_NOSIGNAL);
+}
+
+LIBC_INLINE ssize_t tcp_send(int fd, cpp::span<const uint8_t> pkt,
+                             uint32_t timeout_ms) {
+  if (!poll_fd_ready(fd, POLLOUT, timeout_ms))
+    return -1;
+  return send_bytes(fd, pkt, MSG_DONTWAIT | MSG_NOSIGNAL);
+}
+
+LIBC_INLINE ssize_t tcp_recv(int fd, cpp::span<uint8_t> out,
+                             uint32_t timeout_ms) {
+  if (!poll_fd_ready(fd, POLLIN, timeout_ms))
+    return -1;
+
+  ErrorOr<ssize_t> n = linux_syscalls::recvfrom(fd, out.data(), out.size(),
+                                                MSG_DONTWAIT, nullptr, nullptr);
+  if (!n.has_value())
+    return -1;
+  return *n;
 }
 
 LIBC_INLINE UdpRecvResult udp_poll_recv(int fd, cpp::span<uint8_t> out,
@@ -130,7 +187,7 @@ LIBC_INLINE UdpRecvResult udp_poll_recv(int fd, cpp::span<uint8_t> out,
 
   const size_t LEN = static_cast<size_t>(*n);
   if (LEN > out.size())
-    return {UdpRecvKind::HARD_ERROR, 0};
+    return {UdpRecvKind::TRUNCATED, LEN};
 
   return {UdpRecvKind::PACKET, LEN};
 }
