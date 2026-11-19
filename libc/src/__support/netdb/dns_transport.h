@@ -7,7 +7,7 @@
 //===----------------------------------------------------------------------===//
 ///
 /// \file
-/// Multi-nameserver DNS retry and rotation traversal driver.
+/// Multi-nameserver, ndots, and search-domain DNS traversal driver.
 ///
 //===----------------------------------------------------------------------===//
 
@@ -16,11 +16,16 @@
 
 #include "hdr/stdint_proxy.h"
 #include "hdr/types/size_t.h"
+#include "src/__support/CPP/array.h"
+#include "src/__support/CPP/optional.h"
 #include "src/__support/CPP/span.h"
+#include "src/__support/CPP/string_view.h"
 #include "src/__support/macros/attributes.h"
 #include "src/__support/macros/config.h"
 #include "src/__support/netdb/dns_response.h"
+#include "src/__support/netdb/dns_wire.h"
 #include "src/__support/netdb/resolv_conf.h"
+#include "src/string/memory_utils/inline_memcpy.h"
 
 namespace LIBC_NAMESPACE_DECL {
 namespace netdb {
@@ -55,6 +60,62 @@ struct DnsResolver {
           return ST;
         worst = worse_miss(worst, ST);
       }
+    }
+
+    return worst;
+  }
+
+  LIBC_INLINE DnsStatus walk_search(cpp::span<const uint8_t> bare_q,
+                                    uint16_t qtype, DnsParsedResponse &out,
+                                    DnsStatus &worst) const {
+    cpp::array<uint8_t, DNS_MAX_WIRE_NAME> cand{};
+    const size_t PREFIX_LEN = bare_q.size() - 1;
+
+    for (size_t i = 0; i < cfg.num_search; ++i) {
+      const size_t SUFFIX_LEN = cfg.search[i].len;
+      if (cand.size() - PREFIX_LEN < SUFFIX_LEN)
+        continue;
+
+      inline_memcpy(cand.data(), bare_q.data(), PREFIX_LEN);
+      inline_memcpy(cand.data() + PREFIX_LEN,
+                    cfg.search_buf.data() + cfg.search[i].offset, SUFFIX_LEN);
+
+      const DnsStatus ST =
+          query_qname({cand.data(), PREFIX_LEN + SUFFIX_LEN}, qtype, out);
+      if (ST >= DnsStatus::NODATA)
+        return ST;
+      worst = worse_miss(worst, ST);
+    }
+
+    return DnsStatus::NXDOMAIN;
+  }
+
+  LIBC_INLINE DnsStatus resolve_name(cpp::string_view name, uint16_t qtype,
+                                     DnsParsedResponse &out) const {
+    cpp::array<uint8_t, DNS_MAX_WIRE_NAME> bare{};
+    const cpp::optional<EncodedQname> ENC = encode_qname(name, bare);
+    if (!ENC.has_value())
+      return DnsStatus::NXDOMAIN;
+
+    const cpp::span<const uint8_t> BARE_Q(bare.data(), ENC->wire_len);
+    if (ENC->is_fqdn || cfg.num_search == 0)
+      return query_qname(BARE_Q, qtype, out);
+
+    size_t dots = 0;
+    for (char ch : name) {
+      if (ch == '.')
+        ++dots;
+    }
+
+    DnsStatus worst = DnsStatus::NXDOMAIN;
+    const bool BARE_FIRST = dots >= cfg.ndots;
+    for (int step = 0; step < 2; ++step) {
+      const bool DO_BARE = (step == 0) == BARE_FIRST;
+      const DnsStatus ST = DO_BARE ? query_qname(BARE_Q, qtype, out)
+                                   : walk_search(BARE_Q, qtype, out, worst);
+      if (ST >= DnsStatus::NODATA)
+        return ST;
+      worst = worse_miss(worst, ST);
     }
 
     return worst;

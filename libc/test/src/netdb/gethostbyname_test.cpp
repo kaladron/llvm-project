@@ -622,6 +622,26 @@ TEST_F(LlvmLibcGethostbynameTest, LoopbackUdpSocketTransportAndTimeouts) {
       write_u16_be(r, 2, static_cast<uint16_t>(DNS_FLAG_QR | (C - '0')));
       return Q;
     }
+    if (C == 's') {
+      // NXDOMAIN on "s" (19B) and "s.ab.x" (24B); NODATA on "s.d.x" (23B).
+      const uint16_t RC = Q == 23 ? 0 : 3;
+      write_u16_be(r, 2, static_cast<uint16_t>(DNS_FLAG_QR | RC));
+      return Q;
+    }
+    if (C == 'r') {
+      // SERVFAIL on first search suffix ("r.ab.x"=24B, "r.a.b.ab.x"=28B),
+      // NXDOMAIN on bare & second search suffix -> preserves TRY_AGAIN.
+      const uint16_t RC = (Q == 24 || Q == 28) ? 2 : 3;
+      write_u16_be(r, 2, static_cast<uint16_t>(DNS_FLAG_QR | RC));
+      return Q;
+    }
+    if (C == 'w') {
+      // NXDOMAIN on bare, OK on search suffix (Q > 23).
+      if (Q <= 23) {
+        write_u16_be(r, 2, DNS_FLAG_QR | 3);
+        return Q;
+      }
+    }
 
     // 'l': self-CNAME loop (>8 hops -> FAIL); 'c': unordered A then CNAME +
     // duplicate CNAME for same owner.
@@ -725,8 +745,9 @@ TEST_F(LlvmLibcGethostbynameTest, LoopbackUdpSocketTransportAndTimeouts) {
   ASSERT_NE(LIBC_NAMESPACE::gethostbyname("c.x"), nullptr);
 
   // Streaming resolv.conf with ';' comments, >600B line, embedded NUL
-  // rejection, multi-nameserver rotation/failover, and clamped options.
-  char rconf[1600];
+  // rejection, search/domain/ndots, multi-nameserver rotation/failover, and
+  // clamped options.
+  char rconf[2400];
   size_t rpos = 0;
   auto rappend = [&](LIBC_NAMESPACE::cpp::string_view s) {
     for (char ch : s)
@@ -739,32 +760,86 @@ TEST_F(LlvmLibcGethostbynameTest, LoopbackUdpSocketTransportAndTimeouts) {
   rappend({NUL_NS, sizeof(NUL_NS) - 1});
   rappend({NUL_OPT, sizeof(NUL_OPT) - 1});
   rappend({SEMI_NUL_OK, sizeof(SEMI_NUL_OK) - 1});
-  rappend("very_long_unknown_directive_keyword_token 1 2 3\n");
+  // Overlong (>255B) unknown keyword token + overlong option & nameserver args.
+  for (size_t i = 0; i < 260; ++i)
+    rconf[rpos++] = 'u';
+  rappend(" 1 2\n");
   rappend("sortlist 1.2.3.0\n");
   rappend("nameserver\n");
   rappend("nameserver 1.2.3.4 extra\n");
   rappend("nameserver bad_ip\n");
   rappend("nameserver ");
-  for (size_t i = 0; i < 66; ++i)
+  for (size_t i = 0; i < 70; ++i)
+    rconf[rpos++] = '0';
+  rconf[rpos++] = '\n';
+  rappend("nameserver ");
+  for (size_t i = 0; i < 260; ++i)
     rconf[rpos++] = '0';
   rconf[rpos++] = '\n';
   rappend("nameserver 0.0.0.0 ; unreachable first server\n");
   rappend("nameserver fe80::1%lo ; REFUSED second server\n");
   rappend("nameserver 127.0.0.1\n");
   rappend("nameserver 8.8.8.8 ; capped beyond RESOLV_MAX_NS\n");
-  rappend("options rotate timeout:0 attempts:99999 timeout: timeout:a "
-          "timeout:5x overlong_option_token_exceeding_thirty_two_bytes ");
+  rappend("domain old.x ignored.x\n");
+  rappend("search s1 s2 s3 s4 s5 s6 s7\n");
+  rappend("search ");
+  for (size_t i = 0; i < 260; ++i)
+    rconf[rpos++] = 'm';
+  rappend(" -bad.x ab.x d.x "
+          "e1234567890123456789012345678901234567890123456789.x "
+          "f1234567890123456789012345678901234567890123456789.x "
+          "g1234567890123456789012345678901234567890123456789.s1234567890123456"
+          "7890.x "
+          "h1234567890123456789012345678901234567890123456789.s1234567890123456"
+          "7890.x\n");
+  rappend("options rotate ndots:2 timeout:0 attempts:99999 timeout: timeout:a "
+          "timeout:5x ndots: ");
+  for (size_t i = 0; i < 260; ++i)
+    rconf[rpos++] = 'z';
+  rconf[rpos++] = ' ';
   for (size_t i = 0; i < 40; ++i)
     rappend("unknown_opt:1 ");
   rconf[rpos++] = '\n';
 
   ScopedTestDbFile rdb2(libc_make_test_file_path("host_resolv_wide.test"),
                         {rconf, rpos}, &set_resolv_conf_path);
-  ASSERT_NE(LIBC_NAMESPACE::gethostbyname("c.x"), nullptr);
-  ASSERT_NE(LIBC_NAMESPACE::gethostbyname("c.x"), nullptr);
-  EXPECT_EQ(LIBC_NAMESPACE::gethostbyname("3.x"), nullptr);
-  // 0.0.0.0 returned RETRY and fe80::1%lo returned FAIL -> worse_miss is RETRY.
+  // dots < ndots (0 < 2): search-first succeeds on "c".
+  ASSERT_NE(LIBC_NAMESPACE::gethostbyname("c"), nullptr);
+  // dots >= ndots (2 >= 2): bare-first succeeds on "c.a.b", or falls back to
+  // search on "w.a.b" when bare returns NXDOMAIN!
+  ASSERT_NE(LIBC_NAMESPACE::gethostbyname("c.a.b"), nullptr);
+  ASSERT_NE(LIBC_NAMESPACE::gethostbyname("w.a.b"), nullptr);
+  // NODATA stops search walk immediately -> NO_DATA.
+  EXPECT_EQ(LIBC_NAMESPACE::gethostbyname("s"), nullptr);
+  EXPECT_EQ(*h_errno_addr(), NO_DATA);
+  // Bare-first NODATA stops before search walk -> NO_DATA.
+  EXPECT_EQ(LIBC_NAMESPACE::gethostbyname("0.a.b"), nullptr);
+  EXPECT_EQ(*h_errno_addr(), NO_DATA);
+  // TRY_AGAIN on first search domain is preserved across subsequent NXDOMAINs.
+  ScopedTestDbFile rdb_single_ns(
+      libc_make_test_file_path("host_resolv_single.test"),
+      "nameserver 127.0.0.1\nsearch ab.x d.x\noptions ndots:2 attempts:1\n",
+      &set_resolv_conf_path);
+  EXPECT_EQ(LIBC_NAMESPACE::gethostbyname("r"), nullptr);
   EXPECT_EQ(*h_errno_addr(), TRY_AGAIN);
+  EXPECT_EQ(LIBC_NAMESPACE::gethostbyname("r.a.b"), nullptr);
+  EXPECT_EQ(*h_errno_addr(), TRY_AGAIN);
+
+  set_resolv_conf_path(rdb2.get_path());
+  EXPECT_EQ(LIBC_NAMESPACE::gethostbyname("3"), nullptr);
+  EXPECT_EQ(LIBC_NAMESPACE::gethostbyname("3.a.b"), nullptr);
+  // Overlong relative host + search suffix (>255 wire bytes) skips long
+  // suffixes without overflowing.
+  char long_rel[212]{};
+  for (size_t i = 0; i < 211; ++i)
+    long_rel[i] = i == 0 ? '3' : ((i % 53 == 52) ? '.' : 'a');
+  EXPECT_EQ(LIBC_NAMESPACE::gethostbyname(long_rel), nullptr);
+
+  // Domain directive uses only the first token on the line.
+  ScopedTestDbFile rdb_dom(libc_make_test_file_path("host_resolv_dom.test"),
+                           "nameserver 127.0.0.1\ndomain ab.x ignored.x\n",
+                           &set_resolv_conf_path);
+  ASSERT_NE(LIBC_NAMESPACE::gethostbyname("c"), nullptr);
 
   // Open failure (ENOTDIR) and read failure (EISDIR) on resolv.conf.
   struct hostent he{};

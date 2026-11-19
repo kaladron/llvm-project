@@ -182,6 +182,8 @@ add_header_library(
   HDRS
     resolv_conf.h
   DEPENDS
+    .dns_wire
+    .hosts
     .ip_parse
     .line_reader
     libc.hdr.errno_macros
@@ -199,6 +201,7 @@ add_header_library(
     libc.src.__support.error_or
     libc.src.__support.macros.attributes
     libc.src.__support.macros.config
+    libc.src.string.memory_utils.inline_memcpy
 )
 
 add_header_library(
@@ -207,12 +210,17 @@ add_header_library(
     dns_transport.h
   DEPENDS
     .dns_response
+    .dns_wire
     .resolv_conf
     libc.hdr.stdint_proxy
     libc.hdr.types.size_t
+    libc.src.__support.CPP.array
+    libc.src.__support.CPP.optional
     libc.src.__support.CPP.span
+    libc.src.__support.CPP.string_view
     libc.src.__support.macros.attributes
     libc.src.__support.macros.config
+    libc.src.string.memory_utils.inline_memcpy
 )
 
 add_header_library(

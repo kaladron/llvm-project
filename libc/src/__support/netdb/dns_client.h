@@ -212,11 +212,6 @@ LIBC_INLINE DnsStatus dispatch_ns_query(void *ctx, const ScopedIpAddr &ns,
 LIBC_INLINE DnsStatus dispatch_dns_name(const ResolvConfig &cfg,
                                         cpp::string_view name, uint16_t qtype,
                                         DnsParsedResponse &out) {
-  cpp::array<uint8_t, DNS_MAX_WIRE_NAME> qwire{};
-  const cpp::optional<EncodedQname> ENC = encode_qname(name, qwire);
-  if (!ENC.has_value())
-    return DnsStatus::NXDOMAIN;
-
   size_t start = 0;
   if (cfg.rotate) {
     const size_t COUNT =
@@ -225,8 +220,8 @@ LIBC_INLINE DnsStatus dispatch_dns_name(const ResolvConfig &cfg,
   }
 
   DnsIo io{};
-  return DnsResolver{&dispatch_ns_query, &io, cfg, start}.query_qname(
-      {qwire.data(), ENC->wire_len}, qtype, out);
+  return DnsResolver{&dispatch_ns_query, &io, cfg, start}.resolve_name(
+      name, qtype, out);
 }
 
 } // namespace netdb
