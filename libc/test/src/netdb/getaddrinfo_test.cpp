@@ -22,10 +22,13 @@
 #include "hdr/types/struct_addrinfo.h"
 #include "hdr/types/struct_sockaddr_in.h"
 #include "hdr/types/struct_sockaddr_in6.h"
+#include "src/__support/CPP/string_view.h"
 #include "src/__support/net/byte_order.h"
 #include "src/__support/netdb/addrinfo.h"
+#include "src/__support/netdb/hosts.h"
 #include "src/__support/netdb/services.h"
 #include "src/netdb/getaddrinfo.h"
+#include "src/string/string_utils.h"
 #include "test/UnitTest/ErrnoCheckingTest.h"
 #include "test/UnitTest/ErrnoSetterMatcher.h"
 #include "test/UnitTest/Test.h"
@@ -38,6 +41,7 @@ class LlvmLibcGetaddrinfoTest
 protected:
   void TearDown() override {
     LIBC_NAMESPACE::netdb::clear_addrinfo_alloc_budget();
+    LIBC_NAMESPACE::netdb::set_hosts_path(nullptr);
     LIBC_NAMESPACE::netdb::set_services_path(nullptr);
     ErrnoCheckingTest::TearDown();
   }
@@ -270,6 +274,169 @@ TEST_F(LlvmLibcGetaddrinfoTest, Ipv6LiteralsScopeV4MappedAndServiceErrors) {
   hints.ai_socktype = SOCK_STREAM;
   EXPECT_THAT(LIBC_NAMESPACE::getaddrinfo("::1", "http", &hints, &raw),
               Fails<int>(ENOTDIR, EAI_SYSTEM));
+}
+
+TEST_F(LlvmLibcGetaddrinfoTest, HostsDatabaseRfc6761AndOverlongLines) {
+  using LIBC_NAMESPACE::cpp::string_view;
+  using LIBC_NAMESPACE::net::hton;
+  using LIBC_NAMESPACE::netdb::AddrinfoPtr;
+
+  struct addrinfo *raw = nullptr;
+
+  // Exercise default nullptr hosts_path with RFC 6761 localhost synthesis.
+  ASSERT_EQ(LIBC_NAMESPACE::getaddrinfo("hermetic-probe.localhost", "80",
+                                        nullptr, &raw),
+            0);
+  AddrinfoPtr res(raw);
+  ASSERT_NE(res.get(), nullptr);
+
+  // Missing /etc/hosts file falls back cleanly (ENOENT is not EAI_SYSTEM).
+  LIBC_NAMESPACE::netdb::set_hosts_path(
+      libc_make_test_file_path("gai_hosts_missing.test"));
+  EXPECT_EQ(LIBC_NAMESPACE::getaddrinfo("missing.local", "80", nullptr, &raw),
+            EAI_NONAME);
+
+  char db[2200];
+  size_t pos = 0;
+  auto append = [&](string_view s) {
+    for (char ch : s)
+      db[pos++] = ch;
+  };
+
+  // Blank, comment, single-token, bad-IP, and embedded-NUL records.
+  static constexpr char BAD_NUL[] = "10.0.0.99 canon.local bad\0nul\n";
+  static constexpr char OK_COMMENT_NUL[] =
+      "10.0.0.2 canon.local ca other alias1 # ok\0comment\n";
+  append("\n# comment line\n10.0.0.1\nbad_ip canon.local\n");
+  append(string_view(BAD_NUL, sizeof(BAD_NUL) - 1));
+  append(string_view(OK_COMMENT_NUL, sizeof(OK_COMMENT_NUL) - 1));
+  append("2001:db8::2 canon.local alias1\n");
+  append("10.0.0.9 v4.local\n");
+
+  // Overlong (>64B) IP token on a matching hostname line.
+  for (size_t i = 0; i < 66; ++i)
+    db[pos++] = '0';
+  append(" canon.local\n");
+
+  // Overlong (>253B) canonical hostname on a matching alias line.
+  append("10.0.0.8 ");
+  for (size_t i = 0; i < 254; ++i)
+    db[pos++] = 'q';
+  append(" canon.local\n");
+
+  // Overlong (>600B) /etc/hosts line with target alias past byte 600.
+  append("10.42.0.1 wide.local");
+  for (size_t i = 0; i < 30; ++i)
+    append(" filler_alias_padding");
+  append(" tail-600.local\n");
+
+  // Multi-homed (>16 addresses) entry to exercise HOSTS_MAX_ADDRS cap.
+  for (size_t i = 0; i < 18; ++i)
+    append("10.1.0.1 multihomed.local\n");
+
+  ScopedTestDbFile hdb(libc_make_test_file_path("gai_hosts.test"),
+                       string_view(db, pos),
+                       &LIBC_NAMESPACE::netdb::set_hosts_path);
+
+  struct addrinfo hints{};
+  hints.ai_flags = AI_NUMERICHOST;
+  EXPECT_EQ(LIBC_NAMESPACE::getaddrinfo("canon.local", "80", &hints, &raw),
+            EAI_NONAME);
+
+  char lbl64[65]{};
+  char dom254[255]{};
+  for (size_t i = 0; i < 64; ++i)
+    lbl64[i] = 'a';
+  for (size_t i = 0; i < 254; ++i)
+    dom254[i] = (i % 50 == 49) ? '.' : 'b';
+
+  static constexpr const char *STATIC_BAD_NAMES[] = {
+      "",          "..a",   "a b",  "a\x7f",      "invalid",     "invalid.",
+      "x.invalid", "h.123", "h.1a", "xlocalhost", "a.localhosx", "no",
+  };
+  for (const char *bad : STATIC_BAD_NAMES) {
+    EXPECT_EQ(LIBC_NAMESPACE::getaddrinfo(bad, "80", nullptr, &raw),
+              EAI_NONAME);
+  }
+  EXPECT_EQ(LIBC_NAMESPACE::getaddrinfo(lbl64, "80", nullptr, &raw),
+            EAI_NONAME);
+  EXPECT_EQ(LIBC_NAMESPACE::getaddrinfo(dom254, "80", nullptr, &raw),
+            EAI_NONAME);
+
+  // Case-insensitive alias + trailing dot match returns canonical name.
+  hints = {};
+  hints.ai_flags = AI_CANONNAME;
+  hints.ai_family = AF_UNSPEC;
+  hints.ai_socktype = SOCK_STREAM;
+  ASSERT_EQ(LIBC_NAMESPACE::getaddrinfo("ALIAS1.", "80", &hints, &raw), 0);
+  res.reset(raw);
+  EXPECT_STREQ(res->ai_canonname, "canon.local");
+  EXPECT_EQ(res->ai_family, AF_INET);
+  ASSERT_NE(res->ai_next, nullptr);
+  EXPECT_EQ(res->ai_next->ai_family, AF_INET6);
+
+  // Alias beyond byte 600 on a >600-byte /etc/hosts line resolves cleanly.
+  ASSERT_EQ(LIBC_NAMESPACE::getaddrinfo("TAIL-600.LOCAL", "80", &hints, &raw),
+            0);
+  res.reset(raw);
+  EXPECT_STREQ(res->ai_canonname, "wide.local");
+  EXPECT_EQ(reinterpret_cast<const struct sockaddr_in *>(res->ai_addr)
+                ->sin_addr.s_addr,
+            hton<uint32_t>(0x0a2a0001U));
+
+  static constexpr int FAMILIES[3] = {AF_UNSPEC, AF_INET, AF_INET6};
+  for (int fam : FAMILIES) {
+    hints = {};
+    hints.ai_flags = AI_CANONNAME;
+    hints.ai_family = fam;
+    hints.ai_socktype = SOCK_STREAM;
+    ASSERT_EQ(LIBC_NAMESPACE::getaddrinfo("canon.local", "80", &hints, &raw),
+              0);
+    res.reset(raw);
+
+    ASSERT_EQ(LIBC_NAMESPACE::getaddrinfo("Sub.LOCALHOST.", "80", &hints, &raw),
+              0);
+    res.reset(raw);
+    EXPECT_STREQ(res->ai_canonname, "Sub.LOCALHOST");
+  }
+
+  ASSERT_EQ(
+      LIBC_NAMESPACE::getaddrinfo("multihomed.local", "80", nullptr, &raw), 0);
+  res.reset(raw);
+
+  // AI_V4MAPPED without AI_ALL drops IPv4 when native IPv6 exists; AI_ALL keeps
+  // both.
+  hints = {};
+  hints.ai_flags = AI_V4MAPPED;
+  hints.ai_family = AF_INET6;
+  hints.ai_socktype = SOCK_STREAM;
+  ASSERT_EQ(LIBC_NAMESPACE::getaddrinfo("canon.local", "80", &hints, &raw), 0);
+  res.reset(raw);
+  EXPECT_EQ(res->ai_next, nullptr);
+
+  // When only IPv4 exists, AI_V4MAPPED maps it to ::ffff:a.b.c.d.
+  ASSERT_EQ(LIBC_NAMESPACE::getaddrinfo("v4.local", "80", &hints, &raw), 0);
+  res.reset(raw);
+  EXPECT_EQ(res->ai_family, AF_INET6);
+
+  hints.ai_flags = AI_V4MAPPED | AI_ALL;
+  ASSERT_EQ(LIBC_NAMESPACE::getaddrinfo("canon.local", "80", &hints, &raw), 0);
+  res.reset(raw);
+  ASSERT_NE(res->ai_next, nullptr);
+
+  // Open failure (ENOTDIR) and read failure (EISDIR) report EAI_SYSTEM + errno.
+  char notdir_path[280];
+  const size_t BASE_LEN = LIBC_NAMESPACE::internal::strlcpy(
+      notdir_path, hdb.get_path(), sizeof(notdir_path));
+  LIBC_NAMESPACE::internal::strlcpy(notdir_path + BASE_LEN, "/hosts",
+                                    sizeof(notdir_path) - BASE_LEN);
+  LIBC_NAMESPACE::netdb::set_hosts_path(notdir_path);
+  EXPECT_THAT(LIBC_NAMESPACE::getaddrinfo("canon.local", "80", nullptr, &raw),
+              Fails<int>(ENOTDIR, EAI_SYSTEM));
+
+  LIBC_NAMESPACE::netdb::set_hosts_path(".");
+  EXPECT_THAT(LIBC_NAMESPACE::getaddrinfo("canon.local", "80", nullptr, &raw),
+              Fails<int>(EISDIR, EAI_SYSTEM));
 }
 
 #if defined(LIBC_ADD_NULL_CHECKS)

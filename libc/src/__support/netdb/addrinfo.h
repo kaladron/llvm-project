@@ -32,9 +32,11 @@
 #include "src/__support/CPP/string_view.h"
 #include "src/__support/CPP/unique_ptr.h"
 #include "src/__support/checked_ptr.h"
+#include "src/__support/error_or.h"
 #include "src/__support/macros/attributes.h"
 #include "src/__support/macros/config.h"
 #include "src/__support/net/byte_order.h"
+#include "src/__support/netdb/hosts.h"
 #include "src/__support/netdb/ip_parse.h"
 #include "src/string/memory_utils/inline_memcpy.h"
 
@@ -259,6 +261,74 @@ LIBC_INLINE int resolve_services(const char *serv, int flags, int socktype,
   return 0;
 }
 
+LIBC_INLINE constexpr bool has_ipv6_addr(const HostsForwardResult &res) {
+  for (size_t i = 0; i < res.num_addrs; ++i) {
+    if (res.addrs[i].is_ipv6)
+      return true;
+  }
+  return false;
+}
+
+LIBC_INLINE constexpr void apply_v4mapped_hosts(HostsForwardResult &res,
+                                                int flags) {
+  bool keep_v4 = !has_ipv6_addr(res);
+  if ((flags & AI_ALL) != 0)
+    keep_v4 = true;
+
+  size_t out_idx = 0;
+  for (size_t i = 0; i < res.num_addrs; ++i) {
+    if (res.addrs[i].is_ipv6) {
+      res.addrs[out_idx++] = res.addrs[i];
+    } else if (keep_v4) {
+      res.addrs[out_idx++] = to_v4mapped_ip6(res.addrs[i]);
+    }
+  }
+  res.num_addrs = out_idx;
+}
+
+LIBC_INLINE constexpr HostsFamily select_hosts_family(int family,
+                                                      bool v4_mapped) {
+  if (family == AF_UNSPEC)
+    return HostsFamily::UNSPEC;
+  if (family == AF_INET)
+    return HostsFamily::IPV4;
+  if (v4_mapped)
+    return HostsFamily::UNSPEC;
+  return HostsFamily::IPV6;
+}
+
+LIBC_INLINE int resolve_hosts_node(cpp::string_view node, int family, int flags,
+                                   cpp::span<const ServiceSpec> specs,
+                                   struct addrinfo **res, int &sys_err) {
+  if ((flags & AI_NUMERICHOST) != 0)
+    return EAI_NONAME;
+
+  bool v4_mapped = false;
+  if (family == AF_INET6)
+    v4_mapped = (flags & AI_V4MAPPED) != 0;
+
+  HostsForwardResult hosts_res{};
+  ErrorOr<bool> found_or =
+      lookup_hosts_forward(node, select_hosts_family(family, v4_mapped),
+                           hosts_res, get_hosts_path());
+  if (!found_or.has_value()) {
+    sys_err = found_or.error();
+    return EAI_SYSTEM;
+  }
+  if (!*found_or)
+    return EAI_NONAME;
+
+  if (v4_mapped)
+    apply_v4mapped_hosts(hosts_res, flags);
+
+  cpp::string_view canonname{};
+  if ((flags & AI_CANONNAME) != 0)
+    canonname = {hosts_res.canon_name.data(), hosts_res.canon_len};
+
+  return emit_ai_list({hosts_res.addrs.data(), hosts_res.num_addrs}, specs,
+                      flags, canonname, res);
+}
+
 LIBC_INLINE constexpr bool valid_ai_family(int family) {
   return family == AF_UNSPEC || family == AF_INET || family == AF_INET6;
 }
@@ -315,7 +385,8 @@ LIBC_INLINE int lookup_addrinfo(const char *node, const char *serv,
 
   ScopedIpAddr ip{};
   if (!parse_scoped_ip(node, ip))
-    return EAI_NONAME;
+    return resolve_hosts_node(node, H.ai_family, H.ai_flags, ACTIVE_SPECS, res,
+                              sys_err);
 
   if (!ip.is_ipv6) {
     if (H.ai_family == AF_INET6) {

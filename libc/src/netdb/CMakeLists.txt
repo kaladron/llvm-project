@@ -9,17 +9,6 @@ add_entrypoint_object(
 )
 
 add_entrypoint_object(
-  freeaddrinfo
-  SRCS
-    freeaddrinfo.cpp
-  HDRS
-    freeaddrinfo.h
-  DEPENDS
-    libc.hdr.types.struct_addrinfo
-    libc.src.__support.netdb.addrinfo
-)
-
-add_entrypoint_object(
   gai_strerror
   SRCS
     gai_strerror.cpp
@@ -35,6 +24,17 @@ if(NOT TARGET libc.src.__support.File.file OR
     NOT TARGET libc.src.__support.File.platform_file)
   return()
 endif()
+
+add_entrypoint_object(
+  freeaddrinfo
+  SRCS
+    freeaddrinfo.cpp
+  HDRS
+    freeaddrinfo.h
+  DEPENDS
+    libc.hdr.types.struct_addrinfo
+    libc.src.__support.netdb.addrinfo
+)
 
 add_entrypoint_object(
   getaddrinfo

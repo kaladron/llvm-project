@@ -29,11 +29,22 @@ namespace netdb {
 struct TokenMatcher {
   cpp::string_view target;
   size_t len = 0;
+  bool case_insensitive = false;
   bool matches = true;
 
   void push(char ch) {
-    if (len >= target.size() || ch != target[len])
+    if (len >= target.size()) {
       matches = false;
+    } else {
+      char lhs = ch;
+      char rhs = target[len];
+      if (case_insensitive) {
+        lhs = internal::tolower(lhs);
+        rhs = internal::tolower(rhs);
+      }
+      if (lhs != rhs)
+        matches = false;
+    }
     ++len;
   }
 
@@ -90,8 +101,9 @@ public:
   bool is_invalid() const { return invalid_line; }
 
   ErrorOr<cpp::optional<bool>> read_token(cpp::StringStream &dst,
-                                          cpp::string_view target) {
-    TokenMatcher matcher{target};
+                                          cpp::string_view target,
+                                          bool case_insensitive = false) {
+    TokenMatcher matcher{target, 0, case_insensitive, true};
     bool in_token = false;
 
     while (!at_eol) {

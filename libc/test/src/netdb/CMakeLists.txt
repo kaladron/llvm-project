@@ -1,21 +1,23 @@
 add_libc_testsuite(libc-netdb-tests)
 
-add_libc_test(
-  freeaddrinfo_test
-  SUITE
-    libc-netdb-tests
-  SRCS
-    freeaddrinfo_test.cpp
-  DEPENDS
-    libc.hdr.stdint_proxy
-    libc.hdr.types.size_t
-    libc.hdr.types.struct_addrinfo
-    libc.hdr.types.struct_sockaddr
-    libc.src.__support.CPP.new
-    libc.src.__support.checked_ptr
-    libc.src.__support.netdb.addrinfo
-    libc.src.netdb.freeaddrinfo
-)
+if(TARGET libc.src.netdb.freeaddrinfo)
+  add_libc_test(
+    freeaddrinfo_test
+    SUITE
+      libc-netdb-tests
+    SRCS
+      freeaddrinfo_test.cpp
+    DEPENDS
+      libc.hdr.stdint_proxy
+      libc.hdr.types.size_t
+      libc.hdr.types.struct_addrinfo
+      libc.hdr.types.struct_sockaddr
+      libc.src.__support.CPP.new
+      libc.src.__support.checked_ptr
+      libc.src.__support.netdb.addrinfo
+      libc.src.netdb.freeaddrinfo
+  )
+endif()
 
 add_libc_test(
   gai_strerror_test
@@ -74,10 +76,13 @@ add_libc_test(
     libc.hdr.types.struct_addrinfo
     libc.hdr.types.struct_sockaddr_in
     libc.hdr.types.struct_sockaddr_in6
+    libc.src.__support.CPP.string_view
     libc.src.__support.net.byte_order
     libc.src.__support.netdb.addrinfo
+    libc.src.__support.netdb.hosts
     libc.src.__support.netdb.services
     libc.src.netdb.getaddrinfo
+    libc.src.string.string_utils
     libc.test.UnitTest.ErrnoCheckingTest
     libc.test.UnitTest.ErrnoSetterMatcher
 )
