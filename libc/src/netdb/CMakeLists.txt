@@ -128,6 +128,22 @@ if(TARGET libc.src.__support.OSUtil.network AND
       libc.src.__support.netdb.hostent
       libc.src.__support.netdb.hosts
   )
+
+  add_entrypoint_object(
+    getnameinfo
+    SRCS
+      getnameinfo.cpp
+    HDRS
+      getnameinfo.h
+    DEPENDS
+      libc.hdr.netdb_macros
+      libc.hdr.types.socklen_t
+      libc.hdr.types.struct_sockaddr
+      libc.src.__support.libc_errno
+      libc.src.__support.macros.null_check
+      libc.src.__support.netdb.nameinfo
+      libc.src.errno.errno
+  )
 endif()
 
 add_object_library(

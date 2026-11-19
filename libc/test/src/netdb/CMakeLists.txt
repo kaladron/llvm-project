@@ -183,6 +183,33 @@ if(TARGET libc.src.netdb.getaddrinfo)
         libc.test.UnitTest.ErrnoCheckingTest
     )
   endif()
+
+  if(TARGET libc.src.netdb.getnameinfo)
+    add_libc_test(
+      getnameinfo_test
+      SUITE
+        libc-netdb-tests
+      SRCS
+        getnameinfo_test.cpp
+      DEPENDS
+        .test_db_file
+        libc.hdr.errno_macros
+        libc.hdr.netdb_macros
+        libc.hdr.signal_macros
+        libc.hdr.stdint_proxy
+        libc.hdr.sys_socket_macros
+        libc.hdr.types.size_t
+        libc.hdr.types.socklen_t
+        libc.hdr.types.struct_sockaddr
+        libc.hdr.types.struct_sockaddr_in
+        libc.src.__support.net.byte_order
+        libc.src.__support.netdb.services
+        libc.src.netdb.getnameinfo
+        libc.src.string.string_utils
+        libc.test.UnitTest.ErrnoCheckingTest
+        libc.test.UnitTest.ErrnoSetterMatcher
+    )
+  endif()
 endif()
 
 add_libc_test(

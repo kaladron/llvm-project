@@ -19,6 +19,24 @@ macros:
     macro_header: netdb-macros.h
   - macro_name: AI_ADDRCONFIG
     macro_header: netdb-macros.h
+  - macro_name: NI_NUMERICHOST
+    macro_header: netdb-macros.h
+  - macro_name: NI_NUMERICSERV
+    macro_header: netdb-macros.h
+  - macro_name: NI_NOFQDN
+    macro_header: netdb-macros.h
+  - macro_name: NI_NAMEREQD
+    macro_header: netdb-macros.h
+  - macro_name: NI_DGRAM
+    macro_header: netdb-macros.h
+  - macro_name: NI_MAXHOST
+    standards:
+      - gnu
+    macro_header: netdb-macros.h
+  - macro_name: NI_MAXSERV
+    standards:
+      - gnu
+    macro_header: netdb-macros.h
   - macro_name: EAI_AGAIN
     macro_header: netdb-macros.h
   - macro_name: EAI_BADFLAGS
@@ -60,6 +78,7 @@ macros:
 types:
   - type_name: in_port_t
   - type_name: size_t
+  - type_name: socklen_t
   - type_name: struct_addrinfo
   - type_name: struct_hostent
   - type_name: struct_netent
@@ -132,6 +151,18 @@ functions:
       - type: size_t
       - type: struct hostent **__restrict
       - type: int *__restrict
+  - name: getnameinfo
+    standards:
+      - posix
+    return_type: int
+    arguments:
+      - type: const struct sockaddr *__restrict
+      - type: socklen_t
+      - type: char *__restrict
+      - type: socklen_t
+      - type: char *__restrict
+      - type: socklen_t
+      - type: int
   - name: getnetbyaddr
     standards:
       - posix

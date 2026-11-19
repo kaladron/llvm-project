@@ -286,3 +286,30 @@ add_header_library(
     libc.src.__support.net.address
     libc.src.string.memory_utils.inline_memcpy
 )
+
+add_header_library(
+  nameinfo
+  HDRS
+    nameinfo.h
+  DEPENDS
+    .services
+    libc.hdr.netdb_macros
+    libc.hdr.stdint_proxy
+    libc.hdr.sys_socket_macros
+    libc.hdr.types.in_port_t
+    libc.hdr.types.size_t
+    libc.hdr.types.socklen_t
+    libc.hdr.types.struct_in_addr
+    libc.hdr.types.struct_servent
+    libc.hdr.types.struct_sockaddr
+    libc.hdr.types.struct_sockaddr_in
+    libc.src.__support.CPP.span
+    libc.src.__support.CPP.string_view
+    libc.src.__support.CPP.stringstream
+    libc.src.__support.integer_to_string
+    libc.src.__support.macros.attributes
+    libc.src.__support.macros.config
+    libc.src.__support.net.address
+    libc.src.__support.net.byte_order
+    libc.src.string.memory_utils.inline_memcpy
+)
