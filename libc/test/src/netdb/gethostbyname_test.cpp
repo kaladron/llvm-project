@@ -31,6 +31,7 @@
 #include "src/__support/OSUtil/network.h"
 #include "src/__support/net/byte_order.h"
 #include "src/__support/netdb/dns_client.h"
+#include "src/__support/netdb/dns_response.h"
 #include "src/__support/netdb/dns_wire.h"
 #include "src/__support/netdb/h_errno.h"
 #include "src/__support/netdb/hosts.h"
@@ -483,7 +484,7 @@ TEST_F(LlvmLibcGethostbynameTest, DnsWireCodecPointerCompressionAndHostChecks) {
                                             &res, &herr),
             0);
   EXPECT_EQ(res, nullptr);
-  EXPECT_EQ(herr, HOST_NOT_FOUND);
+  EXPECT_EQ(herr, NO_DATA);
 
   wire_case = 25;
   struct hostent *dns_he = LIBC_NAMESPACE::gethostbyname("Dns-Host.Example.");
@@ -574,20 +575,138 @@ TEST_F(LlvmLibcGethostbynameTest, LoopbackUdpSocketTransportAndTimeouts) {
   EXPECT_EQ(LIBC_NAMESPACE::gethostbyname("live.example."), nullptr);
   EXPECT_EQ(*h_errno_addr(), TRY_AGAIN);
 
-  set_dns_wire_hook(
-      [](const ScopedIpAddr &, bool, span<const uint8_t> q,
-         span<uint8_t>) -> int { return q[13] == '3' ? -3 : -4; });
+  set_dns_wire_hook([](const ScopedIpAddr &, bool, span<const uint8_t> q,
+                       span<uint8_t> r) -> int {
+    const char C = static_cast<char>(q[13]);
+    const int Q = static_cast<int>(q.size());
+    if (C == '3' || C == '4')
+      return '0' - C;
+
+    LIBC_NAMESPACE::inline_memcpy(r.data(), q.data(), q.size());
+    if (C == 'q' || C == 'n' || C == 'f') {
+      write_u16_be(r, 4, 0);
+      const uint16_t RC = C == 'q' ? 0 : (C == 'n' ? 3 : 5);
+      write_u16_be(r, 2, static_cast<uint16_t>(DNS_FLAG_QR | RC));
+      return 12;
+    }
+    if (C == 'b') {
+      // Malformed CNAME RDATA (0x40 extended label).
+      write_u16_be(r, 2, DNS_FLAG_QR);
+      write_u16_be(r, 6, 1);
+      const uint8_t BAD_CN[13] = {0xc0, 12, 0, 5, 0, 1, 0, 0, 0, 5, 0, 1, 0x40};
+      LIBC_NAMESPACE::inline_memcpy(r.data() + Q, BAD_CN, sizeof(BAD_CN));
+      return Q + 13;
+    }
+    if (C == 'e') {
+      // Trailing bytes after CNAME target (consumed != RDLEN).
+      write_u16_be(r, 2, DNS_FLAG_QR);
+      write_u16_be(r, 6, 1);
+      const uint8_t EXTRA_CN[16] = {0xc0, 12, 0, 5, 0, 1,   0, 0,
+                                    0,    5,  0, 4, 1, 'r', 0, 0};
+      LIBC_NAMESPACE::inline_memcpy(r.data() + Q, EXTRA_CN, sizeof(EXTRA_CN));
+      return Q + 16;
+    }
+    if (C == '0' || C == '2' || C == '5') {
+      write_u16_be(r, 2, static_cast<uint16_t>(DNS_FLAG_QR | (C - '0')));
+      return Q;
+    }
+
+    // 'l': self-CNAME loop (>8 hops -> FAIL); 'c': unordered A then CNAME +
+    // duplicate CNAME for same owner.
+    write_u16_be(r, 2, DNS_FLAG_QR);
+    write_u16_be(r, 6, C == 'l' ? 1 : 3);
+    if (C == 'l') {
+      const uint8_t LOOP_CN[14] = {0xc0, 12, 0, 5, 0, 1,    0,
+                                   0,    0,  5, 0, 2, 0xc0, 12};
+      LIBC_NAMESPACE::inline_memcpy(r.data() + Q, LOOP_CN, sizeof(LOOP_CN));
+      return Q + 14;
+    }
+
+    const uint8_t UNORDERED_RRS[] = {
+        3,
+        'a',
+        'p',
+        'p',
+        3,
+        'n',
+        'e',
+        't',
+        0,
+        0,
+        1,
+        0,
+        1,
+        0,
+        0,
+        0,
+        5,
+        0,
+        4,
+        9,
+        8,
+        7,
+        6,
+        0xc0,
+        12,
+        0,
+        5,
+        0,
+        1,
+        0,
+        0,
+        0,
+        5,
+        0,
+        2,
+        0xc0,
+        static_cast<uint8_t>(Q),
+        0xc0,
+        12,
+        0,
+        5,
+        0,
+        1,
+        0,
+        0,
+        0,
+        5,
+        0,
+        3,
+        1,
+        'z',
+        0,
+    };
+    LIBC_NAMESPACE::inline_memcpy(r.data() + Q, UNORDERED_RRS,
+                                  sizeof(UNORDERED_RRS));
+    return Q + static_cast<int>(sizeof(UNORDERED_RRS));
+  });
+
   DnsIo io{};
-  array<struct in_addr, DNS_MAX_ADDRS> dummy_addrs{};
-  size_t dummy_count = 0;
-  EXPECT_EQ(run_udp_query(io, {}, QN, dummy_addrs, dummy_count),
-            DnsStatus::SERVER_FAILURE);
+  DnsParsedResponse dummy{};
+  EXPECT_EQ(run_udp_query(io, {}, QN, dummy), DnsStatus::RETRY);
   ScopedIpAddr v6ns{};
   v6ns.is_ipv6 = true;
-  EXPECT_EQ(run_udp_query(io, v6ns, QN, dummy_addrs, dummy_count),
-            DnsStatus::SERVER_FAILURE);
-  EXPECT_EQ(LIBC_NAMESPACE::gethostbyname("3.x"), nullptr);
-  EXPECT_EQ(LIBC_NAMESPACE::gethostbyname("4.x"), nullptr);
+  EXPECT_EQ(run_udp_query(io, v6ns, QN, dummy), DnsStatus::OK);
+
+  struct FailCase {
+    const char *host;
+    int expected_herr;
+  };
+  static constexpr FailCase FAIL_CASES[] = {
+      {"3.x", TRY_AGAIN},   {"4.x", TRY_AGAIN},   {"q.x", TRY_AGAIN},
+      {"n.x", TRY_AGAIN},   {"f.x", NO_RECOVERY}, {"b.x", TRY_AGAIN},
+      {"e.x", TRY_AGAIN},   {"0.x", NO_DATA},     {"2.x", TRY_AGAIN},
+      {"5.x", NO_RECOVERY}, {"l.x", NO_RECOVERY},
+  };
+  for (const FailCase &FC : FAIL_CASES) {
+    EXPECT_EQ(LIBC_NAMESPACE::gethostbyname(FC.host), nullptr);
+    EXPECT_EQ(*h_errno_addr(), FC.expected_herr);
+  }
+
+  struct hostent *cn_he = LIBC_NAMESPACE::gethostbyname("c.x");
+  ASSERT_NE(cn_he, nullptr);
+  EXPECT_STREQ(cn_he->h_name, "app.net");
+  EXPECT_EQ(static_cast<uint8_t>(cn_he->h_addr[0]), uint8_t(9));
 }
 
 #if defined(LIBC_ADD_NULL_CHECKS)

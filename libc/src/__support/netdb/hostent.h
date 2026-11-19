@@ -194,6 +194,16 @@ LIBC_INLINE ErrorOr<void> scan_hosts_v4_file(cpp::string_view trimmed,
   }
 }
 
+LIBC_INLINE constexpr int dns_status_to_h_errno(DnsStatus st) {
+  if (st == DnsStatus::NODATA)
+    return NO_DATA;
+  if (st == DnsStatus::RETRY)
+    return TRY_AGAIN;
+  if (st == DnsStatus::FAIL)
+    return NO_RECOVERY;
+  return HOST_NOT_FOUND;
+}
+
 LIBC_INLINE int lookup_host_byname(cpp::string_view name, struct hostent *ret,
                                    cpp::span<char> buffer,
                                    struct hostent **result, int *h_errnop,
@@ -241,18 +251,21 @@ LIBC_INLINE int lookup_host_byname(cpp::string_view name, struct hostent *ret,
                                  h_errnop);
   }
 
-  cpp::array<struct in_addr, DNS_MAX_ADDRS> dns_addrs{};
-  size_t num_dns_addrs = 0;
-  const DnsStatus ST = query_dns_a(name, dns_addrs, num_dns_addrs);
-  if (ST == DnsStatus::OK)
-    return pack_named_v4_hostent(TRIMMED, {dns_addrs.data(), num_dns_addrs},
-                                 buffer, ret, result, h_errnop);
-  if (ST == DnsStatus::SERVER_FAILURE) {
-    set_herr_out(h_errnop, TRY_AGAIN);
-    return 0;
+  DnsParsedResponse dns{};
+  const DnsStatus ST = query_dns_a(name, dns);
+  if (ST == DnsStatus::OK) {
+    cpp::array<char, DNS_MAX_TEXT_NAME + 1> canon_buf{};
+    const size_t CANON_LEN =
+        wire_to_presentation({dns.canon_wire.data(), dns.clen}, canon_buf);
+    cpp::array<struct in_addr, DNS_MAX_ADDRS> dns_addrs{};
+    for (size_t i = 0; i < dns.num_addrs; ++i)
+      inline_memcpy(&dns_addrs[i], dns.addrs[i].data(), sizeof(struct in_addr));
+    return pack_named_v4_hostent({canon_buf.data(), CANON_LEN},
+                                 {dns_addrs.data(), dns.num_addrs}, buffer, ret,
+                                 result, h_errnop);
   }
 
-  set_herr_out(h_errnop, HOST_NOT_FOUND);
+  set_herr_out(h_errnop, dns_status_to_h_errno(ST));
   return 0;
 }
 

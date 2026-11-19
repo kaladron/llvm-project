@@ -119,6 +119,7 @@ if(TARGET libc.src.netdb.getaddrinfo)
         libc.src.__support.OSUtil.network
         libc.src.__support.net.byte_order
         libc.src.__support.netdb.dns_client
+        libc.src.__support.netdb.dns_response
         libc.src.__support.netdb.dns_wire
         libc.src.__support.netdb.h_errno
         libc.src.__support.netdb.hosts

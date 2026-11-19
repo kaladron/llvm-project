@@ -185,6 +185,19 @@ read_wire_name(cpp::span<const uint8_t> msg, size_t start_off, size_t limit,
   return cpp::nullopt;
 }
 
+LIBC_INLINE constexpr size_t wire_to_presentation(cpp::span<const uint8_t> w,
+                                                  cpp::span<char> out) {
+  size_t opos = 0;
+  for (size_t wp = 0; w[wp] != 0; wp += 1 + w[wp]) {
+    if (opos > 0)
+      out[opos++] = '.';
+    for (size_t i = 0; i < w[wp]; ++i)
+      out[opos++] = static_cast<char>(w[wp + 1 + i]);
+  }
+  out[opos] = '\0';
+  return opos;
+}
+
 } // namespace netdb
 } // namespace LIBC_NAMESPACE_DECL
 

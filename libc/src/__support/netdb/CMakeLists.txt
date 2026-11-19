@@ -162,16 +162,31 @@ add_header_library(
 )
 
 add_header_library(
+  dns_response
+  HDRS
+    dns_response.h
+  DEPENDS
+    .dns_wire
+    libc.hdr.stdint_proxy
+    libc.hdr.types.size_t
+    libc.src.__support.CPP.array
+    libc.src.__support.CPP.optional
+    libc.src.__support.CPP.span
+    libc.src.__support.macros.attributes
+    libc.src.__support.macros.config
+    libc.src.string.memory_utils.inline_memcpy
+)
+
+add_header_library(
   dns_client
   HDRS
     dns_client.h
   DEPENDS
-    .dns_wire
+    .dns_response
     libc.hdr.stdint_proxy
     libc.hdr.time_macros
     libc.hdr.types.size_t
     libc.hdr.types.ssize_t
-    libc.hdr.types.struct_in_addr
     libc.hdr.types.struct_timespec
     libc.src.__support.CPP.array
     libc.src.__support.CPP.optional
