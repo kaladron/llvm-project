@@ -366,19 +366,29 @@ LIBC_INLINE DnsStatus dispatch_ns_query(void *raw_ctx, const ScopedIpAddr &ns,
   return run_tcp_query(ctx.io, ns, qname, qtype, timeout_ms, out);
 }
 
+LIBC_INLINE size_t next_rotate_start(const ResolvConfig &cfg) {
+  if (!cfg.rotate)
+    return 0;
+  const size_t COUNT =
+      dns_rotate_counter.fetch_add(1, cpp::MemoryOrder::RELAXED);
+  return COUNT % cfg.num_nameservers;
+}
+
 LIBC_INLINE DnsStatus dispatch_dns_name(const ResolvConfig &cfg,
                                         cpp::string_view name, uint16_t qtype,
                                         DnsParsedResponse &out) {
-  size_t start = 0;
-  if (cfg.rotate) {
-    const size_t COUNT =
-        dns_rotate_counter.fetch_add(1, cpp::MemoryOrder::RELAXED);
-    start = COUNT % cfg.num_nameservers;
-  }
-
   DnsDispatchCtx ctx{{}, cfg.use_vc};
-  return DnsResolver{&dispatch_ns_query, &ctx, cfg, start}.resolve_name(
-      name, qtype, out);
+  return DnsResolver{&dispatch_ns_query, &ctx, cfg, next_rotate_start(cfg)}
+      .resolve_name(name, qtype, out);
+}
+
+LIBC_INLINE DnsStatus dispatch_dns_qname(const ResolvConfig &cfg,
+                                         cpp::span<const uint8_t> qname,
+                                         uint16_t qtype,
+                                         DnsParsedResponse &out) {
+  DnsDispatchCtx ctx{{}, cfg.use_vc};
+  return DnsResolver{&dispatch_ns_query, &ctx, cfg, next_rotate_start(cfg)}
+      .query_qname(qname, qtype, out);
 }
 
 } // namespace netdb

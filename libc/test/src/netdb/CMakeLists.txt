@@ -203,12 +203,18 @@ if(TARGET libc.src.netdb.getaddrinfo)
         libc.hdr.types.struct_sockaddr
         libc.hdr.types.struct_sockaddr_in
         libc.hdr.types.struct_sockaddr_in6
+        libc.src.__support.CPP.span
         libc.src.__support.CPP.string_view
         libc.src.__support.OSUtil.network
         libc.src.__support.net.byte_order
+        libc.src.__support.netdb.dns_client
+        libc.src.__support.netdb.dns_response
+        libc.src.__support.netdb.dns_wire
         libc.src.__support.netdb.hosts
+        libc.src.__support.netdb.resolv_conf
         libc.src.__support.netdb.services
         libc.src.netdb.getnameinfo
+        libc.src.string.memory_utils.inline_memcpy
         libc.src.string.string_utils
         libc.test.UnitTest.ErrnoCheckingTest
         libc.test.UnitTest.ErrnoSetterMatcher

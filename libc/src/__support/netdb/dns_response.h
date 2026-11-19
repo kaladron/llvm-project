@@ -30,6 +30,7 @@ namespace netdb {
 constexpr uint16_t DNS_CLASS_IN = 1;
 constexpr uint16_t DNS_TYPE_A = 1;
 constexpr uint16_t DNS_TYPE_CNAME = 5;
+constexpr uint16_t DNS_TYPE_PTR = 12;
 constexpr uint16_t DNS_TYPE_AAAA = 28;
 constexpr uint16_t DNS_FLAG_QR = 0x8000;
 constexpr uint16_t DNS_FLAG_OPCODE_MASK = 0x7800;
@@ -135,11 +136,14 @@ LIBC_INLINE DnsStatus parse_dns_response(cpp::span<const uint8_t> msg,
   const uint16_t ANCOUNT = read_u16_be(msg, 6);
   for (size_t hop = 0; hop <= DNS_MAX_CNAME_HOPS; ++hop) {
     cpp::array<uint8_t, DNS_MAX_WIRE_NAME> next_cn{};
+    cpp::array<uint8_t, DNS_MAX_WIRE_NAME> ptr_wire{};
     cpp::array<uint8_t, DNS_MAX_WIRE_NAME> owner{};
     cpp::array<uint8_t, DNS_MAX_WIRE_NAME> rdata_name{};
     size_t next_len = 0;
+    size_t ptr_len = 0;
     size_t cur = OFF;
     bool found_cn = false;
+    bool found_ptr = false;
     out.num_addrs = 0;
 
     for (uint16_t i = 0; i < ANCOUNT; ++i) {
@@ -171,35 +175,48 @@ LIBC_INLINE DnsStatus parse_dns_response(cpp::span<const uint8_t> msg,
           return DnsStatus::IGNORE;
       }
 
-      if (RTYPE == DNS_TYPE_CNAME) {
+      const bool OWNER_MATCHES = wire_names_equal(
+          {owner.data(), OWN->wire_len}, {out.canon_wire.data(), out.clen});
+
+      if (RTYPE == DNS_TYPE_CNAME || RTYPE == DNS_TYPE_PTR) {
         const cpp::optional<DecodedWireName> TARGET =
             read_wire_name(msg, HDR + 10, NEXT_RR, rdata_name);
         if (!TARGET.has_value())
           return DnsStatus::IGNORE;
         if (TARGET->consumed != RDLEN)
           return DnsStatus::IGNORE;
-        if (!found_cn) {
-          if (wire_names_equal({owner.data(), OWN->wire_len},
-                               {out.canon_wire.data(), out.clen})) {
-            next_cn = rdata_name;
-            next_len = TARGET->wire_len;
-            found_cn = true;
+        if (OWNER_MATCHES) {
+          if (RTYPE == DNS_TYPE_CNAME) {
+            if (!found_cn) {
+              next_cn = rdata_name;
+              next_len = TARGET->wire_len;
+              found_cn = true;
+            }
+          } else if (!found_ptr) {
+            ptr_wire = rdata_name;
+            ptr_len = TARGET->wire_len;
+            found_ptr = true;
           }
         }
       } else if (RTYPE == qtype) {
-        if (out.num_addrs < DNS_MAX_ADDRS) {
-          if (wire_names_equal({owner.data(), OWN->wire_len},
-                               {out.canon_wire.data(), out.clen})) {
-            inline_memcpy(out.addrs[out.num_addrs].data(),
-                          msg.data() + HDR + 10, RDLEN);
-            ++out.num_addrs;
-          }
+        if (OWNER_MATCHES && out.num_addrs < DNS_MAX_ADDRS) {
+          inline_memcpy(out.addrs[out.num_addrs].data(), msg.data() + HDR + 10,
+                        RDLEN);
+          ++out.num_addrs;
         }
       }
     }
 
-    if (!found_cn)
+    if (!found_cn) {
+      if (qtype == DNS_TYPE_PTR) {
+        if (!found_ptr)
+          return DnsStatus::NODATA;
+        out.canon_wire = ptr_wire;
+        out.clen = ptr_len;
+        return DnsStatus::OK;
+      }
       return out.num_addrs > 0 ? DnsStatus::OK : DnsStatus::NODATA;
+    }
 
     out.canon_wire = next_cn;
     out.clen = next_len;

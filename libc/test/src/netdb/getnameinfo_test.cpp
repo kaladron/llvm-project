@@ -21,22 +21,153 @@
 #include "hdr/types/struct_sockaddr.h"
 #include "hdr/types/struct_sockaddr_in.h"
 #include "hdr/types/struct_sockaddr_in6.h"
+#include "src/__support/CPP/span.h"
 #include "src/__support/CPP/string_view.h"
 #include "src/__support/OSUtil/network.h"
 #include "src/__support/net/byte_order.h"
+#include "src/__support/netdb/dns_client.h"
+#include "src/__support/netdb/dns_response.h"
+#include "src/__support/netdb/dns_wire.h"
 #include "src/__support/netdb/hosts.h"
+#include "src/__support/netdb/resolv_conf.h"
 #include "src/__support/netdb/services.h"
 #include "src/netdb/getnameinfo.h"
+#include "src/string/memory_utils/inline_memcpy.h"
 #include "src/string/string_utils.h"
 #include "test/UnitTest/ErrnoCheckingTest.h"
 #include "test/UnitTest/ErrnoSetterMatcher.h"
 #include "test/src/netdb/test_db_file.h"
 
+namespace {
+
+int nxdomain_dns_hook(const LIBC_NAMESPACE::netdb::ScopedIpAddr &, bool,
+                      LIBC_NAMESPACE::cpp::span<const uint8_t> q,
+                      LIBC_NAMESPACE::cpp::span<uint8_t> r) {
+  using namespace LIBC_NAMESPACE::netdb;
+  LIBC_NAMESPACE::inline_memcpy(r.data(), q.data(), q.size());
+  write_u16_be(r, 2, DNS_FLAG_QR | DNS_RCODE_NXDOMAIN);
+  return static_cast<int>(q.size());
+}
+
+int mock_ptr_dns_hook(const LIBC_NAMESPACE::netdb::ScopedIpAddr &, bool,
+                      LIBC_NAMESPACE::cpp::span<const uint8_t> q,
+                      LIBC_NAMESPACE::cpp::span<uint8_t> r) {
+  using namespace LIBC_NAMESPACE::netdb;
+  using LIBC_NAMESPACE::cpp::span;
+
+  size_t pos = q.size();
+  LIBC_NAMESPACE::inline_memcpy(r.data(), q.data(), pos);
+  const char C = static_cast<char>(q[13]);
+
+  auto add_ptr = [&](uint16_t owner_off, span<const uint8_t> target) {
+    write_u16_be(r, pos, static_cast<uint16_t>(0xc000u | owner_off));
+    write_u16_be(r, pos + 2, DNS_TYPE_PTR);
+    write_u16_be(r, pos + 4, DNS_CLASS_IN);
+    write_u16_be(r, pos + 6, 0);
+    write_u16_be(r, pos + 8, 5);
+    write_u16_be(r, pos + 10, static_cast<uint16_t>(target.size()));
+    LIBC_NAMESPACE::inline_memcpy(r.data() + pos + 12, target.data(),
+                                  target.size());
+    pos += 12 + target.size();
+  };
+
+  if (C == '4' || C == '6' || C == '8') {
+    uint16_t rc = 0;
+    if (C == '8')
+      rc = DNS_RCODE_SERVFAIL;
+    else if (C == '6')
+      rc = 5;
+    write_u16_be(r, 2, static_cast<uint16_t>(DNS_FLAG_QR | rc));
+    return static_cast<int>(pos);
+  }
+
+  static constexpr uint8_t V6_NAME[] = {2, 'v', '6', 4, 'c', 'o', 'r', 'p', 0};
+  static constexpr uint8_t ROOT_NAME[] = {0};
+  static constexpr uint8_t BAD_NAME[] = {
+      7, 'b', 'a', 'd', '_', 'p', 't', 'r', 4, 'c', 'o', 'r', 'p', 0,
+  };
+
+  if (C == '5') {
+    write_u16_be(r, 2, DNS_FLAG_QR);
+    write_u16_be(r, 6, 1);
+    add_ptr(12, ROOT_NAME);
+    return static_cast<int>(pos);
+  }
+
+  if (C == '3') {
+    write_u16_be(r, 2, DNS_FLAG_QR);
+    write_u16_be(r, 6, 1);
+    add_ptr(12, BAD_NAME);
+    return static_cast<int>(pos);
+  }
+
+  if (C == '2' || C == '9') {
+    write_u16_be(r, 2, DNS_FLAG_QR);
+    write_u16_be(r, 6, 2);
+    add_ptr(12, V6_NAME);
+    add_ptr(12, V6_NAME);
+    return static_cast<int>(pos);
+  }
+
+  if (C == '7') {
+    const uint8_t RRS[] = {
+        1,
+        '7',
+        0,
+        0,
+        12,
+        0,
+        1,
+        0,
+        0,
+        0,
+        5,
+        0,
+        10,
+        3,
+        'w',
+        'e',
+        'b',
+        4,
+        'c',
+        'o',
+        'r',
+        'p',
+        0,
+        0xc0,
+        12,
+        0,
+        5,
+        0,
+        1,
+        0,
+        0,
+        0,
+        5,
+        0,
+        2,
+        0xc0,
+        static_cast<uint8_t>(pos),
+    };
+    write_u16_be(r, 2, DNS_FLAG_QR);
+    write_u16_be(r, 6, 2);
+    LIBC_NAMESPACE::inline_memcpy(r.data() + pos, RRS, sizeof(RRS));
+    return static_cast<int>(pos + sizeof(RRS));
+  }
+
+  write_u16_be(r, 2, DNS_FLAG_QR | DNS_RCODE_NXDOMAIN);
+  return static_cast<int>(pos);
+}
+
+} // namespace
+
 class LlvmLibcGetnameinfoTest
     : public LIBC_NAMESPACE::testing::ErrnoCheckingTest {
 protected:
   void TearDown() override {
+    LIBC_NAMESPACE::netdb::set_dns_wire_hook(nullptr);
     LIBC_NAMESPACE::netdb::set_hosts_path(nullptr);
+    LIBC_NAMESPACE::netdb::set_resolv_conf_path(nullptr);
     LIBC_NAMESPACE::netdb::set_services_path(nullptr);
     ErrnoCheckingTest::TearDown();
   }
@@ -45,7 +176,11 @@ protected:
 TEST_F(LlvmLibcGetnameinfoTest, NumericIpv4ServicesAndValidation) {
   using LIBC_NAMESPACE::cpp::string_view;
   using LIBC_NAMESPACE::net::hton;
-  using LIBC_NAMESPACE::testing::ErrnoSetterMatcher::Fails;
+
+  ScopedTestDbFile rdb(libc_make_test_file_path("gni_nx_resolv.test"),
+                       "nameserver 127.0.0.1\noptions attempts:1 timeout:1\n",
+                       &LIBC_NAMESPACE::netdb::set_resolv_conf_path);
+  LIBC_NAMESPACE::netdb::set_dns_wire_hook(&nxdomain_dns_hook);
 
   char host[NI_MAXHOST];
   char serv[NI_MAXSERV];
@@ -204,6 +339,11 @@ TEST_F(LlvmLibcGetnameinfoTest, Ipv6ScopesEmbeddedV4AndSystemErrors) {
   using LIBC_NAMESPACE::net::hton;
   using LIBC_NAMESPACE::testing::ErrnoSetterMatcher::Fails;
 
+  ScopedTestDbFile rdb(libc_make_test_file_path("gni_v6_resolv.test"),
+                       "nameserver 127.0.0.1\noptions attempts:1 timeout:1\n",
+                       &LIBC_NAMESPACE::netdb::set_resolv_conf_path);
+  LIBC_NAMESPACE::netdb::set_dns_wire_hook(&nxdomain_dns_hook);
+
   ScopedTestDbFile hdb(libc_make_test_file_path("gni_v6_hosts.test"),
                        ":: unspec.local\n10.0.0.5 box.local\n"
                        "fe80::2 bare6.local\nfe80::3%lo scoped6.local\n",
@@ -326,6 +466,83 @@ TEST_F(LlvmLibcGetnameinfoTest, Ipv6ScopesEmbeddedV4AndSystemErrors) {
   EXPECT_THAT(LIBC_NAMESPACE::getnameinfo(sa4, sizeof(s4), nullptr, 0, serv,
                                           sizeof(serv), 0),
               Fails<int>(ENOTDIR, EAI_SYSTEM));
+}
+
+TEST_F(LlvmLibcGetnameinfoTest, DnsPtrRfc2317NofqdnAndHostValidation) {
+  using LIBC_NAMESPACE::net::hton;
+  using LIBC_NAMESPACE::testing::ErrnoSetterMatcher::Fails;
+
+  ScopedTestDbFile hdb(libc_make_test_file_path("gni_ptr_hosts.test"),
+                       "10.0.0.8 host8.corp.\n"
+                       "10.0.0.9 single\n"
+                       "10.0.0.10 .corp\n"
+                       "10.0.0.11 a.other\n",
+                       &LIBC_NAMESPACE::netdb::set_hosts_path);
+  ScopedTestDbFile rdb_empty(libc_make_test_file_path("gni_ptr_r0.test"),
+                             "nameserver 127.0.0.1\noptions attempts:1\n",
+                             &LIBC_NAMESPACE::netdb::set_resolv_conf_path);
+  LIBC_NAMESPACE::netdb::set_dns_wire_hook(&mock_ptr_dns_hook);
+
+  char host[NI_MAXHOST];
+  struct sockaddr_in s4{};
+  s4.sin_family = AF_INET;
+  const auto *sa4 = reinterpret_cast<const struct sockaddr *>(&s4);
+
+  auto query_v4 = [&](uint32_t ip, int flags) {
+    s4.sin_addr.s_addr = hton(ip);
+    return LIBC_NAMESPACE::getnameinfo(sa4, sizeof(s4), host, sizeof(host),
+                                       nullptr, 0, flags);
+  };
+
+  // NI_NOFQDN with empty local search domain strips only trailing dot.
+  ASSERT_EQ(query_v4(0x0a000008U, NI_NOFQDN), 0);
+  EXPECT_STREQ(host, "host8.corp");
+
+  ScopedTestDbFile rdb_search(libc_make_test_file_path("gni_ptr_r1.test"),
+                              "nameserver 10.0.0.1\nnameserver 10.0.0.2\n"
+                              "search corp.\noptions rotate attempts:1\n",
+                              &LIBC_NAMESPACE::netdb::set_resolv_conf_path);
+
+  struct OkCase {
+    uint32_t ip;
+    int flags;
+    const char *expected;
+  };
+  static constexpr OkCase OK_CASES[] = {
+      {0x0a000008U, NI_NOFQDN, "host8"}, {0x0a000009U, NI_NOFQDN, "single"},
+      {0x0a00000aU, NI_NOFQDN, ".corp"}, {0x0a00000bU, NI_NOFQDN, "a.other"},
+      {0xc0000207U, 0, "web.corp"},      {0xc0000207U, NI_NOFQDN, "web"},
+      {0xc0000202U, NI_NOFQDN, "v6"},    {0xc0000204U, 0, "192.0.2.4"},
+      {0xc0000205U, 0, "192.0.2.5"},     {0xc0000203U, 0, "192.0.2.3"},
+  };
+  for (const OkCase &C : OK_CASES) {
+    ASSERT_EQ(query_v4(C.ip, C.flags), 0);
+    EXPECT_STREQ(host, C.expected);
+  }
+
+  EXPECT_EQ(query_v4(0xc0000208U, 0), EAI_AGAIN);
+  EXPECT_EQ(query_v4(0xc0000206U, 0), EAI_FAIL);
+  EXPECT_EQ(query_v4(0xc0000204U, NI_NAMEREQD), EAI_NONAME);
+  EXPECT_EQ(query_v4(0xc0000205U, NI_NAMEREQD), EAI_NONAME);
+  EXPECT_EQ(query_v4(0xc0000203U, NI_NAMEREQD), EAI_NONAME);
+
+  struct sockaddr_in6 s6{};
+  s6.sin6_family = AF_INET6;
+  s6.sin6_addr.s6_addr[0] = 0x20;
+  s6.sin6_addr.s6_addr[15] = 9;
+  const auto *sa6 = reinterpret_cast<const struct sockaddr *>(&s6);
+  ASSERT_EQ(LIBC_NAMESPACE::getnameinfo(sa6, sizeof(s6), host, sizeof(host),
+                                        nullptr, 0, 0),
+            0);
+  EXPECT_STREQ(host, "v6.corp");
+
+  char notdir_path[280];
+  const size_t BASE_LEN = LIBC_NAMESPACE::internal::strlcpy(
+      notdir_path, rdb_search.get_path(), sizeof(notdir_path));
+  LIBC_NAMESPACE::internal::strlcpy(notdir_path + BASE_LEN, "/resolv.conf",
+                                    sizeof(notdir_path) - BASE_LEN);
+  LIBC_NAMESPACE::netdb::set_resolv_conf_path(notdir_path);
+  EXPECT_THAT(query_v4(0xc0000207U, 0), Fails<int>(ENOTDIR, EAI_SYSTEM));
 }
 
 #ifdef LIBC_ADD_NULL_CHECKS

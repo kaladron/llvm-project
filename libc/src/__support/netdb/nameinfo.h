@@ -27,6 +27,7 @@
 #include "hdr/types/struct_sockaddr.h"
 #include "hdr/types/struct_sockaddr_in.h"
 #include "hdr/types/struct_sockaddr_in6.h"
+#include "src/__support/CPP/array.h"
 #include "src/__support/CPP/span.h"
 #include "src/__support/CPP/string_view.h"
 #include "src/__support/CPP/stringstream.h"
@@ -37,9 +38,14 @@
 #include "src/__support/macros/config.h"
 #include "src/__support/net/address.h"
 #include "src/__support/net/byte_order.h"
+#include "src/__support/netdb/dns_client.h"
+#include "src/__support/netdb/dns_ptr.h"
+#include "src/__support/netdb/dns_response.h"
+#include "src/__support/netdb/dns_wire.h"
 #include "src/__support/netdb/hosts.h"
 #include "src/__support/netdb/hosts_reverse.h"
 #include "src/__support/netdb/ip_parse.h"
+#include "src/__support/netdb/resolv_conf.h"
 #include "src/__support/netdb/services.h"
 #include "src/string/memory_utils/inline_memcpy.h"
 
@@ -50,6 +56,22 @@ LIBC_INLINE int copy_ni_str(cpp::span<char> out, cpp::string_view sv) {
   cpp::StringStream stream(out);
   stream << sv << cpp::StringStream::ENDS;
   return stream.overflow() ? EAI_OVERFLOW : 0;
+}
+
+LIBC_INLINE int copy_resolved_host(cpp::string_view host, int flags,
+                                   const ResolvConfig &cfg,
+                                   cpp::span<char> out) {
+  if ((flags & NI_NOFQDN) != 0) {
+    cpp::array<char, DNS_MAX_TEXT_NAME + 1> dom{};
+    size_t dom_len = 0;
+    if (cfg.num_search > 0) {
+      dom_len = wire_to_presentation(
+          {cfg.search_buf.data() + cfg.search[0].offset, cfg.search[0].len},
+          dom);
+    }
+    host = apply_ni_nofqdn(host, {dom.data(), dom_len});
+  }
+  return copy_ni_str(out, host);
 }
 
 LIBC_INLINE bool extract_ni_target(const struct sockaddr *sa, socklen_t salen,
@@ -139,8 +161,38 @@ LIBC_INLINE int resolve_ni_node(const ScopedIpAddr &ip, int flags,
       sys_err = hit.error();
       return EAI_SYSTEM;
     }
-    if (*hit)
+    if (*hit && (flags & NI_NOFQDN) == 0)
       return copy_ni_str(out, {hr.canon_name.data(), hr.canon_len});
+
+    ResolvConfig cfg{};
+    ErrorOr<void> rcfg = load_resolv_conf(cfg, get_resolv_conf_path());
+    if (!rcfg.has_value()) {
+      sys_err = rcfg.error();
+      return EAI_SYSTEM;
+    }
+    if (*hit)
+      return copy_resolved_host({hr.canon_name.data(), hr.canon_len}, flags,
+                                cfg, out);
+
+    cpp::array<uint8_t, IPV6_PTR_WIRE_LEN> ptr_qname{};
+    const size_t QLEN =
+        ip.is_ipv6 ? build_ipv6_ptr_qname({ip.addr.data(), 16}, ptr_qname)
+                   : build_ipv4_ptr_qname({ip.addr.data(), 4}, ptr_qname);
+    DnsParsedResponse dns{};
+    const DnsStatus ST =
+        dispatch_dns_qname(cfg, {ptr_qname.data(), QLEN}, DNS_TYPE_PTR, dns);
+    if (ST == DnsStatus::RETRY)
+      return EAI_AGAIN;
+    if (ST == DnsStatus::FAIL)
+      return EAI_FAIL;
+    if (ST == DnsStatus::OK) {
+      cpp::array<char, DNS_MAX_TEXT_NAME + 1> host_buf{};
+      const size_t HOST_LEN =
+          wire_to_presentation({dns.canon_wire.data(), dns.clen}, host_buf);
+      const cpp::string_view HOST(host_buf.data(), HOST_LEN);
+      if (is_valid_ptr_hostname(HOST))
+        return copy_resolved_host(HOST, flags, cfg, out);
+    }
   }
 
   if ((flags & NI_NAMEREQD) != 0)
