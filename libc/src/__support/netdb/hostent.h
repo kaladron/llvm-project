@@ -19,6 +19,7 @@
 #include "hdr/stdint_proxy.h"
 #include "hdr/sys_socket_macros.h"
 #include "hdr/types/size_t.h"
+#include "hdr/types/socklen_t.h"
 #include "hdr/types/struct_hostent.h"
 #include "hdr/types/struct_in6_addr.h"
 #include "hdr/types/struct_in_addr.h"
@@ -34,7 +35,9 @@
 #include "src/__support/memory_size.h"
 #include "src/__support/net/address.h"
 #include "src/__support/netdb/dns_client.h"
+#include "src/__support/netdb/dns_ptr.h"
 #include "src/__support/netdb/hosts.h"
+#include "src/__support/netdb/hosts_reverse.h"
 #include "src/__support/netdb/ip_parse.h"
 #include "src/__support/netdb/line_reader.h"
 #include "src/__support/netdb/resolv_conf.h"
@@ -318,6 +321,157 @@ LIBC_INLINE int lookup_host_byname(cpp::string_view name, int af,
 
   set_herr_out(h_errnop, dns_status_to_h_errno(ST));
   return 0;
+}
+
+struct ReverseHostentScan {
+  size_t alias_count = 0;
+  size_t text_len = 0;
+  bool found = false;
+  bool text_overflow = false;
+};
+
+LIBC_INLINE ErrorOr<bool>
+parse_hostent_reverse_line(LineReader &reader, bool want_v6,
+                           cpp::span<const uint8_t> want_addr,
+                           cpp::span<char> buffer, ReverseHostentScan &state) {
+  constexpr size_t IP_BUF_SIZE = 64;
+  char ip_buf[IP_BUF_SIZE];
+  char canon_buf[DNS_MAX_TEXT_NAME + 1];
+  cpp::StringStream ip_out(ip_buf);
+  cpp::StringStream canon_out(canon_buf);
+  cpp::StringStream alias_out(buffer);
+
+  ErrorOr<ValidHostsLine> line_or = read_reverse_hosts_line(
+      reader, want_v6, want_addr, 0, ip_out, canon_out, alias_out);
+  if (!line_or.has_value())
+    return Error(line_or.error());
+  if (!line_or->valid)
+    return line_or->eof;
+
+  alias_out << line_or->canon << cpp::StringStream::ENDS;
+  state.alias_count = line_or->alias_count;
+  state.text_len = alias_out.str().size();
+  state.text_overflow = alias_out.overflow();
+  state.found = true;
+  return true;
+}
+
+LIBC_INLINE ErrorOr<void>
+scan_hosts_reverse_file(bool want_v6, cpp::span<const uint8_t> want_addr,
+                        cpp::span<char> buffer, ReverseHostentScan &state,
+                        const char *path) {
+  static constexpr const char *DEFAULT_HOSTS_PATH = "/etc/hosts";
+  const char *db_path = path != nullptr ? path : DEFAULT_HOSTS_PATH;
+  auto file_or = openfile(db_path, "re");
+  if (!file_or.has_value()) {
+    if (file_or.error() == ENOENT)
+      return {};
+    return Error(file_or.error());
+  }
+
+  File *file = file_or.value();
+  cpp::scope_exit close_file([file]() { file->close(); });
+  File::FileLock lock(file);
+  LineReader reader(file);
+
+  while (true) {
+    ErrorOr<bool> done_or =
+        parse_hostent_reverse_line(reader, want_v6, want_addr, buffer, state);
+    if (!done_or.has_value())
+      return Error(done_or.error());
+    if (*done_or)
+      return {};
+  }
+}
+
+LIBC_INLINE int lookup_host_byaddr(const void *addr, socklen_t len, int type,
+                                   struct hostent *ret, cpp::span<char> buffer,
+                                   struct hostent **result, int *h_errnop,
+                                   const char *path = nullptr) {
+  *result = nullptr;
+
+  const size_t EXPECTED_LEN = host_family_len(type);
+  if (EXPECTED_LEN == 0) {
+    set_herr_out(h_errnop, NO_RECOVERY);
+    return EAFNOSUPPORT;
+  }
+  if (static_cast<size_t>(len) != EXPECTED_LEN) {
+    set_herr_out(h_errnop, NO_RECOVERY);
+    return EINVAL;
+  }
+
+  const cpp::span<const uint8_t> RAW(static_cast<const uint8_t *>(addr),
+                                     EXPECTED_LEN);
+  cpp::array<uint8_t, 16> packed_addr{};
+  inline_memcpy(packed_addr.data(), RAW.data(), EXPECTED_LEN);
+
+  bool query_v6 = type == AF_INET6;
+  size_t query_off = 0;
+  size_t query_len = EXPECTED_LEN;
+  if (query_v6 && is_v4_embedded_in6(RAW)) {
+    query_v6 = false;
+    query_off = 12;
+    query_len = 4;
+  }
+  const cpp::span<const uint8_t> QUERY_BYTES =
+      RAW.subspan(query_off, query_len);
+
+  ReverseHostentScan state{};
+  ErrorOr<void> scan_res =
+      scan_hosts_reverse_file(query_v6, QUERY_BYTES, buffer, state, path);
+  if (!scan_res.has_value()) {
+    set_herr_out(h_errnop, NO_RECOVERY);
+    return scan_res.error();
+  }
+
+  if (state.found) {
+    if (state.text_overflow) {
+      set_herr_out(h_errnop, NETDB_INTERNAL);
+      return ERANGE;
+    }
+
+    const int RC =
+        pack_hostent_layout(buffer, state.text_len, state.alias_count,
+                            {&packed_addr, 1}, type, EXPECTED_LEN, ret, result);
+    if (RC != 0)
+      set_herr_out(h_errnop, NETDB_INTERNAL);
+    return RC;
+  }
+
+  if (all_zero_bytes(QUERY_BYTES)) {
+    set_herr_out(h_errnop, HOST_NOT_FOUND);
+    return 0;
+  }
+
+  ResolvConfig cfg{};
+  ErrorOr<void> rcfg = load_resolv_conf(cfg, get_resolv_conf_path());
+  if (!rcfg.has_value()) {
+    set_herr_out(h_errnop, NO_RECOVERY);
+    return rcfg.error();
+  }
+
+  cpp::array<uint8_t, IPV6_PTR_WIRE_LEN> ptr_qname{};
+  const size_t QLEN = query_v6 ? build_ipv6_ptr_qname(QUERY_BYTES, ptr_qname)
+                               : build_ipv4_ptr_qname(QUERY_BYTES, ptr_qname);
+  DnsParsedResponse dns{};
+  const DnsStatus ST =
+      dispatch_dns_qname(cfg, {ptr_qname.data(), QLEN}, DNS_TYPE_PTR, dns);
+  if (ST != DnsStatus::OK) {
+    set_herr_out(h_errnop, dns_status_to_h_errno(ST));
+    return 0;
+  }
+
+  cpp::array<char, DNS_MAX_TEXT_NAME + 1> canon_buf{};
+  const size_t CANON_LEN =
+      wire_to_presentation({dns.canon_wire.data(), dns.clen}, canon_buf);
+  const cpp::string_view CANON(canon_buf.data(), CANON_LEN);
+  if (!is_valid_ptr_hostname(CANON)) {
+    set_herr_out(h_errnop, HOST_NOT_FOUND);
+    return 0;
+  }
+
+  return pack_named_hostent(CANON, {&packed_addr, 1}, type, EXPECTED_LEN,
+                            buffer, ret, result, h_errnop);
 }
 
 } // namespace netdb

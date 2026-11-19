@@ -1847,6 +1847,8 @@ if(LLVM_LIBC_ENABLE_EXPERIMENTAL_ENTRYPOINTS)
       libc.src.netdb.freeaddrinfo
       libc.src.netdb.gai_strerror
       libc.src.netdb.getaddrinfo
+      libc.src.netdb.gethostbyaddr
+      libc.src.netdb.gethostbyaddr_r
       libc.src.netdb.gethostbyname
       libc.src.netdb.gethostbyname2
       libc.src.netdb.gethostbyname2_r

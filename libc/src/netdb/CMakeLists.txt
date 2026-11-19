@@ -60,6 +60,40 @@ if(TARGET libc.src.__support.OSUtil.network AND
   )
 
   add_entrypoint_object(
+    gethostbyaddr
+    SRCS
+      gethostbyaddr.cpp
+    HDRS
+      gethostbyaddr.h
+    DEPENDS
+      libc.hdr.types.size_t
+      libc.hdr.types.socklen_t
+      libc.hdr.types.struct_hostent
+      libc.src.__support.CPP.span
+      libc.src.__support.macros.attributes
+      libc.src.__support.macros.null_check
+      libc.src.__support.netdb.h_errno
+      libc.src.__support.netdb.hostent
+      libc.src.__support.netdb.hosts
+  )
+
+  add_entrypoint_object(
+    gethostbyaddr_r
+    SRCS
+      gethostbyaddr_r.cpp
+    HDRS
+      gethostbyaddr_r.h
+    DEPENDS
+      libc.hdr.types.size_t
+      libc.hdr.types.socklen_t
+      libc.hdr.types.struct_hostent
+      libc.src.__support.CPP.span
+      libc.src.__support.macros.null_check
+      libc.src.__support.netdb.hostent
+      libc.src.__support.netdb.hosts
+  )
+
+  add_entrypoint_object(
     gethostbyname
     SRCS
       gethostbyname.cpp

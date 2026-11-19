@@ -302,7 +302,9 @@ add_header_library(
     hostent.h
   DEPENDS
     .dns_client
+    .dns_ptr
     .hosts
+    .hosts_reverse
     .ip_parse
     .line_reader
     .resolv_conf
@@ -311,6 +313,7 @@ add_header_library(
     libc.hdr.stdint_proxy
     libc.hdr.sys_socket_macros
     libc.hdr.types.size_t
+    libc.hdr.types.socklen_t
     libc.hdr.types.struct_hostent
     libc.hdr.types.struct_in6_addr
     libc.hdr.types.struct_in_addr
