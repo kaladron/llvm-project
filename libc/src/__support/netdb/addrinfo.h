@@ -31,6 +31,7 @@
 #include "src/__support/CPP/span.h"
 #include "src/__support/CPP/string_view.h"
 #include "src/__support/CPP/unique_ptr.h"
+#include "src/__support/OSUtil/network.h"
 #include "src/__support/checked_ptr.h"
 #include "src/__support/error_or.h"
 #include "src/__support/macros/attributes.h"
@@ -286,15 +287,13 @@ LIBC_INLINE constexpr void apply_v4mapped_hosts(HostsForwardResult &res,
   res.num_addrs = out_idx;
 }
 
-LIBC_INLINE constexpr HostsFamily select_hosts_family(int family,
-                                                      bool v4_mapped) {
-  if (family == AF_UNSPEC)
+LIBC_INLINE constexpr HostsFamily select_hosts_family(bool want_v4,
+                                                      bool want_v6) {
+  if (want_v4 && want_v6)
     return HostsFamily::UNSPEC;
-  if (family == AF_INET)
-    return HostsFamily::IPV4;
-  if (v4_mapped)
-    return HostsFamily::UNSPEC;
-  return HostsFamily::IPV6;
+  if (want_v6)
+    return HostsFamily::IPV6;
+  return HostsFamily::IPV4;
 }
 
 LIBC_INLINE int resolve_hosts_node(cpp::string_view node, int family, int flags,
@@ -303,14 +302,31 @@ LIBC_INLINE int resolve_hosts_node(cpp::string_view node, int family, int flags,
   if ((flags & AI_NUMERICHOST) != 0)
     return EAI_NONAME;
 
+  bool allow_v4 = true;
+  bool allow_v6 = true;
+  if ((flags & AI_ADDRCONFIG) != 0)
+    network::probe_addrconfig(allow_v4, allow_v6);
+
   bool v4_mapped = false;
   if (family == AF_INET6)
     v4_mapped = (flags & AI_V4MAPPED) != 0;
 
+  bool want_v4 = family != AF_INET6;
+  if (v4_mapped)
+    want_v4 = true;
+  if (!allow_v4)
+    want_v4 = false;
+
+  bool want_v6 = family != AF_INET;
+  if (!allow_v6)
+    want_v6 = false;
+
+  if (!want_v4 && !want_v6)
+    return EAI_NONAME;
+
   HostsForwardResult hosts_res{};
-  ErrorOr<bool> found_or =
-      lookup_hosts_forward(node, select_hosts_family(family, v4_mapped),
-                           hosts_res, get_hosts_path());
+  ErrorOr<bool> found_or = lookup_hosts_forward(
+      node, select_hosts_family(want_v4, want_v6), hosts_res, get_hosts_path());
   if (!found_or.has_value()) {
     sys_err = found_or.error();
     return EAI_SYSTEM;

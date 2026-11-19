@@ -22,7 +22,9 @@
 #include "hdr/types/struct_addrinfo.h"
 #include "hdr/types/struct_sockaddr_in.h"
 #include "hdr/types/struct_sockaddr_in6.h"
+#include "src/__support/CPP/span.h"
 #include "src/__support/CPP/string_view.h"
+#include "src/__support/OSUtil/network.h"
 #include "src/__support/net/byte_order.h"
 #include "src/__support/netdb/addrinfo.h"
 #include "src/__support/netdb/hosts.h"
@@ -41,6 +43,7 @@ class LlvmLibcGetaddrinfoTest
 protected:
   void TearDown() override {
     LIBC_NAMESPACE::netdb::clear_addrinfo_alloc_budget();
+    LIBC_NAMESPACE::network::clear_addrconfig_override();
     LIBC_NAMESPACE::netdb::set_hosts_path(nullptr);
     LIBC_NAMESPACE::netdb::set_services_path(nullptr);
     ErrnoCheckingTest::TearDown();
@@ -229,10 +232,20 @@ TEST_F(LlvmLibcGetaddrinfoTest, Ipv6LiteralsScopeV4MappedAndServiceErrors) {
   hints = {};
   hints.ai_family = AF_INET;
   EXPECT_EQ(LIBC_NAMESPACE::getaddrinfo("::1", "80", &hints, &raw), EAI_NONAME);
-  EXPECT_EQ(LIBC_NAMESPACE::getaddrinfo("fe80::1%eth0", "80", nullptr, &raw),
+  EXPECT_EQ(
+      LIBC_NAMESPACE::getaddrinfo("fe80::1%no_such_if0", "80", nullptr, &raw),
+      EAI_NONAME);
+  EXPECT_EQ(LIBC_NAMESPACE::getaddrinfo("fe80::1%0123456789abcdef", "80",
+                                        nullptr, &raw),
             EAI_NONAME);
   EXPECT_EQ(LIBC_NAMESPACE::getaddrinfo("fe80::1%", "80", nullptr, &raw),
             EAI_NONAME);
+  EXPECT_EQ(LIBC_NAMESPACE::network::if_nametoindex("lo", -1), uint32_t(0));
+
+  ASSERT_EQ(LIBC_NAMESPACE::getaddrinfo("fe80::1%lo", "80", nullptr, &raw), 0);
+  res.reset(raw);
+  s6 = reinterpret_cast<const struct sockaddr_in6 *>(res->ai_addr);
+  EXPECT_GT(s6->sin6_scope_id, uint32_t(0));
   EXPECT_EQ(
       LIBC_NAMESPACE::getaddrinfo("fe80::1%4294967296", "80", nullptr, &raw),
       EAI_NONAME);
@@ -310,7 +323,7 @@ TEST_F(LlvmLibcGetaddrinfoTest, HostsDatabaseRfc6761AndOverlongLines) {
   append("\n# comment line\n10.0.0.1\nbad_ip canon.local\n");
   append(string_view(BAD_NUL, sizeof(BAD_NUL) - 1));
   append(string_view(OK_COMMENT_NUL, sizeof(OK_COMMENT_NUL) - 1));
-  append("2001:db8::2 canon.local alias1\n");
+  append("fe80::1%lo canon.local alias1\n");
   append("10.0.0.9 v4.local\n");
 
   // Overlong (>64B) IP token on a matching hostname line.
@@ -423,6 +436,196 @@ TEST_F(LlvmLibcGetaddrinfoTest, HostsDatabaseRfc6761AndOverlongLines) {
   ASSERT_EQ(LIBC_NAMESPACE::getaddrinfo("canon.local", "80", &hints, &raw), 0);
   res.reset(raw);
   ASSERT_NE(res->ai_next, nullptr);
+
+  // Live Netlink RTM_GETADDR probe and zero-init override masks.
+  hints = {};
+  hints.ai_flags = AI_ADDRCONFIG;
+  hints.ai_family = AF_UNSPEC;
+  hints.ai_socktype = SOCK_STREAM;
+  const int LIVE_RC =
+      LIBC_NAMESPACE::getaddrinfo("canon.local", "80", &hints, &raw);
+  if (LIVE_RC == 0)
+    res.reset(raw);
+
+  static constexpr uint8_t MASKS[4] = {0, 1, 2, 3};
+  for (uint8_t m : MASKS) {
+    LIBC_NAMESPACE::network::set_addrconfig_override(m);
+    const int RC =
+        LIBC_NAMESPACE::getaddrinfo("canon.local", "80", &hints, &raw);
+    if (RC == 0)
+      res.reset(raw);
+    EXPECT_EQ(RC, m == 0 ? EAI_NONAME : 0);
+  }
+  LIBC_NAMESPACE::network::clear_addrconfig_override();
+
+  // Exercise Netlink socket/sendto/recvfrom fallbacks and malformed frames.
+  bool allow4 = false;
+  bool allow6 = false;
+  LIBC_NAMESPACE::network::probe_netlink_addrconfig(allow4, allow6, -1);
+  EXPECT_TRUE(allow4 && allow6);
+  LIBC_NAMESPACE::network::probe_netlink_addrconfig(allow4, allow6, AF_UNIX);
+  EXPECT_FALSE(allow4 || allow6);
+  LIBC_NAMESPACE::network::probe_netlink_addrconfig(allow4, allow6, AF_NETLINK,
+                                                    1);
+  EXPECT_FALSE(allow4 || allow6);
+
+  EXPECT_FALSE(LIBC_NAMESPACE::network::is_non_loopback_v4({}));
+  static constexpr uint8_t ZERO4[4] = {0, 0, 0, 0};
+  EXPECT_FALSE(LIBC_NAMESPACE::network::is_non_loopback_v4(ZERO4));
+  EXPECT_FALSE(LIBC_NAMESPACE::network::is_non_loopback_v6({}));
+  static constexpr uint8_t TWO6[16] = {0, 0, 0, 0, 0, 0, 0, 0,
+                                       0, 0, 0, 0, 0, 0, 0, 2};
+  EXPECT_TRUE(LIBC_NAMESPACE::network::is_non_loopback_v6(TWO6));
+
+  // Synthetic Netlink frames: shortlen, overlong, NLMSG_ERROR, short
+  // RTM_NEWADDR, bad rta_len, unknown family, and multi-message step.
+  static constexpr uint8_t SHORT_NL[16] = {8};
+  static constexpr uint8_t OVER_NL[16] = {32};
+  static constexpr uint8_t ERR_NL[16] = {16, 0, 0, 0, 2, 0};
+  EXPECT_FALSE(LIBC_NAMESPACE::network::parse_addrconfig_batch(SHORT_NL, allow4,
+                                                               allow6));
+  EXPECT_FALSE(
+      LIBC_NAMESPACE::network::parse_addrconfig_batch(OVER_NL, allow4, allow6));
+  EXPECT_TRUE(
+      LIBC_NAMESPACE::network::parse_addrconfig_batch(ERR_NL, allow4, allow6));
+
+  static constexpr uint8_t EDGE_BATCH[] = {
+      // Msg 1 (len 20, padded 20): RTM_NEWADDR (20) shorter than ifaddrmsg (24)
+      20,
+      0,
+      0,
+      0,
+      20,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      // Msg 2 (len 36): RTM_NEWADDR (20), family AF_UNIX (1), 2 RTAs
+      36,
+      0,
+      0,
+      0,
+      20,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      8,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      4,
+      0,
+      2,
+      0,
+      // Msg 3 (len 28): RTM_NEWADDR (20), bad rta_len = 2
+      28,
+      0,
+      0,
+      0,
+      20,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      2,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      2,
+      0,
+      1,
+      0,
+      // Msg 4 (len 28): RTM_NEWADDR (20), overlong rta_len = 12
+      28,
+      0,
+      0,
+      0,
+      20,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      2,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      12,
+      0,
+      1,
+      0,
+      // Msg 5 (len 16): unknown type 99
+      16,
+      0,
+      0,
+      0,
+      99,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+  };
+  EXPECT_FALSE(LIBC_NAMESPACE::network::parse_addrconfig_batch(EDGE_BATCH,
+                                                               allow4, allow6));
 
   // Open failure (ENOTDIR) and read failure (EISDIR) report EAI_SYSTEM + errno.
   char notdir_path[280];

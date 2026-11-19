@@ -24,3 +24,14 @@ if(TARGET ${target_path})
       ${target_path}
   )
 endif()
+
+set(target_network libc.src.__support.OSUtil.${LIBC_TARGET_OS}.network)
+if(TARGET ${target_network})
+  add_header_library(
+    network
+    HDRS
+      network.h
+    DEPENDS
+      ${target_network}
+  )
+endif()

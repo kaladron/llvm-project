@@ -25,71 +25,73 @@ if(NOT TARGET libc.src.__support.File.file OR
   return()
 endif()
 
-add_entrypoint_object(
-  freeaddrinfo
-  SRCS
-    freeaddrinfo.cpp
-  HDRS
-    freeaddrinfo.h
-  DEPENDS
-    libc.hdr.types.struct_addrinfo
-    libc.src.__support.netdb.addrinfo
-)
+if(TARGET libc.src.__support.OSUtil.network)
+  add_entrypoint_object(
+    freeaddrinfo
+    SRCS
+      freeaddrinfo.cpp
+    HDRS
+      freeaddrinfo.h
+    DEPENDS
+      libc.hdr.types.struct_addrinfo
+      libc.src.__support.netdb.addrinfo
+  )
 
-add_entrypoint_object(
-  getaddrinfo
-  SRCS
-    getaddrinfo.cpp
-  HDRS
-    getaddrinfo.h
-  DEPENDS
-    libc.hdr.netdb_macros
-    libc.hdr.types.in_port_t
-    libc.hdr.types.size_t
-    libc.hdr.types.struct_addrinfo
-    libc.hdr.types.struct_servent
-    libc.src.__support.CPP.span
-    libc.src.__support.CPP.string_view
-    libc.src.__support.libc_errno
-    libc.src.__support.macros.null_check
-    libc.src.__support.netdb.addrinfo
-    libc.src.__support.netdb.services
-    libc.src.errno.errno
-)
+  add_entrypoint_object(
+    getaddrinfo
+    SRCS
+      getaddrinfo.cpp
+    HDRS
+      getaddrinfo.h
+    DEPENDS
+      libc.hdr.netdb_macros
+      libc.hdr.types.in_port_t
+      libc.hdr.types.size_t
+      libc.hdr.types.struct_addrinfo
+      libc.hdr.types.struct_servent
+      libc.src.__support.CPP.span
+      libc.src.__support.CPP.string_view
+      libc.src.__support.libc_errno
+      libc.src.__support.macros.null_check
+      libc.src.__support.netdb.addrinfo
+      libc.src.__support.netdb.services
+      libc.src.errno.errno
+  )
 
-add_entrypoint_object(
-  gethostbyname
-  SRCS
-    gethostbyname.cpp
-  HDRS
-    gethostbyname.h
-  DEPENDS
-    libc.hdr.types.size_t
-    libc.hdr.types.struct_hostent
-    libc.src.__support.CPP.span
-    libc.src.__support.CPP.string_view
-    libc.src.__support.macros.attributes
-    libc.src.__support.macros.null_check
-    libc.src.__support.netdb.h_errno
-    libc.src.__support.netdb.hostent
-    libc.src.__support.netdb.hosts
-)
+  add_entrypoint_object(
+    gethostbyname
+    SRCS
+      gethostbyname.cpp
+    HDRS
+      gethostbyname.h
+    DEPENDS
+      libc.hdr.types.size_t
+      libc.hdr.types.struct_hostent
+      libc.src.__support.CPP.span
+      libc.src.__support.CPP.string_view
+      libc.src.__support.macros.attributes
+      libc.src.__support.macros.null_check
+      libc.src.__support.netdb.h_errno
+      libc.src.__support.netdb.hostent
+      libc.src.__support.netdb.hosts
+  )
 
-add_entrypoint_object(
-  gethostbyname_r
-  SRCS
-    gethostbyname_r.cpp
-  HDRS
-    gethostbyname_r.h
-  DEPENDS
-    libc.hdr.types.size_t
-    libc.hdr.types.struct_hostent
-    libc.src.__support.CPP.span
-    libc.src.__support.CPP.string_view
-    libc.src.__support.macros.null_check
-    libc.src.__support.netdb.hostent
-    libc.src.__support.netdb.hosts
-)
+  add_entrypoint_object(
+    gethostbyname_r
+    SRCS
+      gethostbyname_r.cpp
+    HDRS
+      gethostbyname_r.h
+    DEPENDS
+      libc.hdr.types.size_t
+      libc.hdr.types.struct_hostent
+      libc.src.__support.CPP.span
+      libc.src.__support.CPP.string_view
+      libc.src.__support.macros.null_check
+      libc.src.__support.netdb.hostent
+      libc.src.__support.netdb.hosts
+  )
+endif()
 
 add_object_library(
   getnet_internal

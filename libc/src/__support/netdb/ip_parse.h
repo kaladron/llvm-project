@@ -21,6 +21,7 @@
 #include "src/__support/CPP/array.h"
 #include "src/__support/CPP/optional.h"
 #include "src/__support/CPP/string_view.h"
+#include "src/__support/OSUtil/network.h"
 #include "src/__support/ctype_utils.h"
 #include "src/__support/macros/attributes.h"
 #include "src/__support/macros/config.h"
@@ -67,11 +68,15 @@ LIBC_INLINE bool parse_ipv6(cpp::string_view tok, ScopedIpAddr &out) {
 
   uint32_t scope = 0;
   if (PCT != cpp::string_view::npos) {
-    const cpp::optional<uint32_t> PARSED =
-        parse_unsigned<uint32_t>(tok.substr(PCT + 1));
-    if (!PARSED.has_value())
-      return false;
-    scope = *PARSED;
+    const cpp::string_view ZONE = tok.substr(PCT + 1);
+    const cpp::optional<uint32_t> PARSED = parse_unsigned<uint32_t>(ZONE);
+    if (PARSED.has_value()) {
+      scope = *PARSED;
+    } else {
+      scope = network::if_nametoindex(ZONE);
+      if (scope == 0)
+        return false;
+    }
   }
 
   out = {};
