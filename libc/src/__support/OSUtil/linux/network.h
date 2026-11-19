@@ -7,7 +7,7 @@
 //===----------------------------------------------------------------------===//
 ///
 /// \file
-/// Internal Linux network interface and Netlink address configuration helpers.
+/// Internal Linux network interface, Netlink, and non-blocking UDP helpers.
 ///
 //===----------------------------------------------------------------------===//
 
@@ -15,19 +15,28 @@
 #define LLVM_LIBC_SRC___SUPPORT_OSUTIL_LINUX_NETWORK_H
 
 #include "hdr/net_if_macros.h"
+#include "hdr/poll_macros.h"
 #include "hdr/stdint_proxy.h"
 #include "hdr/sys_ioctl_macros.h"
 #include "hdr/sys_socket_macros.h"
 #include "hdr/types/size_t.h"
 #include "hdr/types/ssize_t.h"
 #include "hdr/types/struct_ifreq.h"
+#include "hdr/types/struct_pollfd.h"
+#include "hdr/types/struct_sockaddr.h"
+#include "hdr/types/struct_sockaddr_in.h"
+#include "hdr/types/struct_sockaddr_in6.h"
 #include "src/__support/CPP/span.h"
 #include "src/__support/CPP/string_view.h"
 #include "src/__support/OSUtil/linux/syscall_wrappers/close.h"
+#include "src/__support/OSUtil/linux/syscall_wrappers/connect.h"
+#include "src/__support/OSUtil/linux/syscall_wrappers/getrandom.h"
 #include "src/__support/OSUtil/linux/syscall_wrappers/ioctl.h"
+#include "src/__support/OSUtil/linux/syscall_wrappers/poll.h"
 #include "src/__support/OSUtil/linux/syscall_wrappers/recvfrom.h"
 #include "src/__support/OSUtil/linux/syscall_wrappers/sendto.h"
 #include "src/__support/OSUtil/linux/syscall_wrappers/socket.h"
+#include "src/__support/endian_internal.h"
 #include "src/__support/error_or.h"
 #include "src/__support/macros/attributes.h"
 #include "src/__support/macros/config.h"
@@ -38,6 +47,93 @@
 
 namespace LIBC_NAMESPACE_DECL {
 namespace network {
+
+enum class UdpRecvKind : uint8_t { PACKET, TIMEOUT, HARD_ERROR };
+
+struct UdpRecvResult {
+  UdpRecvKind kind;
+  size_t len;
+};
+
+LIBC_INLINE void close_fd(int fd) { (void)linux_syscalls::close(fd); }
+
+LIBC_INLINE uint16_t random_u16(uint16_t seed) {
+  (void)linux_syscalls::getrandom(&seed, sizeof(seed), 0);
+  return seed;
+}
+
+LIBC_INLINE bool poll_fd_ready(int fd, short events, uint32_t timeout_ms) {
+  struct pollfd pfd{fd, events, 0};
+  struct pollfd *ptr = fd < -1 ? nullptr : &pfd;
+  ErrorOr<int> rc = linux_syscalls::poll(ptr, 1, static_cast<int>(timeout_ms));
+  if (!rc.has_value())
+    return false;
+  return *rc > 0;
+}
+
+LIBC_INLINE ErrorOr<int> connect_endpoint(int fd, bool is_ipv6,
+                                          cpp::span<const uint8_t> addr,
+                                          uint32_t scope_id, uint16_t port) {
+  const uint16_t NET_PORT = Endian::to_big_endian(port);
+  if (is_ipv6) {
+    struct sockaddr_in6 s6{};
+    s6.sin6_family = AF_INET6;
+    s6.sin6_port = NET_PORT;
+    s6.sin6_scope_id = scope_id;
+    inline_memcpy(&s6.sin6_addr, addr.data(), sizeof(s6.sin6_addr));
+    return linux_syscalls::connect(
+        fd, reinterpret_cast<const struct sockaddr *>(&s6), sizeof(s6));
+  }
+
+  struct sockaddr_in s4{};
+  s4.sin_family = AF_INET;
+  s4.sin_port = NET_PORT;
+  inline_memcpy(&s4.sin_addr, addr.data(), sizeof(s4.sin_addr));
+  return linux_syscalls::connect(
+      fd, reinterpret_cast<const struct sockaddr *>(&s4), sizeof(s4));
+}
+
+LIBC_INLINE int open_udp(bool is_ipv6, cpp::span<const uint8_t> addr,
+                         uint32_t scope_id, uint16_t port,
+                         int extra_flags = 0) {
+  const int DOMAIN = is_ipv6 ? AF_INET6 : AF_INET;
+  ErrorOr<int> fd = linux_syscalls::socket(
+      DOMAIN, SOCK_DGRAM | SOCK_NONBLOCK | SOCK_CLOEXEC | extra_flags, 0);
+  if (!fd.has_value())
+    return -1;
+
+  ErrorOr<int> cr = connect_endpoint(*fd, is_ipv6, addr, scope_id, port);
+  if (!cr.has_value()) {
+    close_fd(*fd);
+    return -1;
+  }
+  return *fd;
+}
+
+LIBC_INLINE ssize_t udp_send(int fd, cpp::span<const uint8_t> pkt) {
+  ErrorOr<ssize_t> rc = linux_syscalls::sendto(fd, pkt.data(), pkt.size(),
+                                               MSG_NOSIGNAL, nullptr, 0);
+  if (!rc.has_value())
+    return -1;
+  return *rc;
+}
+
+LIBC_INLINE UdpRecvResult udp_poll_recv(int fd, cpp::span<uint8_t> out,
+                                        uint32_t timeout_ms) {
+  if (!poll_fd_ready(fd, POLLIN, timeout_ms))
+    return {UdpRecvKind::TIMEOUT, 0};
+
+  ErrorOr<ssize_t> n = linux_syscalls::recvfrom(
+      fd, out.data(), out.size(), MSG_DONTWAIT | MSG_TRUNC, nullptr, nullptr);
+  if (!n.has_value())
+    return {UdpRecvKind::HARD_ERROR, 0};
+
+  const size_t LEN = static_cast<size_t>(*n);
+  if (LEN > out.size())
+    return {UdpRecvKind::HARD_ERROR, 0};
+
+  return {UdpRecvKind::PACKET, LEN};
+}
 
 LIBC_INLINE uint32_t if_nametoindex(cpp::string_view name,
                                     int sock_domain = AF_UNIX) {
@@ -54,7 +150,7 @@ LIBC_INLINE uint32_t if_nametoindex(cpp::string_view name,
   struct ifreq ifr{};
   inline_memcpy(ifr.ifr_name, name.data(), name.size());
   ErrorOr<int> rc = linux_syscalls::ioctl(*fd, SIOCGIFINDEX, &ifr);
-  (void)linux_syscalls::close(*fd);
+  close_fd(*fd);
   if (!rc.has_value())
     return 0;
 
@@ -183,7 +279,7 @@ LIBC_INLINE void probe_netlink_addrconfig(bool &allow_v4, bool &allow_v6,
     }
   }
 
-  (void)linux_syscalls::close(*fd);
+  close_fd(*fd);
 }
 
 #ifndef LIBC_COPT_PUBLIC_PACKAGING

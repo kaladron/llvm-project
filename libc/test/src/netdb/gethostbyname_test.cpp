@@ -13,14 +13,23 @@
 
 #include "hdr/errno_macros.h"
 #include "hdr/netdb_macros.h"
+#include "hdr/poll_macros.h"
 #include "hdr/signal_macros.h"
 #include "hdr/stdint_proxy.h"
 #include "hdr/sys_socket_macros.h"
 #include "hdr/types/size_t.h"
+#include "hdr/types/socklen_t.h"
+#include "hdr/types/ssize_t.h"
 #include "hdr/types/struct_hostent.h"
+#include "hdr/types/struct_in_addr.h"
+#include "hdr/types/struct_sockaddr.h"
+#include "hdr/types/struct_sockaddr_in.h"
 #include "src/__support/CPP/array.h"
+#include "src/__support/CPP/scope.h"
 #include "src/__support/CPP/span.h"
 #include "src/__support/CPP/string_view.h"
+#include "src/__support/OSUtil/network.h"
+#include "src/__support/net/byte_order.h"
 #include "src/__support/netdb/dns_client.h"
 #include "src/__support/netdb/dns_wire.h"
 #include "src/__support/netdb/h_errno.h"
@@ -29,6 +38,12 @@
 #include "src/netdb/gethostbyname_r.h"
 #include "src/string/memory_utils/inline_memcpy.h"
 #include "src/string/string_utils.h"
+#include "src/sys/socket/bind.h"
+#include "src/sys/socket/getsockname.h"
+#include "src/sys/socket/recvfrom.h"
+#include "src/sys/socket/sendto.h"
+#include "src/sys/socket/socket.h"
+#include "src/unistd/close.h"
 #include "test/UnitTest/ErrnoCheckingTest.h"
 #include "test/UnitTest/Test.h"
 #include "test/src/netdb/test_db_file.h"
@@ -51,6 +66,7 @@ class LlvmLibcGethostbynameTest
 protected:
   void TearDown() override {
     LIBC_NAMESPACE::netdb::set_dns_wire_hook(nullptr);
+    LIBC_NAMESPACE::netdb::set_dns_port_override(0);
     LIBC_NAMESPACE::netdb::set_hosts_path(nullptr);
     ErrnoCheckingTest::TearDown();
   }
@@ -275,14 +291,6 @@ TEST_F(LlvmLibcGethostbynameTest, DnsWireCodecPointerCompressionAndHostChecks) {
   alignas(char *) char buf[512];
   int herr = 0;
 
-  // Null hook reports TRY_AGAIN; RFC 952/1123 invalid host labels report
-  // HOST_NOT_FOUND without invoking the transport.
-  EXPECT_EQ(LIBC_NAMESPACE::gethostbyname_r("unhooked.example", &he, buf,
-                                            sizeof(buf), &res, &herr),
-            0);
-  EXPECT_EQ(res, nullptr);
-  EXPECT_EQ(herr, TRY_AGAIN);
-
   static constexpr const char *BAD_HOSTS[] = {
       "::1",
       "a..b",
@@ -484,6 +492,102 @@ TEST_F(LlvmLibcGethostbynameTest, DnsWireCodecPointerCompressionAndHostChecks) {
   EXPECT_EQ(static_cast<uint8_t>(dns_he->h_addr[0]), uint8_t(198));
   EXPECT_EQ(static_cast<uint8_t>(dns_he->h_addr[3]), uint8_t(9));
   EXPECT_EQ(dns_he->h_addr_list[16], nullptr);
+}
+
+TEST_F(LlvmLibcGethostbynameTest, LoopbackUdpSocketTransportAndTimeouts) {
+  using namespace LIBC_NAMESPACE::netdb;
+  namespace nw = LIBC_NAMESPACE::network;
+  using LIBC_NAMESPACE::cpp::array;
+  using LIBC_NAMESPACE::cpp::scope_exit;
+  using LIBC_NAMESPACE::cpp::span;
+  using LIBC_NAMESPACE::net::hton;
+  using LIBC_NAMESPACE::net::ntoh;
+
+  ScopedTestDbFile hdb(libc_make_test_file_path("host_udp.test"), "",
+                       &set_hosts_path);
+
+  int sfd = LIBC_NAMESPACE::socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
+  int cfd = -1;
+  int cfd6 = -1;
+  ASSERT_GE(sfd, 0);
+  scope_exit guard([&] {
+    if (sfd >= 0)
+      LIBC_NAMESPACE::close(sfd);
+    if (cfd >= 0)
+      nw::close_fd(cfd);
+    if (cfd6 >= 0)
+      nw::close_fd(cfd6);
+  });
+
+  struct sockaddr_in sa{};
+  struct sockaddr_in peer{};
+  sa.sin_family = AF_INET;
+  sa.sin_addr.s_addr = hton<uint32_t>(0x7f000001U);
+  auto *sap = reinterpret_cast<struct sockaddr *>(&sa);
+  auto *psp = reinterpret_cast<struct sockaddr *>(&peer);
+  socklen_t slen = sizeof(sa);
+  socklen_t plen = sizeof(peer);
+  ASSERT_EQ(LIBC_NAMESPACE::bind(sfd, sap, slen), 0);
+  ASSERT_EQ(LIBC_NAMESPACE::getsockname(sfd, sap, &slen), 0);
+  const uint16_t PORT = ntoh(sa.sin_port);
+
+  static constexpr uint8_t LO4[4] = {127, 0, 0, 1};
+  static constexpr uint8_t LO6[16] = {0, 0, 0, 0, 0, 0, 0, 0,
+                                      0, 0, 0, 0, 0, 0, 0, 1};
+  static constexpr uint8_t UNROUTABLE6[16] = {0xfe, 0x80};
+  static constexpr uint8_t QN[3] = {1, 'a', 0};
+
+  EXPECT_EQ(get_dns_port(), DNS_DEFAULT_PORT);
+  EXPECT_FALSE(nw::poll_fd_ready(-2, POLLIN, 0));
+  EXPECT_EQ(nw::open_udp(false, LO4, 0, PORT, -1), -1);
+  EXPECT_EQ(nw::open_udp(true, UNROUTABLE6, 0, 53), -1);
+  cfd6 = nw::open_udp(true, LO6, 0, PORT);
+  EXPECT_GE(cfd6, 0);
+  EXPECT_EQ(nw::udp_send(-1, {}), ssize_t(-1));
+
+  cfd = nw::open_udp(false, LO4, 0, PORT);
+  ASSERT_GE(cfd, 0);
+  array<uint8_t, 24> qpkt{};
+  const size_t QL = write_query_packet(0x0022, QN, DNS_TYPE_A, qpkt);
+  ASSERT_EQ(nw::udp_send(cfd, {qpkt.data(), QL}), static_cast<ssize_t>(QL));
+
+  uint8_t srx[32]{};
+  ASSERT_EQ(LIBC_NAMESPACE::recvfrom(sfd, srx, sizeof(srx), 0, psp, &plen),
+            static_cast<ssize_t>(QL));
+
+  // Oversized (>1232B) UDP datagram is detected via MSG_TRUNC.
+  array<uint8_t, 1300> big{};
+  span<uint8_t> urx = span<uint8_t>(big).subspan(0, DNS_UDP_RX_SIZE);
+  ASSERT_EQ(LIBC_NAMESPACE::sendto(sfd, big.data(), big.size(), 0, psp, plen),
+            static_cast<ssize_t>(big.size()));
+  EXPECT_EQ(nw::udp_poll_recv(cfd, urx, 200).kind, nw::UdpRecvKind::HARD_ERROR);
+
+  ASSERT_EQ(LIBC_NAMESPACE::sendto(sfd, qpkt.data(), QL, 0, psp, plen),
+            static_cast<ssize_t>(QL));
+  EXPECT_EQ(nw::udp_poll_recv(cfd, urx, 200).kind, nw::UdpRecvKind::PACKET);
+  EXPECT_EQ(nw::udp_poll_recv(cfd, urx, 1).kind, nw::UdpRecvKind::TIMEOUT);
+
+  // Closed ephemeral UDP port triggers ECONNREFUSED -> TRY_AGAIN cleanly.
+  LIBC_NAMESPACE::close(sfd);
+  sfd = -1;
+  set_dns_port_override(PORT);
+  EXPECT_EQ(LIBC_NAMESPACE::gethostbyname("live.example."), nullptr);
+  EXPECT_EQ(*h_errno_addr(), TRY_AGAIN);
+
+  set_dns_wire_hook(
+      [](const ScopedIpAddr &, bool, span<const uint8_t> q,
+         span<uint8_t>) -> int { return q[13] == '3' ? -3 : -4; });
+  DnsIo io{};
+  array<struct in_addr, DNS_MAX_ADDRS> dummy_addrs{};
+  size_t dummy_count = 0;
+  EXPECT_EQ(run_udp_query(io, {}, QN, dummy_addrs, dummy_count),
+            DnsStatus::SERVER_FAILURE);
+  ScopedIpAddr v6ns{};
+  v6ns.is_ipv6 = true;
+  EXPECT_EQ(run_udp_query(io, v6ns, QN, dummy_addrs, dummy_count),
+            DnsStatus::SERVER_FAILURE);
+  EXPECT_EQ(LIBC_NAMESPACE::gethostbyname("3.x"), nullptr);
+  EXPECT_EQ(LIBC_NAMESPACE::gethostbyname("4.x"), nullptr);
 }
 
 #if defined(LIBC_ADD_NULL_CHECKS)

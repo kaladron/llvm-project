@@ -63,19 +63,28 @@ add_header_library(
     network.h
   DEPENDS
     libc.hdr.net_if_macros
+    libc.hdr.poll_macros
     libc.hdr.stdint_proxy
     libc.hdr.sys_ioctl_macros
     libc.hdr.sys_socket_macros
     libc.hdr.types.size_t
     libc.hdr.types.ssize_t
     libc.hdr.types.struct_ifreq
+    libc.hdr.types.struct_pollfd
+    libc.hdr.types.struct_sockaddr
+    libc.hdr.types.struct_sockaddr_in
+    libc.hdr.types.struct_sockaddr_in6
     libc.src.__support.CPP.span
     libc.src.__support.CPP.string_view
     libc.src.__support.OSUtil.linux.syscall_wrappers.close
+    libc.src.__support.OSUtil.linux.syscall_wrappers.connect
+    libc.src.__support.OSUtil.linux.syscall_wrappers.getrandom
     libc.src.__support.OSUtil.linux.syscall_wrappers.ioctl
+    libc.src.__support.OSUtil.linux.syscall_wrappers.poll
     libc.src.__support.OSUtil.linux.syscall_wrappers.recvfrom
     libc.src.__support.OSUtil.linux.syscall_wrappers.sendto
     libc.src.__support.OSUtil.linux.syscall_wrappers.socket
+    libc.src.__support.common
     libc.src.__support.error_or
     libc.src.__support.macros.attributes
     libc.src.__support.macros.config

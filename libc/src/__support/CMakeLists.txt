@@ -532,6 +532,7 @@ add_subdirectory(net)
 add_subdirectory(threads)
 
 add_subdirectory(File)
+add_subdirectory(time)
 add_subdirectory(netdb)
 add_subdirectory(pwd)
 
@@ -540,8 +541,6 @@ add_subdirectory(printf_core)
 add_subdirectory(HashTable)
 
 add_subdirectory(fixed_point)
-
-add_subdirectory(time)
 
 add_subdirectory(wchar)
 add_subdirectory(wctype)
