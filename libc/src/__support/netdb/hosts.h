@@ -164,15 +164,23 @@ LIBC_INLINE void store_canon_if_unset(cpp::string_view canon,
   out.canon_len = canon.size();
 }
 
+struct ValidHostsLine {
+  cpp::string_view ip_tok;
+  cpp::string_view canon;
+  size_t alias_count = 0;
+  bool valid = false;
+  bool eof = false;
+};
+
 LIBC_INLINE ErrorOr<HostsLineScan>
 scan_hosts_line(LineReader &reader, cpp::string_view query,
-                cpp::StringStream &ip_out, cpp::StringStream &canon_out) {
+                cpp::StringStream &ip_out, cpp::StringStream &canon_out,
+                cpp::StringStream &alias_out) {
   reader.begin_line();
   HostsLineScan scan{};
-  cpp::StringStream discard_out(cpp::span<char>{});
 
   while (true) {
-    cpp::StringStream *dst = &discard_out;
+    cpp::StringStream *dst = &alias_out;
     cpp::string_view target = query;
     bool ci = true;
     if (scan.token_count == 0) {
@@ -195,6 +203,41 @@ scan_hosts_line(LineReader &reader, cpp::string_view query,
   }
 }
 
+LIBC_INLINE ErrorOr<ValidHostsLine>
+read_valid_hosts_line(LineReader &reader, cpp::string_view query,
+                      cpp::StringStream &ip_out, cpp::StringStream &canon_out,
+                      cpp::StringStream &alias_out) {
+  ErrorOr<HostsLineScan> scan_or =
+      scan_hosts_line(reader, query, ip_out, canon_out, alias_out);
+  if (!scan_or.has_value())
+    return Error(scan_or.error());
+
+  ValidHostsLine res{};
+  if (scan_or->token_count == 0) {
+    res.eof = !reader.has_bytes();
+    return res;
+  }
+
+  if (reader.is_invalid())
+    return res;
+  if (scan_or->token_count < 2)
+    return res;
+  if (!scan_or->matched)
+    return res;
+  if (ip_out.overflow())
+    return res;
+  if (canon_out.overflow())
+    return res;
+
+  const cpp::string_view IP_RAW = ip_out.str();
+  const cpp::string_view CANON_RAW = canon_out.str();
+  res.ip_tok = IP_RAW.substr(0, IP_RAW.size() - 1);
+  res.canon = CANON_RAW.substr(0, CANON_RAW.size() - 1);
+  res.alias_count = scan_or->token_count - 2;
+  res.valid = true;
+  return res;
+}
+
 LIBC_INLINE ErrorOr<bool> parse_hosts_forward_line(LineReader &reader,
                                                    cpp::string_view query,
                                                    HostsFamily fam,
@@ -204,38 +247,22 @@ LIBC_INLINE ErrorOr<bool> parse_hosts_forward_line(LineReader &reader,
   char canon_buf[DNS_MAX_TEXT_NAME + 1];
   cpp::StringStream ip_out(ip_buf);
   cpp::StringStream canon_out(canon_buf);
+  cpp::StringStream discard_out(cpp::span<char>{});
 
-  ErrorOr<HostsLineScan> scan_or =
-      scan_hosts_line(reader, query, ip_out, canon_out);
-  if (!scan_or.has_value())
-    return Error(scan_or.error());
-
-  if (scan_or->token_count == 0)
-    return !reader.has_bytes();
-
-  if (reader.is_invalid())
-    return false;
-  if (scan_or->token_count < 2)
-    return false;
-  if (!scan_or->matched)
-    return false;
-  if (ip_out.overflow())
-    return false;
-  if (canon_out.overflow())
-    return false;
-
-  const cpp::string_view IP_RAW = ip_out.str();
-  const cpp::string_view CANON_RAW = canon_out.str();
-  const cpp::string_view IP_TOK = IP_RAW.substr(0, IP_RAW.size() - 1);
-  const cpp::string_view CANON = CANON_RAW.substr(0, CANON_RAW.size() - 1);
+  ErrorOr<ValidHostsLine> line_or =
+      read_valid_hosts_line(reader, query, ip_out, canon_out, discard_out);
+  if (!line_or.has_value())
+    return Error(line_or.error());
+  if (!line_or->valid)
+    return line_or->eof;
 
   ScopedIpAddr ip{};
-  if (!parse_scoped_ip(IP_TOK, ip))
+  if (!parse_scoped_ip(line_or->ip_tok, ip))
     return false;
   if (!family_allows_ip(fam, ip.is_ipv6))
     return false;
 
-  store_canon_if_unset(CANON, out);
+  store_canon_if_unset(line_or->canon, out);
   if (out.num_addrs < HOSTS_MAX_ADDRS)
     out.addrs[out.num_addrs++] = ip;
   return false;

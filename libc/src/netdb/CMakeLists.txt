@@ -57,6 +57,22 @@ add_entrypoint_object(
     libc.src.errno.errno
 )
 
+add_entrypoint_object(
+  gethostbyname_r
+  SRCS
+    gethostbyname_r.cpp
+  HDRS
+    gethostbyname_r.h
+  DEPENDS
+    libc.hdr.types.size_t
+    libc.hdr.types.struct_hostent
+    libc.src.__support.CPP.span
+    libc.src.__support.CPP.string_view
+    libc.src.__support.macros.null_check
+    libc.src.__support.netdb.hostent
+    libc.src.__support.netdb.hosts
+)
+
 add_object_library(
   getnet_internal
   SRCS

@@ -76,6 +76,35 @@ add_header_library(
 )
 
 add_header_library(
+  hostent
+  HDRS
+    hostent.h
+  DEPENDS
+    .hosts
+    .line_reader
+    libc.hdr.errno_macros
+    libc.hdr.netdb_macros
+    libc.hdr.stdint_proxy
+    libc.hdr.sys_socket_macros
+    libc.hdr.types.size_t
+    libc.hdr.types.struct_hostent
+    libc.hdr.types.struct_in_addr
+    libc.src.__support.CPP.array
+    libc.src.__support.CPP.scope
+    libc.src.__support.CPP.span
+    libc.src.__support.CPP.string_view
+    libc.src.__support.CPP.stringstream
+    libc.src.__support.File.file
+    libc.src.__support.File.platform_file
+    libc.src.__support.error_or
+    libc.src.__support.macros.attributes
+    libc.src.__support.macros.config
+    libc.src.__support.memory_size
+    libc.src.__support.net.address
+    libc.src.string.memory_utils.inline_memcpy
+)
+
+add_header_library(
   addrinfo
   HDRS
     addrinfo.h

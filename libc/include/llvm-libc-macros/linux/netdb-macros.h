@@ -35,6 +35,7 @@
 
 #define IPPORT_RESERVED 1024
 
+#define NETDB_INTERNAL -1
 #define HOST_NOT_FOUND 1
 #define TRY_AGAIN 2
 #define NO_RECOVERY 3

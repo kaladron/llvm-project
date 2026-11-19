@@ -283,6 +283,11 @@ add_header(wint_t HDR wint_t.h)
 add_header(wctype_t HDR wctype_t.h)
 add_header(socklen_t HDR socklen_t.h)
 add_header(struct_addrinfo HDR struct_addrinfo.h DEPENDS .socklen_t .struct_sockaddr)
+add_header(
+  struct_hostent
+  HDR
+    struct_hostent.h
+)
 add_header(struct_netent HDR struct_netent.h)
 add_header(struct_protoent HDR struct_protoent.h)
 add_header(struct_servent HDR struct_servent.h)

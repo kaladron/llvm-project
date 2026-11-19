@@ -18,4 +18,8 @@
 #include "linux/netdb-macros.h"
 #endif
 
+#ifndef h_addr
+#define h_addr h_addr_list[0]
+#endif
+
 #endif // LLVM_LIBC_MACROS_NETDB_MACROS_H
