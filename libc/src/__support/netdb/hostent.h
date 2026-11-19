@@ -35,6 +35,7 @@
 #include "src/__support/netdb/dns_client.h"
 #include "src/__support/netdb/hosts.h"
 #include "src/__support/netdb/line_reader.h"
+#include "src/__support/netdb/resolv_conf.h"
 #include "src/string/memory_utils/inline_memcpy.h"
 
 namespace LIBC_NAMESPACE_DECL {
@@ -251,8 +252,15 @@ LIBC_INLINE int lookup_host_byname(cpp::string_view name, struct hostent *ret,
                                  h_errnop);
   }
 
+  ResolvConfig cfg{};
+  ErrorOr<void> rcfg = load_resolv_conf(cfg, get_resolv_conf_path());
+  if (!rcfg.has_value()) {
+    set_herr_out(h_errnop, NO_RECOVERY);
+    return rcfg.error();
+  }
+
   DnsParsedResponse dns{};
-  const DnsStatus ST = query_dns_a(name, dns);
+  const DnsStatus ST = dispatch_dns_name(cfg, name, DNS_TYPE_A, dns);
   if (ST == DnsStatus::OK) {
     cpp::array<char, DNS_MAX_TEXT_NAME + 1> canon_buf{};
     const size_t CANON_LEN =

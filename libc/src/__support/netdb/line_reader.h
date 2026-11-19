@@ -53,6 +53,7 @@ struct TokenMatcher {
 
 class LineReader {
   File *file;
+  char alt_comment = '#';
   bool saw_bytes = false;
   bool at_eol = false;
   bool at_eof = false;
@@ -76,7 +77,7 @@ class LineReader {
         at_eol = true;
         return cpp::optional<char>(cpp::nullopt);
       }
-      if (ch == '#')
+      if (ch == '#' || ch == alt_comment)
         in_comment = true;
       if (in_comment)
         continue;
@@ -87,7 +88,8 @@ class LineReader {
   }
 
 public:
-  explicit LineReader(File *f) : file(f) {}
+  explicit LineReader(File *f, char alt_comment_ch = '#')
+      : file(f), alt_comment(alt_comment_ch) {}
 
   void begin_line() {
     saw_bytes = false;

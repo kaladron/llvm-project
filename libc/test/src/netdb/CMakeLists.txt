@@ -123,6 +123,7 @@ if(TARGET libc.src.netdb.getaddrinfo)
         libc.src.__support.netdb.dns_wire
         libc.src.__support.netdb.h_errno
         libc.src.__support.netdb.hosts
+        libc.src.__support.netdb.resolv_conf
         libc.src.netdb.gethostbyname
         libc.src.netdb.gethostbyname_r
         libc.src.string.memory_utils.inline_memcpy

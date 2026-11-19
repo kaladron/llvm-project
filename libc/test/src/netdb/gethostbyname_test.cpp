@@ -35,6 +35,7 @@
 #include "src/__support/netdb/dns_wire.h"
 #include "src/__support/netdb/h_errno.h"
 #include "src/__support/netdb/hosts.h"
+#include "src/__support/netdb/resolv_conf.h"
 #include "src/netdb/gethostbyname.h"
 #include "src/netdb/gethostbyname_r.h"
 #include "src/string/memory_utils/inline_memcpy.h"
@@ -69,6 +70,7 @@ protected:
     LIBC_NAMESPACE::netdb::set_dns_wire_hook(nullptr);
     LIBC_NAMESPACE::netdb::set_dns_port_override(0);
     LIBC_NAMESPACE::netdb::set_hosts_path(nullptr);
+    LIBC_NAMESPACE::netdb::set_resolv_conf_path(nullptr);
     ErrnoCheckingTest::TearDown();
   }
 };
@@ -286,6 +288,9 @@ TEST_F(LlvmLibcGethostbynameTest, DnsWireCodecPointerCompressionAndHostChecks) {
 
   ScopedTestDbFile hdb(libc_make_test_file_path("host_wire.test"), "",
                        &set_hosts_path);
+  ScopedTestDbFile rdb(libc_make_test_file_path("host_wire_resolv.test"),
+                       "nameserver 127.0.0.1\noptions attempts:1 timeout:1\n",
+                       &set_resolv_conf_path);
 
   struct hostent he{};
   struct hostent *res = nullptr;
@@ -506,6 +511,9 @@ TEST_F(LlvmLibcGethostbynameTest, LoopbackUdpSocketTransportAndTimeouts) {
 
   ScopedTestDbFile hdb(libc_make_test_file_path("host_udp.test"), "",
                        &set_hosts_path);
+  ScopedTestDbFile rdb(libc_make_test_file_path("host_udp_resolv.test"),
+                       "nameserver 127.0.0.1\noptions attempts:1 timeout:1\n",
+                       &set_resolv_conf_path);
 
   int sfd = LIBC_NAMESPACE::socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
   int cfd = -1;
@@ -575,7 +583,7 @@ TEST_F(LlvmLibcGethostbynameTest, LoopbackUdpSocketTransportAndTimeouts) {
   EXPECT_EQ(LIBC_NAMESPACE::gethostbyname("live.example."), nullptr);
   EXPECT_EQ(*h_errno_addr(), TRY_AGAIN);
 
-  set_dns_wire_hook([](const ScopedIpAddr &, bool, span<const uint8_t> q,
+  set_dns_wire_hook([](const ScopedIpAddr &ns, bool, span<const uint8_t> q,
                        span<uint8_t> r) -> int {
     const char C = static_cast<char>(q[13]);
     const int Q = static_cast<int>(q.size());
@@ -583,6 +591,10 @@ TEST_F(LlvmLibcGethostbynameTest, LoopbackUdpSocketTransportAndTimeouts) {
       return '0' - C;
 
     LIBC_NAMESPACE::inline_memcpy(r.data(), q.data(), q.size());
+    if (ns.is_ipv6) {
+      write_u16_be(r, 2, DNS_FLAG_QR | 5);
+      return Q;
+    }
     if (C == 'q' || C == 'n' || C == 'f') {
       write_u16_be(r, 4, 0);
       const uint16_t RC = C == 'q' ? 0 : (C == 'n' ? 3 : 5);
@@ -683,10 +695,8 @@ TEST_F(LlvmLibcGethostbynameTest, LoopbackUdpSocketTransportAndTimeouts) {
 
   DnsIo io{};
   DnsParsedResponse dummy{};
-  EXPECT_EQ(run_udp_query(io, {}, QN, dummy), DnsStatus::RETRY);
-  ScopedIpAddr v6ns{};
-  v6ns.is_ipv6 = true;
-  EXPECT_EQ(run_udp_query(io, v6ns, QN, dummy), DnsStatus::OK);
+  EXPECT_EQ(run_udp_query(io, {}, QN, DNS_TYPE_A, 100, dummy),
+            DnsStatus::RETRY);
 
   struct FailCase {
     const char *host;
@@ -707,6 +717,77 @@ TEST_F(LlvmLibcGethostbynameTest, LoopbackUdpSocketTransportAndTimeouts) {
   ASSERT_NE(cn_he, nullptr);
   EXPECT_STREQ(cn_he->h_name, "app.net");
   EXPECT_EQ(static_cast<uint8_t>(cn_he->h_addr[0]), uint8_t(9));
+
+  // Exercise default nullptr resolv_conf_path and missing ENOENT fallback.
+  set_resolv_conf_path(nullptr);
+  ASSERT_NE(LIBC_NAMESPACE::gethostbyname("c.x"), nullptr);
+  set_resolv_conf_path(libc_make_test_file_path("resolv_missing.test"));
+  ASSERT_NE(LIBC_NAMESPACE::gethostbyname("c.x"), nullptr);
+
+  // Streaming resolv.conf with ';' comments, >600B line, embedded NUL
+  // rejection, multi-nameserver rotation/failover, and clamped options.
+  char rconf[1600];
+  size_t rpos = 0;
+  auto rappend = [&](LIBC_NAMESPACE::cpp::string_view s) {
+    for (char ch : s)
+      rconf[rpos++] = ch;
+  };
+  static constexpr char NUL_NS[] = "nameserver 127.0.0.1\0bad\n";
+  static constexpr char NUL_OPT[] = "options rotate\0bad\n";
+  static constexpr char SEMI_NUL_OK[] =
+      "; semicolon comment with \0 nul\n# hash comment\n\n";
+  rappend({NUL_NS, sizeof(NUL_NS) - 1});
+  rappend({NUL_OPT, sizeof(NUL_OPT) - 1});
+  rappend({SEMI_NUL_OK, sizeof(SEMI_NUL_OK) - 1});
+  rappend("very_long_unknown_directive_keyword_token 1 2 3\n");
+  rappend("sortlist 1.2.3.0\n");
+  rappend("nameserver\n");
+  rappend("nameserver 1.2.3.4 extra\n");
+  rappend("nameserver bad_ip\n");
+  rappend("nameserver ");
+  for (size_t i = 0; i < 66; ++i)
+    rconf[rpos++] = '0';
+  rconf[rpos++] = '\n';
+  rappend("nameserver 0.0.0.0 ; unreachable first server\n");
+  rappend("nameserver fe80::1%lo ; REFUSED second server\n");
+  rappend("nameserver 127.0.0.1\n");
+  rappend("nameserver 8.8.8.8 ; capped beyond RESOLV_MAX_NS\n");
+  rappend("options rotate timeout:0 attempts:99999 timeout: timeout:a "
+          "timeout:5x overlong_option_token_exceeding_thirty_two_bytes ");
+  for (size_t i = 0; i < 40; ++i)
+    rappend("unknown_opt:1 ");
+  rconf[rpos++] = '\n';
+
+  ScopedTestDbFile rdb2(libc_make_test_file_path("host_resolv_wide.test"),
+                        {rconf, rpos}, &set_resolv_conf_path);
+  ASSERT_NE(LIBC_NAMESPACE::gethostbyname("c.x"), nullptr);
+  ASSERT_NE(LIBC_NAMESPACE::gethostbyname("c.x"), nullptr);
+  EXPECT_EQ(LIBC_NAMESPACE::gethostbyname("3.x"), nullptr);
+  // 0.0.0.0 returned RETRY and fe80::1%lo returned FAIL -> worse_miss is RETRY.
+  EXPECT_EQ(*h_errno_addr(), TRY_AGAIN);
+
+  // Open failure (ENOTDIR) and read failure (EISDIR) on resolv.conf.
+  struct hostent he{};
+  struct hostent *res = nullptr;
+  char buf[128];
+  int herr = 0;
+  char notdir_path[280];
+  const size_t BASE_LEN = LIBC_NAMESPACE::internal::strlcpy(
+      notdir_path, rdb2.get_path(), sizeof(notdir_path));
+  LIBC_NAMESPACE::internal::strlcpy(notdir_path + BASE_LEN, "/resolv.conf",
+                                    sizeof(notdir_path) - BASE_LEN);
+  set_resolv_conf_path(notdir_path);
+  EXPECT_EQ(LIBC_NAMESPACE::gethostbyname_r("c.x", &he, buf, sizeof(buf), &res,
+                                            &herr),
+            ENOTDIR);
+  EXPECT_EQ(herr, NO_RECOVERY);
+
+  set_resolv_conf_path(".");
+  herr = 0;
+  EXPECT_EQ(LIBC_NAMESPACE::gethostbyname_r("c.x", &he, buf, sizeof(buf), &res,
+                                            &herr),
+            EISDIR);
+  EXPECT_EQ(herr, NO_RECOVERY);
 }
 
 #if defined(LIBC_ADD_NULL_CHECKS)

@@ -7,7 +7,7 @@
 //===----------------------------------------------------------------------===//
 ///
 /// \file
-/// Ephemeral non-blocking UDP DNS A query client and response driver.
+/// Ephemeral non-blocking UDP DNS query client and resolver dispatcher.
 ///
 //===----------------------------------------------------------------------===//
 
@@ -20,6 +20,7 @@
 #include "hdr/types/ssize_t.h"
 #include "hdr/types/struct_timespec.h"
 #include "src/__support/CPP/array.h"
+#include "src/__support/CPP/atomic.h"
 #include "src/__support/CPP/optional.h"
 #include "src/__support/CPP/scope.h"
 #include "src/__support/CPP/span.h"
@@ -28,6 +29,8 @@
 #include "src/__support/macros/attributes.h"
 #include "src/__support/macros/config.h"
 #include "src/__support/netdb/dns_response.h"
+#include "src/__support/netdb/dns_transport.h"
+#include "src/__support/netdb/resolv_conf.h"
 #include "src/__support/time/clock_gettime.h"
 #include "src/string/memory_utils/inline_memcpy.h"
 
@@ -37,7 +40,8 @@ namespace netdb {
 constexpr uint16_t DNS_DEFAULT_PORT = 53;
 constexpr size_t DNS_UDP_RX_SIZE = 1232;
 constexpr size_t DNS_MAX_QUERY_PKT = DNS_HEADER_LEN + DNS_MAX_WIRE_NAME + 4;
-constexpr uint32_t DNS_DEFAULT_TIMEOUT_MS = 5000;
+
+LIBC_INLINE_VAR cpp::Atomic<size_t> dns_rotate_counter{0};
 
 using DnsWireHook = int (*)(const ScopedIpAddr &ns, bool is_tcp,
                             cpp::span<const uint8_t> query,
@@ -98,7 +102,7 @@ struct DnsIo {
 #ifndef LIBC_COPT_PUBLIC_PACKAGING
     if (hook != nullptr) {
       if (st == -4)
-        tick += 6000;
+        tick += 60000;
       return tick;
     }
 #endif // LIBC_COPT_PUBLIC_PACKAGING
@@ -167,6 +171,7 @@ struct DnsIo {
 
 LIBC_INLINE DnsStatus run_udp_query(DnsIo &io, const ScopedIpAddr &ns,
                                     cpp::span<const uint8_t> qname,
+                                    uint16_t qtype, uint32_t timeout_ms,
                                     DnsParsedResponse &out) {
   const int FD = io.open_udp(ns);
   if (FD < 0)
@@ -175,11 +180,11 @@ LIBC_INLINE DnsStatus run_udp_query(DnsIo &io, const ScopedIpAddr &ns,
   cpp::scope_exit close_guard([&]() { io.close_fd(FD); });
   const uint16_t TXID = io.random_txid();
   cpp::array<uint8_t, DNS_MAX_QUERY_PKT> tx{};
-  const size_t QLEN = write_query_packet(TXID, qname, DNS_TYPE_A, tx);
+  const size_t QLEN = write_query_packet(TXID, qname, qtype, tx);
   if (io.udp_send(FD, {tx.data(), QLEN}) < 0)
     return DnsStatus::RETRY;
 
-  const uint64_t DEADLINE = io.now_ms() + DNS_DEFAULT_TIMEOUT_MS;
+  const uint64_t DEADLINE = io.now_ms() + timeout_ms;
   cpp::array<uint8_t, DNS_UDP_RX_SIZE> rx{};
   for (uint64_t now = io.now_ms(); now < DEADLINE; now = io.now_ms()) {
     const network::UdpRecvResult RECV =
@@ -188,7 +193,7 @@ LIBC_INLINE DnsStatus run_udp_query(DnsIo &io, const ScopedIpAddr &ns,
       return DnsStatus::RETRY;
 
     const DnsStatus ST =
-        parse_dns_response({rx.data(), RECV.len}, TXID, qname, DNS_TYPE_A, out);
+        parse_dns_response({rx.data(), RECV.len}, TXID, qname, qtype, out);
     if (ST != DnsStatus::IGNORE)
       return ST;
   }
@@ -196,18 +201,32 @@ LIBC_INLINE DnsStatus run_udp_query(DnsIo &io, const ScopedIpAddr &ns,
   return DnsStatus::RETRY;
 }
 
-LIBC_INLINE DnsStatus query_dns_a(cpp::string_view name,
-                                  DnsParsedResponse &out) {
+LIBC_INLINE DnsStatus dispatch_ns_query(void *ctx, const ScopedIpAddr &ns,
+                                        cpp::span<const uint8_t> qname,
+                                        uint16_t qtype, uint32_t timeout_ms,
+                                        DnsParsedResponse &out) {
+  return run_udp_query(*static_cast<DnsIo *>(ctx), ns, qname, qtype, timeout_ms,
+                       out);
+}
+
+LIBC_INLINE DnsStatus dispatch_dns_name(const ResolvConfig &cfg,
+                                        cpp::string_view name, uint16_t qtype,
+                                        DnsParsedResponse &out) {
   cpp::array<uint8_t, DNS_MAX_WIRE_NAME> qwire{};
   const cpp::optional<EncodedQname> ENC = encode_qname(name, qwire);
   if (!ENC.has_value())
     return DnsStatus::NXDOMAIN;
 
-  ScopedIpAddr lo{};
-  lo.addr[0] = 127;
-  lo.addr[3] = 1;
+  size_t start = 0;
+  if (cfg.rotate) {
+    const size_t COUNT =
+        dns_rotate_counter.fetch_add(1, cpp::MemoryOrder::RELAXED);
+    start = COUNT % cfg.num_nameservers;
+  }
+
   DnsIo io{};
-  return run_udp_query(io, lo, {qwire.data(), ENC->wire_len}, out);
+  return DnsResolver{&dispatch_ns_query, &io, cfg, start}.query_qname(
+      {qwire.data(), ENC->wire_len}, qtype, out);
 }
 
 } // namespace netdb

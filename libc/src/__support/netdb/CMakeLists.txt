@@ -178,17 +178,58 @@ add_header_library(
 )
 
 add_header_library(
+  resolv_conf
+  HDRS
+    resolv_conf.h
+  DEPENDS
+    .ip_parse
+    .line_reader
+    libc.hdr.errno_macros
+    libc.hdr.stdint_proxy
+    libc.hdr.types.size_t
+    libc.src.__support.CPP.algorithm
+    libc.src.__support.CPP.array
+    libc.src.__support.CPP.optional
+    libc.src.__support.CPP.scope
+    libc.src.__support.CPP.span
+    libc.src.__support.CPP.string_view
+    libc.src.__support.CPP.stringstream
+    libc.src.__support.File.file
+    libc.src.__support.File.platform_file
+    libc.src.__support.error_or
+    libc.src.__support.macros.attributes
+    libc.src.__support.macros.config
+)
+
+add_header_library(
+  dns_transport
+  HDRS
+    dns_transport.h
+  DEPENDS
+    .dns_response
+    .resolv_conf
+    libc.hdr.stdint_proxy
+    libc.hdr.types.size_t
+    libc.src.__support.CPP.span
+    libc.src.__support.macros.attributes
+    libc.src.__support.macros.config
+)
+
+add_header_library(
   dns_client
   HDRS
     dns_client.h
   DEPENDS
     .dns_response
+    .dns_transport
+    .resolv_conf
     libc.hdr.stdint_proxy
     libc.hdr.time_macros
     libc.hdr.types.size_t
     libc.hdr.types.ssize_t
     libc.hdr.types.struct_timespec
     libc.src.__support.CPP.array
+    libc.src.__support.CPP.atomic
     libc.src.__support.CPP.optional
     libc.src.__support.CPP.scope
     libc.src.__support.CPP.span
@@ -208,6 +249,7 @@ add_header_library(
     .dns_client
     .hosts
     .line_reader
+    .resolv_conf
     libc.hdr.errno_macros
     libc.hdr.netdb_macros
     libc.hdr.stdint_proxy
