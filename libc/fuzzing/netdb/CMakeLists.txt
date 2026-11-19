@@ -24,3 +24,67 @@ if(TARGET libc.src.__support.netdb.dns_client)
       libc.src.string.memory_utils.inline_memcpy
   )
 endif()
+
+if(TARGET libc.src.netdb.getnameinfo AND TARGET libc.src.netdb.gethostbyaddr_r)
+  add_libc_fuzzer(
+    netdb_files_fuzz
+    SRCS
+      netdb_files_fuzz.cpp
+    DEPENDS
+      libc.hdr.netdb_macros
+      libc.hdr.stdint_proxy
+      libc.hdr.sys_socket_macros
+      libc.hdr.types.size_t
+      libc.hdr.types.socklen_t
+      libc.hdr.types.struct_addrinfo
+      libc.hdr.types.struct_hostent
+      libc.hdr.types.struct_netent
+      libc.hdr.types.struct_protoent
+      libc.hdr.types.struct_servent
+      libc.hdr.types.struct_sockaddr
+      libc.hdr.types.struct_sockaddr_in
+      libc.hdr.types.struct_sockaddr_in6
+      libc.src.__support.CPP.array
+      libc.src.__support.CPP.scope
+      libc.src.__support.CPP.span
+      libc.src.__support.CPP.string_view
+      libc.src.__support.CPP.stringstream
+      libc.src.__support.File.file
+      libc.src.__support.File.platform_file
+      libc.src.__support.OSUtil.network
+      libc.src.__support.macros.attributes
+      libc.src.__support.netdb.dns_client
+      libc.src.__support.netdb.hosts
+      libc.src.__support.netdb.line_reader
+      libc.src.__support.netdb.resolv_conf
+      libc.src.__support.netdb.services
+      libc.src.netdb.__h_errno_location
+      libc.src.netdb.freeaddrinfo
+      libc.src.netdb.gai_strerror
+      libc.src.netdb.getaddrinfo
+      libc.src.netdb.gethostbyaddr
+      libc.src.netdb.gethostbyaddr_r
+      libc.src.netdb.gethostbyname
+      libc.src.netdb.gethostbyname2
+      libc.src.netdb.gethostbyname2_r
+      libc.src.netdb.gethostbyname_r
+      libc.src.netdb.getnameinfo
+      libc.src.netdb.getnet_internal
+      libc.src.netdb.getnetbyaddr
+      libc.src.netdb.getnetbyaddr_r
+      libc.src.netdb.getnetbyname
+      libc.src.netdb.getnetbyname_r
+      libc.src.netdb.getproto_internal
+      libc.src.netdb.getprotobyname
+      libc.src.netdb.getprotobyname_r
+      libc.src.netdb.getprotobynumber
+      libc.src.netdb.getprotobynumber_r
+      libc.src.netdb.getservbyname
+      libc.src.netdb.getservbyname_r
+      libc.src.netdb.getservbyport
+      libc.src.netdb.getservbyport_r
+      libc.src.stdio.remove
+      libc.src.string.memory_utils.inline_memcpy
+      libc.src.string.memory_utils.inline_memset
+  )
+endif()
