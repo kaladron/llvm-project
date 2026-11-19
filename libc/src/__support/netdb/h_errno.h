@@ -14,12 +14,15 @@
 #ifndef LLVM_LIBC_SRC___SUPPORT_NETDB_H_ERRNO_H
 #define LLVM_LIBC_SRC___SUPPORT_NETDB_H_ERRNO_H
 
+#include "src/__support/macros/attributes.h"
 #include "src/__support/macros/config.h"
 
 namespace LIBC_NAMESPACE_DECL {
 namespace netdb {
 
 int *h_errno_addr();
+
+LIBC_INLINE void set_h_errno(int val) { *h_errno_addr() = val; }
 
 } // namespace netdb
 } // namespace LIBC_NAMESPACE_DECL

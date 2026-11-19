@@ -7,7 +7,7 @@
 //===----------------------------------------------------------------------===//
 ///
 /// \file
-/// Unit tests for gethostbyname_r.
+/// Unit tests for gethostbyname_r and gethostbyname.
 ///
 //===----------------------------------------------------------------------===//
 
@@ -19,7 +19,9 @@
 #include "hdr/types/size_t.h"
 #include "hdr/types/struct_hostent.h"
 #include "src/__support/CPP/string_view.h"
+#include "src/__support/netdb/h_errno.h"
 #include "src/__support/netdb/hosts.h"
+#include "src/netdb/gethostbyname.h"
 #include "src/netdb/gethostbyname_r.h"
 #include "src/string/string_utils.h"
 #include "test/UnitTest/ErrnoCheckingTest.h"
@@ -192,6 +194,20 @@ TEST_F(LlvmLibcGethostbynameTest, LiteralHostsTwentyAliasesAndBounds) {
             0);
   EXPECT_STREQ(he.h_name, "api.localhost");
 
+  struct hostent *tls = LIBC_NAMESPACE::gethostbyname("host_alias_19");
+  ASSERT_NE(tls, nullptr);
+  EXPECT_STREQ(tls->h_name, "wide20.local");
+  EXPECT_STREQ(tls->h_aliases[19], "host_alias_19");
+  EXPECT_EQ(tls->h_aliases[20], nullptr);
+
+  tls = LIBC_NAMESPACE::gethostbyname("api.localhost.");
+  ASSERT_NE(tls, nullptr);
+  EXPECT_STREQ(tls->h_name, "api.localhost");
+  EXPECT_EQ(static_cast<uint8_t>(tls->h_addr[0]), uint8_t(127));
+
+  EXPECT_EQ(LIBC_NAMESPACE::gethostbyname("192.168.1.999"), nullptr);
+  EXPECT_EQ(*LIBC_NAMESPACE::netdb::h_errno_addr(), HOST_NOT_FOUND);
+
   static constexpr const char *MISS_CASES[] = {
       "bad.invalid",
       "v6.local",
@@ -260,5 +276,6 @@ TEST_F(LlvmLibcGethostbynameTest, NullptrCrash) {
                                         nullptr);
       },
       WITH_SIGNAL(-1));
+  ASSERT_DEATH([] { LIBC_NAMESPACE::gethostbyname(nullptr); }, WITH_SIGNAL(-1));
 }
 #endif // LIBC_ADD_NULL_CHECKS

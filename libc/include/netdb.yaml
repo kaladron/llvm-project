@@ -96,6 +96,12 @@ functions:
       - type: const char *__restrict
       - type: const struct addrinfo *__restrict
       - type: struct addrinfo **__restrict
+  - name: gethostbyname
+    standards:
+      - gnu
+    return_type: struct hostent *
+    arguments:
+      - type: const char *
   - name: gethostbyname_r
     standards:
       - gnu

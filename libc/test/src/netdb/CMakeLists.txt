@@ -103,7 +103,9 @@ add_libc_test(
     libc.hdr.types.size_t
     libc.hdr.types.struct_hostent
     libc.src.__support.CPP.string_view
+    libc.src.__support.netdb.h_errno
     libc.src.__support.netdb.hosts
+    libc.src.netdb.gethostbyname
     libc.src.netdb.gethostbyname_r
     libc.src.string.string_utils
     libc.test.UnitTest.ErrnoCheckingTest
