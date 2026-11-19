@@ -22,6 +22,10 @@
 
 #include <netdb.h>
 
+#ifndef NI_NUMERICSCOPE
+#define NI_NUMERICSCOPE 0x0100
+#endif
+
 #endif // LIBC_FULL_BUILD
 
 #endif // LLVM_LIBC_HDR_NETDB_MACROS_H

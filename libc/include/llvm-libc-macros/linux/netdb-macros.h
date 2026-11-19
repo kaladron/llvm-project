@@ -27,6 +27,7 @@
 #define NI_NOFQDN 0x0004
 #define NI_NAMEREQD 0x0008
 #define NI_DGRAM 0x0010
+#define NI_NUMERICSCOPE 0x0100
 #define NI_MAXHOST 1025
 #define NI_MAXSERV 32
 

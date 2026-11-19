@@ -107,6 +107,30 @@ add_header_library(
     libc.src.string.memory_utils.inline_memcpy
 )
 
+add_header_library(
+  hosts_reverse
+  HDRS
+    hosts_reverse.h
+  DEPENDS
+    .hosts
+    .ip_parse
+    .line_reader
+    libc.hdr.errno_macros
+    libc.hdr.stdint_proxy
+    libc.hdr.types.size_t
+    libc.src.__support.CPP.array
+    libc.src.__support.CPP.scope
+    libc.src.__support.CPP.span
+    libc.src.__support.CPP.string_view
+    libc.src.__support.CPP.stringstream
+    libc.src.__support.File.file
+    libc.src.__support.File.platform_file
+    libc.src.__support.error_or
+    libc.src.__support.macros.attributes
+    libc.src.__support.macros.config
+    libc.src.string.memory_utils.inline_memcpy
+)
+
 if(NOT TARGET libc.src.__support.time.clock_gettime)
   return()
 endif()
@@ -292,20 +316,28 @@ add_header_library(
   HDRS
     nameinfo.h
   DEPENDS
+    .hosts
+    .hosts_reverse
+    .ip_parse
     .services
+    libc.hdr.net_if_macros
     libc.hdr.netdb_macros
     libc.hdr.stdint_proxy
     libc.hdr.sys_socket_macros
     libc.hdr.types.in_port_t
     libc.hdr.types.size_t
     libc.hdr.types.socklen_t
+    libc.hdr.types.struct_in6_addr
     libc.hdr.types.struct_in_addr
     libc.hdr.types.struct_servent
     libc.hdr.types.struct_sockaddr
     libc.hdr.types.struct_sockaddr_in
+    libc.hdr.types.struct_sockaddr_in6
     libc.src.__support.CPP.span
     libc.src.__support.CPP.string_view
     libc.src.__support.CPP.stringstream
+    libc.src.__support.OSUtil.network
+    libc.src.__support.error_or
     libc.src.__support.integer_to_string
     libc.src.__support.macros.attributes
     libc.src.__support.macros.config

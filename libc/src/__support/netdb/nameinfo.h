@@ -7,31 +7,39 @@
 //===----------------------------------------------------------------------===//
 ///
 /// \file
-/// Numeric IPv4 and service-table socket address translator for getnameinfo.
+/// Socket address to host and service translator for getnameinfo.
 ///
 //===----------------------------------------------------------------------===//
 
 #ifndef LLVM_LIBC_SRC___SUPPORT_NETDB_NAMEINFO_H
 #define LLVM_LIBC_SRC___SUPPORT_NETDB_NAMEINFO_H
 
+#include "hdr/net_if_macros.h"
 #include "hdr/netdb_macros.h"
 #include "hdr/stdint_proxy.h"
 #include "hdr/sys_socket_macros.h"
 #include "hdr/types/in_port_t.h"
 #include "hdr/types/size_t.h"
 #include "hdr/types/socklen_t.h"
+#include "hdr/types/struct_in6_addr.h"
 #include "hdr/types/struct_in_addr.h"
 #include "hdr/types/struct_servent.h"
 #include "hdr/types/struct_sockaddr.h"
 #include "hdr/types/struct_sockaddr_in.h"
+#include "hdr/types/struct_sockaddr_in6.h"
 #include "src/__support/CPP/span.h"
 #include "src/__support/CPP/string_view.h"
 #include "src/__support/CPP/stringstream.h"
+#include "src/__support/OSUtil/network.h"
+#include "src/__support/error_or.h"
 #include "src/__support/integer_to_string.h"
 #include "src/__support/macros/attributes.h"
 #include "src/__support/macros/config.h"
 #include "src/__support/net/address.h"
 #include "src/__support/net/byte_order.h"
+#include "src/__support/netdb/hosts.h"
+#include "src/__support/netdb/hosts_reverse.h"
+#include "src/__support/netdb/ip_parse.h"
 #include "src/__support/netdb/services.h"
 #include "src/string/memory_utils/inline_memcpy.h"
 
@@ -42,6 +50,102 @@ LIBC_INLINE int copy_ni_str(cpp::span<char> out, cpp::string_view sv) {
   cpp::StringStream stream(out);
   stream << sv << cpp::StringStream::ENDS;
   return stream.overflow() ? EAI_OVERFLOW : 0;
+}
+
+LIBC_INLINE bool extract_ni_target(const struct sockaddr *sa, socklen_t salen,
+                                   ScopedIpAddr &ip, in_port_t &net_port) {
+  if (salen < sizeof(struct sockaddr_in))
+    return false;
+
+  if (sa->sa_family == AF_INET) {
+    struct sockaddr_in s4{};
+    inline_memcpy(&s4, sa, sizeof(s4));
+    inline_memcpy(ip.addr.data(), &s4.sin_addr, sizeof(s4.sin_addr));
+    net_port = s4.sin_port;
+    return true;
+  }
+
+  if (sa->sa_family != AF_INET6)
+    return false;
+  if (salen < sizeof(struct sockaddr_in6))
+    return false;
+
+  struct sockaddr_in6 s6{};
+  inline_memcpy(&s6, sa, sizeof(s6));
+  net_port = s6.sin6_port;
+
+  const cpp::span<const uint8_t> BYTES(s6.sin6_addr.s6_addr, 16);
+  if (is_v4_embedded_in6(BYTES)) {
+    inline_memcpy(ip.addr.data(), BYTES.subspan(12, 4).data(), 4);
+    return true;
+  }
+
+  inline_memcpy(ip.addr.data(), BYTES.data(), 16);
+  ip.is_ipv6 = true;
+  ip.scope_id = s6.sin6_scope_id;
+  return true;
+}
+
+LIBC_INLINE int format_numeric_node(const ScopedIpAddr &ip, int flags,
+                                    cpp::span<char> out) {
+  if (!ip.is_ipv6) {
+    struct in_addr v4{};
+    inline_memcpy(&v4, ip.addr.data(), sizeof(v4));
+    return net::ipv4_to_str(v4, out) ? 0 : EAI_OVERFLOW;
+  }
+
+  struct in6_addr v6{};
+  inline_memcpy(&v6, ip.addr.data(), sizeof(v6));
+  if (ip.scope_id == 0)
+    return net::ipv6_to_str(v6, out) ? 0 : EAI_OVERFLOW;
+
+  constexpr size_t IPV6_TEXT_MAX = 46;
+  constexpr size_t SCOPED_TEXT_MAX = 64;
+  char v6_buf[IPV6_TEXT_MAX]{};
+  (void)net::ipv6_to_str(v6, v6_buf);
+
+  char scoped_buf[SCOPED_TEXT_MAX];
+  cpp::StringStream stream(scoped_buf);
+  stream << cpp::string_view(v6_buf) << '%';
+
+  char ifname[IF_NAMESIZE]{};
+  if ((flags & NI_NUMERICSCOPE) == 0 &&
+      network::if_indextoname(ip.scope_id, ifname)) {
+    stream << cpp::string_view(ifname);
+  } else {
+    stream << ip.scope_id;
+  }
+
+  return copy_ni_str(out, stream.str());
+}
+
+LIBC_INLINE bool should_lookup_ni_host(const ScopedIpAddr &ip, int flags) {
+  if ((flags & NI_NUMERICHOST) != 0)
+    return false;
+  if (ip.is_ipv6 && all_zero_bytes(ip.addr))
+    return false;
+  return true;
+}
+
+LIBC_INLINE int resolve_ni_node(const ScopedIpAddr &ip, int flags,
+                                cpp::span<char> out, int &sys_err) {
+  if (should_lookup_ni_host(ip, flags)) {
+    HostsReverseResult hr{};
+    const size_t ADDR_LEN = ip.is_ipv6 ? 16 : 4;
+    ErrorOr<bool> hit =
+        lookup_hosts_reverse(ip.is_ipv6, {ip.addr.data(), ADDR_LEN},
+                             ip.scope_id, hr, get_hosts_path());
+    if (!hit.has_value()) {
+      sys_err = hit.error();
+      return EAI_SYSTEM;
+    }
+    if (*hit)
+      return copy_ni_str(out, {hr.canon_name.data(), hr.canon_len});
+  }
+
+  if ((flags & NI_NAMEREQD) != 0)
+    return EAI_NONAME;
+  return format_numeric_node(ip, flags, out);
 }
 
 LIBC_INLINE int resolve_ni_serv(in_port_t net_port, int flags,
@@ -70,8 +174,8 @@ LIBC_INLINE int resolve_ni_serv(in_port_t net_port, int flags,
 LIBC_INLINE int lookup_nameinfo(const struct sockaddr *sa, socklen_t salen,
                                 char *node, socklen_t nodelen, char *service,
                                 socklen_t servicelen, int flags, int &sys_err) {
-  constexpr int VALID_FLAGS =
-      NI_NUMERICHOST | NI_NUMERICSERV | NI_NOFQDN | NI_NAMEREQD | NI_DGRAM;
+  constexpr int VALID_FLAGS = NI_NUMERICHOST | NI_NUMERICSERV | NI_NOFQDN |
+                              NI_NAMEREQD | NI_DGRAM | NI_NUMERICSCOPE;
   constexpr int CONFLICT_FLAGS = NI_NUMERICHOST | NI_NAMEREQD;
   if ((flags & ~VALID_FLAGS) != 0 || (flags & CONFLICT_FLAGS) == CONFLICT_FLAGS)
     return EAI_BADFLAGS;
@@ -81,21 +185,19 @@ LIBC_INLINE int lookup_nameinfo(const struct sockaddr *sa, socklen_t salen,
   if (!WANT_NODE && !WANT_SERV)
     return EAI_NONAME;
 
-  if (salen < sizeof(struct sockaddr_in) || sa->sa_family != AF_INET)
+  ScopedIpAddr ip{};
+  in_port_t net_port = 0;
+  if (!extract_ni_target(sa, salen, ip, net_port))
     return EAI_FAMILY;
 
-  struct sockaddr_in s4{};
-  inline_memcpy(&s4, sa, sizeof(s4));
-
   if (WANT_NODE) {
-    if ((flags & NI_NAMEREQD) != 0)
-      return EAI_NONAME;
-    if (!net::ipv4_to_str(s4.sin_addr, {node, nodelen}))
-      return EAI_OVERFLOW;
+    const int NODE_RC = resolve_ni_node(ip, flags, {node, nodelen}, sys_err);
+    if (NODE_RC != 0)
+      return NODE_RC;
   }
 
   if (WANT_SERV)
-    return resolve_ni_serv(s4.sin_port, flags, {service, servicelen}, sys_err);
+    return resolve_ni_serv(net_port, flags, {service, servicelen}, sys_err);
 
   return 0;
 }

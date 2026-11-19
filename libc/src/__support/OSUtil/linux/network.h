@@ -214,6 +214,25 @@ LIBC_INLINE uint32_t if_nametoindex(cpp::string_view name,
   return static_cast<uint32_t>(ifr.ifr_ifindex);
 }
 
+LIBC_INLINE bool if_indextoname(uint32_t ifindex, cpp::span<char> out,
+                                int sock_domain = AF_UNIX) {
+  ErrorOr<int> fd =
+      linux_syscalls::socket(sock_domain, SOCK_DGRAM | SOCK_CLOEXEC, 0);
+  if (!fd.has_value())
+    return false;
+
+  struct ifreq ifr{};
+  ifr.ifr_ifindex = static_cast<int>(ifindex);
+  ErrorOr<int> rc = linux_syscalls::ioctl(*fd, SIOCGIFNAME, &ifr);
+  close_fd(*fd);
+  if (!rc.has_value())
+    return false;
+
+  inline_memcpy(out.data(), ifr.ifr_name, IF_NAMESIZE);
+  out[IF_NAMESIZE - 1] = '\0';
+  return true;
+}
+
 LIBC_INLINE constexpr size_t align_nl(size_t len, size_t align) {
   return (len + align - 1) & ~(align - 1);
 }

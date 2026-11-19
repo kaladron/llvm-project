@@ -29,6 +29,8 @@ macros:
     macro_header: netdb-macros.h
   - macro_name: NI_DGRAM
     macro_header: netdb-macros.h
+  - macro_name: NI_NUMERICSCOPE
+    macro_header: netdb-macros.h
   - macro_name: NI_MAXHOST
     standards:
       - gnu

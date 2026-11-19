@@ -202,7 +202,11 @@ if(TARGET libc.src.netdb.getaddrinfo)
         libc.hdr.types.socklen_t
         libc.hdr.types.struct_sockaddr
         libc.hdr.types.struct_sockaddr_in
+        libc.hdr.types.struct_sockaddr_in6
+        libc.src.__support.CPP.string_view
+        libc.src.__support.OSUtil.network
         libc.src.__support.net.byte_order
+        libc.src.__support.netdb.hosts
         libc.src.__support.netdb.services
         libc.src.netdb.getnameinfo
         libc.src.string.string_utils
