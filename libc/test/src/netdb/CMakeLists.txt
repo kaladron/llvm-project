@@ -105,11 +105,16 @@ if(TARGET libc.src.netdb.getaddrinfo)
       libc.hdr.sys_socket_macros
       libc.hdr.types.size_t
       libc.hdr.types.struct_hostent
+      libc.src.__support.CPP.array
+      libc.src.__support.CPP.span
       libc.src.__support.CPP.string_view
+      libc.src.__support.netdb.dns_client
+      libc.src.__support.netdb.dns_wire
       libc.src.__support.netdb.h_errno
       libc.src.__support.netdb.hosts
       libc.src.netdb.gethostbyname
       libc.src.netdb.gethostbyname_r
+      libc.src.string.memory_utils.inline_memcpy
       libc.src.string.string_utils
       libc.test.UnitTest.ErrnoCheckingTest
   )

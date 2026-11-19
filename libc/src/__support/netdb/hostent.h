@@ -32,6 +32,7 @@
 #include "src/__support/macros/config.h"
 #include "src/__support/memory_size.h"
 #include "src/__support/net/address.h"
+#include "src/__support/netdb/dns_client.h"
 #include "src/__support/netdb/hosts.h"
 #include "src/__support/netdb/line_reader.h"
 #include "src/string/memory_utils/inline_memcpy.h"
@@ -238,6 +239,17 @@ LIBC_INLINE int lookup_host_byname(cpp::string_view name, struct hostent *ret,
     inline_memcpy(&lo, LOOPBACK, sizeof(lo));
     return pack_named_v4_hostent(TRIMMED, {&lo, 1}, buffer, ret, result,
                                  h_errnop);
+  }
+
+  cpp::array<struct in_addr, DNS_MAX_ADDRS> dns_addrs{};
+  size_t num_dns_addrs = 0;
+  const DnsStatus ST = query_dns_a(name, dns_addrs, num_dns_addrs);
+  if (ST == DnsStatus::OK)
+    return pack_named_v4_hostent(TRIMMED, {dns_addrs.data(), num_dns_addrs},
+                                 buffer, ret, result, h_errnop);
+  if (ST == DnsStatus::SERVER_FAILURE) {
+    set_herr_out(h_errnop, TRY_AGAIN);
+    return 0;
   }
 
   set_herr_out(h_errnop, HOST_NOT_FOUND);

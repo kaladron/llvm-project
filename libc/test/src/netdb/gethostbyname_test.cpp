@@ -18,11 +18,16 @@
 #include "hdr/sys_socket_macros.h"
 #include "hdr/types/size_t.h"
 #include "hdr/types/struct_hostent.h"
+#include "src/__support/CPP/array.h"
+#include "src/__support/CPP/span.h"
 #include "src/__support/CPP/string_view.h"
+#include "src/__support/netdb/dns_client.h"
+#include "src/__support/netdb/dns_wire.h"
 #include "src/__support/netdb/h_errno.h"
 #include "src/__support/netdb/hosts.h"
 #include "src/netdb/gethostbyname.h"
 #include "src/netdb/gethostbyname_r.h"
+#include "src/string/memory_utils/inline_memcpy.h"
 #include "src/string/string_utils.h"
 #include "test/UnitTest/ErrnoCheckingTest.h"
 #include "test/UnitTest/Test.h"
@@ -45,13 +50,24 @@ class LlvmLibcGethostbynameTest
     : public LIBC_NAMESPACE::testing::ErrnoCheckingTest {
 protected:
   void TearDown() override {
+    LIBC_NAMESPACE::netdb::set_dns_wire_hook(nullptr);
     LIBC_NAMESPACE::netdb::set_hosts_path(nullptr);
     ErrnoCheckingTest::TearDown();
   }
 };
 
 TEST_F(LlvmLibcGethostbynameTest, LiteralHostsTwentyAliasesAndBounds) {
+  using LIBC_NAMESPACE::cpp::span;
   using LIBC_NAMESPACE::cpp::string_view;
+
+  LIBC_NAMESPACE::netdb::set_dns_wire_hook(
+      [](const LIBC_NAMESPACE::netdb::ScopedIpAddr &, bool,
+         span<const uint8_t> q, span<uint8_t> r) -> int {
+        using namespace LIBC_NAMESPACE::netdb;
+        LIBC_NAMESPACE::inline_memcpy(r.data(), q.data(), q.size());
+        write_u16_be(r, 2, DNS_FLAG_QR | 3);
+        return static_cast<int>(q.size());
+      });
 
   struct hostent he{};
   struct hostent *res = &he;
@@ -244,6 +260,230 @@ TEST_F(LlvmLibcGethostbynameTest, LiteralHostsTwentyAliasesAndBounds) {
                                             &herr),
             EISDIR);
   EXPECT_EQ(herr, NO_RECOVERY);
+}
+
+TEST_F(LlvmLibcGethostbynameTest, DnsWireCodecPointerCompressionAndHostChecks) {
+  using namespace LIBC_NAMESPACE::netdb;
+  using LIBC_NAMESPACE::cpp::array;
+  using LIBC_NAMESPACE::cpp::span;
+
+  ScopedTestDbFile hdb(libc_make_test_file_path("host_wire.test"), "",
+                       &set_hosts_path);
+
+  struct hostent he{};
+  struct hostent *res = nullptr;
+  alignas(char *) char buf[512];
+  int herr = 0;
+
+  // Null hook reports TRY_AGAIN; RFC 952/1123 invalid host labels report
+  // HOST_NOT_FOUND without invoking the transport.
+  EXPECT_EQ(LIBC_NAMESPACE::gethostbyname_r("unhooked.example", &he, buf,
+                                            sizeof(buf), &res, &herr),
+            0);
+  EXPECT_EQ(res, nullptr);
+  EXPECT_EQ(herr, TRY_AGAIN);
+
+  static constexpr const char *BAD_HOSTS[] = {
+      "::1",
+      "a..b",
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.com",
+      "-lead.example",
+      "trail-.example",
+      "under_score.example",
+  };
+  for (const char *bad : BAD_HOSTS) {
+    herr = 0;
+    EXPECT_EQ(LIBC_NAMESPACE::gethostbyname_r(bad, &he, buf, sizeof(buf), &res,
+                                              &herr),
+              0);
+    EXPECT_EQ(res, nullptr);
+    EXPECT_EQ(herr, HOST_NOT_FOUND);
+  }
+
+  array<uint8_t, 4> tiny_out{};
+  EXPECT_FALSE(encode_qname("example.com", tiny_out).has_value());
+  array<uint8_t, DNS_MAX_WIRE_NAME> qout{};
+  EXPECT_FALSE(encode_qname("a..b", qout).has_value());
+  EXPECT_FALSE(
+      encode_qname(
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.x",
+          qout)
+          .has_value());
+
+  static int wire_case = 0;
+  set_dns_wire_hook([](const ScopedIpAddr &, bool, span<const uint8_t> q,
+                       span<uint8_t> r) -> int {
+    const int Q = static_cast<int>(q.size());
+    LIBC_NAMESPACE::inline_memcpy(r.data(), q.data(), q.size());
+    write_u16_be(r, 2, DNS_FLAG_QR);
+    write_u16_be(r, 6, 1);
+
+    auto append_tail = [&](span<const uint8_t> tail) {
+      LIBC_NAMESPACE::inline_memcpy(r.data() + Q, tail.data(), tail.size());
+      return Q + static_cast<int>(tail.size());
+    };
+
+    switch (wire_case) {
+    case 0:
+      return -1;
+    case 1:
+      return 8;
+    case 2:
+      r[0] ^= 0xff;
+      return Q;
+    case 3:
+      write_u16_be(r, 2, 0);
+      return Q;
+    case 4:
+      write_u16_be(r, 4, 2);
+      return Q;
+    case 5:
+      return 12;
+    case 6:
+      return Q - 2;
+    case 7:
+      write_u16_be(r, static_cast<size_t>(Q - 4), 28);
+      return Q;
+    case 8:
+      write_u16_be(r, static_cast<size_t>(Q - 2), 3);
+      return Q;
+    case 9:
+      r[13] ^= 1;
+      return Q;
+    case 10: {
+      const uint8_t T[1] = {0xc0};
+      return append_tail(T);
+    }
+    case 11: {
+      const uint8_t T[2] = {0xc0, 4};
+      return append_tail(T);
+    }
+    case 12: {
+      const uint8_t T[2] = {0xc0, static_cast<uint8_t>(Q)};
+      return append_tail(T);
+    }
+    case 13: {
+      // >16 pointer hops rejected.
+      write_u16_be(r, 6, 2);
+      const uint8_t DH[12] = {0xc0, 12, 0, 1, 0, 3, 0, 0, 0, 5, 0, 32};
+      LIBC_NAMESPACE::inline_memcpy(r.data() + Q, DH, 12);
+      for (int i = 0; i < 16; ++i) {
+        const size_t TARGET =
+            i == 0 ? 12 : static_cast<size_t>(Q + 12 + 2 * (i - 1));
+        write_u16_be(r, static_cast<size_t>(Q + 12 + 2 * i),
+                     static_cast<uint16_t>(0xc000u | TARGET));
+      }
+      write_u16_be(r, static_cast<size_t>(Q + 44),
+                   static_cast<uint16_t>(0xc000u | (Q + 42)));
+      return Q + 46;
+    }
+    case 14: {
+      const uint8_t T[1] = {0x40};
+      return append_tail(T);
+    }
+    case 15: {
+      const uint8_t T[2] = {10, 'a'};
+      return append_tail(T);
+    }
+    case 16: {
+      // Decompressed wire name >255 bytes rejected.
+      write_u16_be(r, 6, 2);
+      const uint8_t DH[12] = {0xc0, 12, 0, 1, 0, 3, 0, 0, 0, 5, 1, 58};
+      LIBC_NAMESPACE::inline_memcpy(r.data() + Q, DH, 12);
+      size_t off = static_cast<size_t>(Q + 12);
+      size_t prev = 0;
+      for (int k = 0; k < 5; ++k) {
+        const size_t START = off;
+        r[off++] = 60;
+        for (int j = 0; j < 60; ++j)
+          r[off++] = 'a';
+        if (k == 0) {
+          r[off++] = 0;
+        } else {
+          write_u16_be(r, off, static_cast<uint16_t>(0xc000u | prev));
+          off += 2;
+        }
+        prev = START;
+      }
+      write_u16_be(r, off, static_cast<uint16_t>(0xc000u | prev));
+      return static_cast<int>(off + 2);
+    }
+    case 17:
+    case 18:
+    case 19: {
+      const uint8_t CH = wire_case == 17 ? ' ' : (wire_case == 18 ? 0x7f : '.');
+      const uint8_t T[3] = {1, CH, 0};
+      return append_tail(T);
+    }
+    case 20: {
+      const uint8_t T[5] = {0xc0, 12, 0, 1, 0};
+      return append_tail(T);
+    }
+    case 21: {
+      const uint8_t T[12] = {0xc0, 12, 0, 1, 0, 1, 0, 0, 0, 5, 0, 20};
+      return append_tail(T);
+    }
+    case 22: {
+      const uint8_t T[15] = {0xc0, 12, 0, 1, 0, 1, 0, 0, 0, 5, 0, 4, 1, 2, 3};
+      return append_tail(T);
+    }
+    case 23: {
+      // Valid RR header with RDLEN != 4 on IN A rejected.
+      const uint8_t T[15] = {0xc0, 12, 0, 1, 0, 1, 0, 0, 0, 5, 0, 3, 1, 2, 3};
+      return append_tail(T);
+    }
+    case 24: {
+      // Valid response with 0 matching A records (non-IN class + non-A type +
+      // different owner) -> NXDOMAIN/NODATA miss.
+      write_u16_be(r, 6, 3);
+      const uint8_t T[] = {
+          0xc0, 12, 0, 1,  0, 3, 0, 0, 0, 5, 0, 4, 1,   2, 3,   4,
+          0xc0, 12, 0, 16, 0, 1, 0, 0, 0, 5, 0, 1, 'x', 1, 'z', 0,
+          0,    1,  0, 1,  0, 0, 0, 5, 0, 4, 1, 2, 3,   4,
+      };
+      return append_tail(T);
+    }
+    default: {
+      // Valid compressed-owner IN A response (>16 records capped at 16).
+      write_u16_be(r, 6, 18);
+      size_t off = static_cast<size_t>(Q);
+      for (int i = 0; i < 18; ++i) {
+        const uint8_t RR[16] = {
+            0xc0, 12, 0, 1, 0,   1,  0,   0,
+            0,    5,  0, 4, 198, 51, 100, static_cast<uint8_t>(9 + i),
+        };
+        LIBC_NAMESPACE::inline_memcpy(r.data() + off, RR, sizeof(RR));
+        off += sizeof(RR);
+      }
+      return static_cast<int>(off);
+    }
+    }
+  });
+
+  for (wire_case = 0; wire_case <= 23; ++wire_case) {
+    herr = 0;
+    EXPECT_EQ(LIBC_NAMESPACE::gethostbyname_r("a.example.", &he, buf,
+                                              sizeof(buf), &res, &herr),
+              0);
+    EXPECT_EQ(res, nullptr);
+    EXPECT_EQ(herr, TRY_AGAIN);
+  }
+
+  wire_case = 24;
+  herr = 0;
+  EXPECT_EQ(LIBC_NAMESPACE::gethostbyname_r("a.example.", &he, buf, sizeof(buf),
+                                            &res, &herr),
+            0);
+  EXPECT_EQ(res, nullptr);
+  EXPECT_EQ(herr, HOST_NOT_FOUND);
+
+  wire_case = 25;
+  struct hostent *dns_he = LIBC_NAMESPACE::gethostbyname("Dns-Host.Example.");
+  ASSERT_NE(dns_he, nullptr);
+  EXPECT_STREQ(dns_he->h_name, "Dns-Host.Example");
+  EXPECT_EQ(static_cast<uint8_t>(dns_he->h_addr[0]), uint8_t(198));
+  EXPECT_EQ(static_cast<uint8_t>(dns_he->h_addr[3]), uint8_t(9));
+  EXPECT_EQ(dns_he->h_addr_list[16], nullptr);
 }
 
 #if defined(LIBC_ADD_NULL_CHECKS)

@@ -108,10 +108,46 @@ add_header_library(
 )
 
 add_header_library(
+  dns_wire
+  HDRS
+    dns_wire.h
+  DEPENDS
+    .hosts
+    libc.hdr.stdint_proxy
+    libc.hdr.types.size_t
+    libc.src.__support.CPP.array
+    libc.src.__support.CPP.optional
+    libc.src.__support.CPP.span
+    libc.src.__support.CPP.string_view
+    libc.src.__support.ctype_utils
+    libc.src.__support.macros.attributes
+    libc.src.__support.macros.config
+)
+
+add_header_library(
+  dns_client
+  HDRS
+    dns_client.h
+  DEPENDS
+    .dns_wire
+    libc.hdr.stdint_proxy
+    libc.hdr.types.size_t
+    libc.hdr.types.struct_in_addr
+    libc.src.__support.CPP.array
+    libc.src.__support.CPP.optional
+    libc.src.__support.CPP.span
+    libc.src.__support.CPP.string_view
+    libc.src.__support.macros.attributes
+    libc.src.__support.macros.config
+    libc.src.string.memory_utils.inline_memcpy
+)
+
+add_header_library(
   hostent
   HDRS
     hostent.h
   DEPENDS
+    .dns_client
     .hosts
     .line_reader
     libc.hdr.errno_macros
