@@ -36,3 +36,49 @@ add_entrypoint_object(
     libc.src.__support.macros.config
     libc.src.errno.errno
 )
+
+if(NOT TARGET libc.src.__support.File.file OR
+    NOT TARGET libc.src.__support.File.platform_file)
+  return()
+endif()
+
+add_object_library(
+  getproto_internal
+  SRCS
+    getproto_internal.cpp
+  HDRS
+    getproto_internal.h
+  DEPENDS
+    libc.hdr.errno_macros
+    libc.hdr.stdint_proxy
+    libc.hdr.types.size_t
+    libc.hdr.types.struct_protoent
+    libc.src.__support.CPP.optional
+    libc.src.__support.CPP.scope
+    libc.src.__support.CPP.span
+    libc.src.__support.CPP.string_view
+    libc.src.__support.File.file
+    libc.src.__support.File.line_reader
+    libc.src.__support.File.platform_file
+    libc.src.__support.ctype_utils
+    libc.src.__support.error_or
+    libc.src.__support.libc_assert
+    libc.src.__support.macros.attributes
+    libc.src.__support.memory_size
+    libc.src.__support.str_to_integer
+)
+
+add_entrypoint_object(
+  getprotobyname_r
+  SRCS
+    getprotobyname_r.cpp
+  HDRS
+    getprotobyname_r.h
+  DEPENDS
+    .getproto_internal
+    libc.hdr.types.size_t
+    libc.hdr.types.struct_protoent
+    libc.src.__support.CPP.span
+    libc.src.__support.CPP.string_view
+    libc.src.__support.macros.null_check
+)
