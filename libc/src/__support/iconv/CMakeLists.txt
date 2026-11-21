@@ -1,0 +1,16 @@
+add_header_library(
+  descriptor
+  HDRS
+    descriptor.h
+  DEPENDS
+    libc.hdr.errno_macros
+    libc.hdr.stdint_proxy
+    libc.hdr.types.iconv_t
+    libc.hdr.types.size_t
+    libc.src.__support.CPP.optional
+    libc.src.__support.CPP.string_view
+    libc.src.__support.ctype_utils
+    libc.src.__support.error_or
+    libc.src.__support.macros.attributes
+    libc.src.__support.macros.config
+)

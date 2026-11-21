@@ -1,0 +1,22 @@
+header: iconv.h
+standards:
+  - posix
+types:
+  - type_name: iconv_t
+  - type_name: size_t
+enums: []
+objects: []
+functions:
+  - name: iconv_open
+    standards:
+      - posix
+    return_type: iconv_t
+    arguments:
+      - type: const char *
+      - type: const char *
+  - name: iconv_close
+    standards:
+      - posix
+    return_type: int
+    arguments:
+      - type: iconv_t

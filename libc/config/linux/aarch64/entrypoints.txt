@@ -1617,6 +1617,10 @@ if(LLVM_LIBC_ENABLE_EXPERIMENTAL_ENTRYPOINTS)
       libc.src.grp.initgroups
       libc.src.grp.setgroups
 
+      # iconv.h entrypoints
+      libc.src.iconv.iconv_close
+      libc.src.iconv.iconv_open
+
       # ifaddrs.h entrypoints
       libc.src.ifaddrs.freeifaddrs
       libc.src.ifaddrs.getifaddrs

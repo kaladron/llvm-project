@@ -1,0 +1,33 @@
+add_entrypoint_object(
+  iconv_open
+  SRCS
+    iconv_open.cpp
+  HDRS
+    iconv_open.h
+  DEPENDS
+    libc.hdr.errno_macros
+    libc.hdr.types.iconv_t
+    libc.src.__support.CPP.new
+    libc.src.__support.checked_ptr
+    libc.src.__support.error_or
+    libc.src.__support.iconv.descriptor
+    libc.src.__support.libc_errno
+    libc.src.__support.macros.null_check
+    libc.src.errno.errno
+)
+
+add_entrypoint_object(
+  iconv_close
+  SRCS
+    iconv_close.cpp
+  HDRS
+    iconv_close.h
+  DEPENDS
+    libc.hdr.errno_macros
+    libc.hdr.types.iconv_t
+    libc.src.__support.CPP.new
+    libc.src.__support.CPP.unique_ptr
+    libc.src.__support.iconv.descriptor
+    libc.src.__support.libc_errno
+    libc.src.errno.errno
+)

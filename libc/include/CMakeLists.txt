@@ -187,6 +187,16 @@ add_header_macro(
 )
 
 add_header_macro(
+  iconv
+  ../libc/include/iconv.yaml
+  iconv.h
+  DEPENDS
+    .llvm_libc_common_h
+    .llvm-libc-types.iconv_t
+    .llvm-libc-types.size_t
+)
+
+add_header_macro(
   ifaddrs
   ../libc/include/ifaddrs.yaml
   ifaddrs.h

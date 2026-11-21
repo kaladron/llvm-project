@@ -51,6 +51,7 @@ endif()
 
 add_subdirectory(assert)
 add_subdirectory(compiler)
+add_subdirectory(iconv)
 add_subdirectory(ifaddrs)
 add_subdirectory(langinfo)
 add_subdirectory(libintl)
