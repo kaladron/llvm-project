@@ -14,7 +14,10 @@
 #include "src/regex/regexec.h"
 
 #include "hdr/regex_macros.h"
+#include "hdr/types/regoff_t.h"
+#include "src/__support/CPP/limits.h"
 #include "src/__support/CPP/mutex.h"
+#include "src/__support/CPP/span.h"
 #include "src/__support/CPP/string_view.h"
 #include "src/__support/common.h"
 #include "src/__support/libc_assert.h"
@@ -32,6 +35,7 @@ LLVM_LIBC_FUNCTION(int, regexec,
   LIBC_CRASH_ON_NULLPTR(preg);
   LIBC_CRASH_ON_NULLPTR(string);
 
+  // TODO: Enable REG_STARTEND input slicing in a follow-up change.
   if ((eflags & ~(REG_NOTBOL | REG_NOTEOL)) != 0)
     return REG_BADPAT;
 
@@ -43,25 +47,43 @@ LLVM_LIBC_FUNCTION(int, regexec,
   const bool want_pmatch = nmatch > 0 && !(internal->cflags & REG_NOSUB);
   if (want_pmatch)
     LIBC_CRASH_ON_NULLPTR(pmatch);
+  const cpp::span<regmatch_t> matches =
+      want_pmatch ? cpp::span<regmatch_t>(pmatch, nmatch)
+                  : cpp::span<regmatch_t>();
+  // TODO: Populate subgroup offsets pmatch[1..k] in a follow-up change.  Until
+  // then, fail closed with REG_BADPAT on match rather than returning 0 with
+  // {-1, -1} in requested subgroup slots.
+  const bool unsupported_subgroups =
+      want_pmatch && nmatch > 1 && preg->re_nsub > 0;
+  const bool need_span = want_pmatch && !unsupported_subgroups;
 
   // POSIX requires regexec to be thread-safe across concurrent calls sharing a
-  // const regex_t*. Serialise access to internal->pool during lazy derivative
-  // evaluation, then release the lock before writing caller-owned pmatch.
+  // const regex_t*.  Compute string length outside the lock, serialise access
+  // to internal->pool during lazy derivative evaluation, then release the lock
+  // before writing caller-owned pmatch.
+  const cpp::string_view input(string);
+  regex::MatchSpan span{};
   regex::MatchResult res = regex::MatchResult::NoMatch;
   {
     cpp::lock_guard guard(internal->lock);
-    res = regex::match(*internal, cpp::string_view(string), eflags);
+    res = need_span ? regex::match_span(*internal, input, span, eflags)
+                    : regex::match(*internal, input, eflags);
   }
   switch (res) {
   case regex::MatchResult::Match:
-    // TODO: Populate leftmost-longest match offsets in subsequent patches.
-    // Initialise pmatch to {-1, -1} so callers never observe uninitialised
-    // stack memory.
+    if (unsupported_subgroups) {
+      for (regmatch_t &m : matches)
+        m = {-1, -1};
+      return REG_BADPAT;
+    }
     if (want_pmatch) {
-      for (size_t i = 0; i < nmatch; ++i) {
-        pmatch[i].rm_so = -1;
-        pmatch[i].rm_eo = -1;
-      }
+      LIBC_ASSERT(span.start <= span.end &&
+                  span.end <= static_cast<size_t>(
+                                  cpp::numeric_limits<regoff_t>::max()));
+      matches.front() = {static_cast<regoff_t>(span.start),
+                         static_cast<regoff_t>(span.end)};
+      for (regmatch_t &m : matches.subspan(1))
+        m = {-1, -1};
     }
     return 0;
   case regex::MatchResult::NoMatch:

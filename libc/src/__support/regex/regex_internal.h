@@ -28,6 +28,9 @@ struct RegexInternal {
   ExprPool pool;
   /// Root ExprId of the compiled regular expression.
   ExprId root = INVALID_EXPR_ID;
+  /// Reversed AST used to find leftmost match starts (INVALID_EXPR_ID when
+  /// compiled with REG_NOSUB).
+  ExprId reversed_root = INVALID_EXPR_ID;
   /// Compilation flags passed to regcomp.
   int cflags = 0;
   /// Spinlock serialising lazy derivative interning across concurrent regexec

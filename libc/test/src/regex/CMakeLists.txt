@@ -54,6 +54,7 @@ if(LLVM_LIBC_FULL_BUILD AND LLVM_LIBC_ENABLE_EXPERIMENTAL_ENTRYPOINTS)
       libc.hdr.types.regex_t
       libc.hdr.types.regmatch_t
       libc.hdr.types.regoff_t
+      libc.hdr.types.size_t
       libc.src.__support.CPP.scope
       libc.src.regex.regcomp
       libc.src.regex.regexec

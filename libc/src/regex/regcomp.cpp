@@ -22,6 +22,7 @@
 #include "src/__support/macros/null_check.h"
 #include "src/__support/regex/regex_ast.h"
 #include "src/__support/regex/regex_internal.h"
+#include "src/__support/regex/regex_matcher.h"
 #include "src/__support/regex/regex_parser.h"
 
 namespace LIBC_NAMESPACE_DECL {
@@ -55,6 +56,15 @@ LLVM_LIBC_FUNCTION(int, regcomp,
       cpp::string_view(pattern), cflags, internal->pool, &re_nsub);
   if (!root.has_value())
     return root.error();
+
+  // Build the reversed AST only when callers may request match offsets; under
+  // REG_NOSUB, regexec never populates pmatch and skips the reverse pass.
+  if (!(cflags & REG_NOSUB)) {
+    ErrorOr<regex::ExprId> rev = regex::reverse_expr(*root, internal->pool);
+    if (!rev.has_value())
+      return rev.error();
+    internal->reversed_root = *rev;
+  }
 
   internal->root = *root;
   internal->cflags = cflags;
